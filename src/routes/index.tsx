@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Search, Store, Truck, MessageSquarePlus, X } from "lucide-react";
-import { productos, clp, type Producto, type Estado } from "@/data/demo";
+import { Search, Store, Truck, MessageSquarePlus, X, Minus, Plus, ChevronDown } from "lucide-react";
+import { productos, clp, cadenasInfo, totalProveedor, type Producto, type Estado, type Proveedor } from "@/data/demo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -18,11 +18,11 @@ export const Route = createFileRoute("/")({
 });
 
 const estadoStyle: Record<Estado, string> = {
-  verificada: "bg-brand-green/10 text-brand-green",
+  completa: "bg-brand-green/10 text-brand-green",
   parcial: "bg-brand-blue/10 text-brand-blue",
   pendiente: "bg-muted text-muted-foreground",
 };
-const estadoLabel: Record<Estado, string> = { verificada: "Verificada", parcial: "Parcial", pendiente: "Pendiente de revisión" };
+const estadoLabel: Record<Estado, string> = { completa: "Completa", parcial: "Parcial", pendiente: "Pendiente de revisión" };
 const fecha = (s: string) => new Date(s + "T12:00").toLocaleDateString("es-CL");
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
@@ -30,6 +30,7 @@ function Index() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState<Producto | null>(null);
+  const [cantidad, setCantidad] = useState(1);
   const [notes, setNotes] = useState<{ target: string; text: string }[]>([]);
 
   const sugerencias = useMemo(
@@ -82,7 +83,17 @@ function Index() {
             <div className="rounded-2xl border bg-card p-6 shadow-soft">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Comparando</p>
               <h2 className="text-2xl font-semibold">{sel.nombre}</h2>
-              <p className="text-muted-foreground">{sel.presentacion} · {sel.categoria}</p>
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <p className="text-muted-foreground">{sel.presentacion} · {sel.categoria}</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground">Cantidad a cotizar</span>
+                  <div className="flex items-center rounded-full border">
+                    <button aria-label="Menos" onClick={() => setCantidad(Math.max(1, cantidad - 1))} className="p-2 text-muted-foreground hover:text-foreground"><Minus className="h-4 w-4" /></button>
+                    <input type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Math.max(1, parseInt(e.target.value) || 1))} className="w-14 bg-transparent text-center text-sm font-medium outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+                    <button aria-label="Más" onClick={() => setCantidad(cantidad + 1)} className="p-2 text-muted-foreground hover:text-foreground"><Plus className="h-4 w-4" /></button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <section>
@@ -90,19 +101,25 @@ function Index() {
                 <Store className="h-5 w-5 text-brand-blue" />
                 <h3 className="text-lg font-semibold">Precios en cadenas de farmacias</h3>
               </div>
-              <p className="mb-4 text-sm text-muted-foreground">Precios referenciales de venta al público. No son costos de abastecimiento.</p>
+              <p className="mb-4 text-sm text-muted-foreground">Precios ficticios de demostración, referenciales de venta al público. No son costos de abastecimiento.</p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {sel.cadenas.map((c) => (
-                  <div key={c.nombre} className="rounded-2xl border bg-card p-5">
-                    <p className="font-medium">{c.nombre}</p>
-                    <p className="mt-2 text-3xl font-semibold text-brand-blue">{clp(c.precio)}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{c.presentacion}</p>
-                    <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Ref. {fecha(c.fecha)}</span>
-                      <span className="rounded-full bg-muted px-2 py-0.5">Precio público</span>
+                {sel.cadenas.map((c) => {
+                  const info = cadenasInfo[c.id];
+                  return (
+                    <div key={c.id} className="rounded-2xl border bg-card p-5">
+                      <div className="flex h-12 items-center">
+                        <img src={info.logo} alt={`Logo ${info.nombre}`} className="max-h-12 max-w-[140px] object-contain" />
+                      </div>
+                      <p className="mt-3 font-medium">{info.nombre}</p>
+                      <p className="mt-1 text-3xl font-semibold text-brand-blue">{clp(c.precio)}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{c.presentacion}</p>
+                      <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Ref. {fecha(c.fecha)} · demo</span>
+                        <span className="rounded-full bg-muted px-2 py-0.5">Precio público</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -112,22 +129,11 @@ function Index() {
                 <h3 className="text-lg font-semibold">Proveedores</h3>
               </div>
               <p className="mb-5 text-sm text-muted-foreground">
-                Precios de adquisición. {sel.proveedores.some((p) => p.precio === null || p.estado !== "verificada") && "Hay información incompleta: no es posible afirmar cuál es el más conveniente."}
+                Precio unitario informado por cada proveedor (datos de demostración). El total solo se muestra cuando la información está completa.
+                {sel.proveedores.some((p) => p.estado !== "completa") && " Hay información incompleta: no es posible determinar cuál es el más conveniente."}
               </p>
               <div className="divide-y">
-                {sel.proveedores.map((p) => (
-                  <div key={p.nombre} className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{p.nombre}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-xs ${estadoStyle[p.estado]}`}>{estadoLabel[p.estado]}</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{p.presentacion} · {p.disponibilidad ?? "Disponibilidad desconocida"}</p>
-                      <p className="text-sm text-muted-foreground">{p.condiciones}</p>
-                    </div>
-                    <p className="text-2xl font-semibold text-brand-green">{p.precio !== null ? clp(p.precio) : <span className="text-base text-muted-foreground">Sin precio</span>}</p>
-                  </div>
-                ))}
+                {sel.proveedores.map((p) => <ProveedorFila key={p.nombre} p={p} cantidad={cantidad} />)}
               </div>
             </section>
 
@@ -135,6 +141,63 @@ function Index() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function ProveedorFila({ p, cantidad }: { p: Proveedor; cantidad: number }) {
+  const [open, setOpen] = useState(false);
+  const t = totalProveedor(p, cantidad);
+  return (
+    <div className="py-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex gap-4">
+          {p.logo ? (
+            <img src={p.logo} alt={p.nombre} className="h-10 w-10 object-contain" />
+          ) : (
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-sm font-semibold text-brand-blue">
+              {p.nombre.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+            </div>
+          )}
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{p.nombre} <span className="text-xs font-normal text-muted-foreground">(demo)</span></p>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${estadoStyle[p.estado]}`}>{estadoLabel[p.estado]}</span>
+            </div>
+            <dl className="mt-1 grid gap-x-6 gap-y-0.5 text-sm text-muted-foreground sm:grid-cols-2">
+              <div>Presentación: <span className="text-foreground">{p.presentacion}</span></div>
+              <div>Mínimo de compra: <span className="text-foreground">{p.minimo !== null ? `${p.minimo} unidades` : "Desconocido"}</span></div>
+              <div>Disponibilidad: <span className="text-foreground">{p.disponibilidad ?? "Desconocida"}</span></div>
+              <div>Condiciones: <span className="text-foreground">{p.condiciones}</span></div>
+            </dl>
+          </div>
+        </div>
+        <div className="text-left md:text-right">
+          {p.precioUnitario !== null ? (
+            <>
+              <p className="text-2xl font-semibold text-brand-green">{clp(p.precioUnitario)}</p>
+              <p className="text-xs text-muted-foreground">precio unitario</p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Sin precio informado</p>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            {"total" in t ? <>Total {cantidad} u.: <span className="font-medium text-foreground">{clp(t.total)}</span></> : t.pendiente}
+          </p>
+        </div>
+      </div>
+      {p.faltantes.length > 0 && (
+        <div className="mt-3 md:pl-14">
+          <button onClick={() => setOpen(!open)} className="flex items-center gap-1 text-xs text-brand-blue hover:underline">
+            ¿Qué falta para calcular el costo completo? <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
+          </button>
+          {open && (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {p.faltantes.map((f) => <li key={f} className="rounded-full border px-3 py-1 text-xs text-muted-foreground">{f}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
