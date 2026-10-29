@@ -11,7 +11,14 @@ export const cadenasInfo: Record<CadenaId, { nombre: string; logo: string }> = {
   ahumada: { nombre: "Farmacias Ahumada", logo: ahumada.url },
 };
 
-export interface Cadena { id: CadenaId; precio: number; presentacion: string; fecha: string }
+export interface Cadena {
+  id: CadenaId; precio: number; presentacion: string; fecha: string;
+  nombreComercial: string; fabricante?: string; descripcion: string;
+  /** Atributos de la ficha: farmacéuticos o comerciales según el producto */
+  atributos: [string, string][];
+  /** Solo una fotografía confiable del producto exacto; si no, se muestra "Imagen no disponible" */
+  imagen?: string;
+}
 export interface Proveedor {
   nombre: string;
   logo?: string;
@@ -30,9 +37,9 @@ export const productos: Producto[] = [
   {
     id: "losartan", nombre: "Losartán 50 mg", presentacion: "Caja 30 comprimidos", categoria: "Medicamento",
     cadenas: [
-      { id: "cruzverde", precio: 4990, presentacion: "Caja 30 comp.", fecha: "2026-10-27" },
-      { id: "salcobrand", precio: 5490, presentacion: "Caja 30 comp.", fecha: "2026-10-26" },
-      { id: "ahumada", precio: 4590, presentacion: "Caja 30 comp.", fecha: "2026-10-25" },
+      { id: "cruzverde", precio: 4990, presentacion: "Caja 30 comp.", fecha: "2026-10-27" , nombreComercial: "Losartán (B) 50 mg 30 comprimidos recubiertos", fabricante: "Laboratorio Chile", descripcion: "Antihipertensivo bioequivalente. Venta bajo receta médica.", atributos: [["Principio activo", "Losartán potásico"], ["Forma", "Comprimido recubierto"], ["Dosis", "50 mg"], ["Presentación", "30 comprimidos"]] },
+      { id: "salcobrand", precio: 5490, presentacion: "Caja 30 comp.", fecha: "2026-10-26" , nombreComercial: "Losartán Potásico 50 mg x 30 comprimidos recubiertos", fabricante: "Laboratorio Mintlab", descripcion: "Medicamento para la hipertensión arterial. Venta bajo receta médica.", atributos: [["Principio activo", "Losartán potásico"], ["Forma", "Comprimido recubierto"], ["Dosis", "50 mg"], ["Presentación", "30 comprimidos"]] },
+      { id: "ahumada", precio: 4590, presentacion: "Caja 30 comp.", fecha: "2026-10-25" , nombreComercial: "Losartán (B) 50 mg caja 30 comprimidos", fabricante: "Laboratorio Andrómaco", descripcion: "Bioequivalente indicado en hipertensión. Venta bajo receta médica.", atributos: [["Principio activo", "Losartán potásico"], ["Forma", "Comprimido recubierto"], ["Dosis", "50 mg"], ["Presentación", "30 comprimidos"]] },
     ],
     proveedores: [
       { nombre: "Distribuidora Andes", precioUnitario: 2100, minimo: 20, presentacion: "Caja 30 comp.", disponibilidad: "En stock", condiciones: "Despacho 48 h incluido · IVA incluido", estado: "completa", faltantes: [] },
@@ -43,9 +50,9 @@ export const productos: Producto[] = [
   {
     id: "paracetamol", nombre: "Paracetamol 500 mg", presentacion: "Caja 16 comprimidos", categoria: "Medicamento",
     cadenas: [
-      { id: "cruzverde", precio: 1290, presentacion: "Caja 16 comp.", fecha: "2026-10-27" },
-      { id: "salcobrand", precio: 1490, presentacion: "Caja 16 comp.", fecha: "2026-10-27" },
-      { id: "ahumada", precio: 990, presentacion: "Caja 16 comp.", fecha: "2026-10-24" },
+      { id: "cruzverde", precio: 1290, presentacion: "Caja 16 comp.", fecha: "2026-10-27" , nombreComercial: "Paracetamol 500 mg 16 comprimidos", fabricante: "Laboratorio Chile", descripcion: "Analgésico y antipirético. Venta directa.", atributos: [["Principio activo", "Paracetamol"], ["Forma", "Comprimido"], ["Dosis", "500 mg"], ["Presentación", "16 comprimidos"]] },
+      { id: "salcobrand", precio: 1490, presentacion: "Caja 16 comp.", fecha: "2026-10-27" , nombreComercial: "Paracetamol 500 mg x 16 comprimidos", fabricante: "Laboratorio Mintlab", descripcion: "Alivio del dolor leve a moderado y la fiebre. Venta directa.", atributos: [["Principio activo", "Paracetamol"], ["Forma", "Comprimido"], ["Dosis", "500 mg"], ["Presentación", "16 comprimidos"]] },
+      { id: "ahumada", precio: 990, presentacion: "Caja 16 comp.", fecha: "2026-10-24" , nombreComercial: "Paracetamol 500 mg caja 16 comprimidos", fabricante: "Laboratorio Saval", descripcion: "Analgésico y antipirético de uso común. Venta directa.", atributos: [["Principio activo", "Paracetamol"], ["Forma", "Comprimido"], ["Dosis", "500 mg"], ["Presentación", "16 comprimidos"]] },
     ],
     proveedores: [
       { nombre: "Distribuidora Andes", precioUnitario: 380, minimo: 100, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
@@ -55,9 +62,9 @@ export const productos: Producto[] = [
   {
     id: "shampoo", nombre: "Shampoo Hidratante Suave", presentacion: "Frasco 400 ml", categoria: "Cuidado personal",
     cadenas: [
-      { id: "cruzverde", precio: 5990, presentacion: "400 ml", fecha: "2026-10-26" },
-      { id: "salcobrand", precio: 6490, presentacion: "400 ml", fecha: "2026-10-25" },
-      { id: "ahumada", precio: 6190, presentacion: "400 ml", fecha: "2026-10-24" },
+      { id: "cruzverde", precio: 5990, presentacion: "400 ml", fecha: "2026-10-26" , nombreComercial: "Shampoo Hidratante Suave Aloe 400 ml", fabricante: "Marca Demo Cosmética", descripcion: "Shampoo para uso diario, cabello normal a seco.", atributos: [["Tipo de cabello", "Normal a seco"], ["Contenido", "400 ml"], ["Formato", "Frasco"]] },
+      { id: "salcobrand", precio: 6490, presentacion: "400 ml", fecha: "2026-10-25" , nombreComercial: "Shampoo Hidratante Suave Avena 400 ml", fabricante: "Marca Demo Cosmética", descripcion: "Fórmula suave con avena, sin sulfatos.", atributos: [["Tipo de cabello", "Todo tipo"], ["Contenido", "400 ml"], ["Formato", "Frasco"]] },
+      { id: "ahumada", precio: 6190, presentacion: "400 ml", fecha: "2026-10-24" , nombreComercial: "Shampoo Hidratante Suave 400 ml", fabricante: "Marca Demo Cosmética", descripcion: "Limpieza suave e hidratación para uso frecuente.", atributos: [["Tipo de cabello", "Normal"], ["Contenido", "400 ml"], ["Formato", "Frasco"]] },
     ],
     proveedores: [
       { nombre: "Cosmética Total", precioUnitario: 2800, minimo: 12, presentacion: "400 ml", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
@@ -67,8 +74,8 @@ export const productos: Producto[] = [
   {
     id: "cepillo", nombre: "Cepillo de pelo desenredante", presentacion: "1 unidad", categoria: "Accesorios",
     cadenas: [
-      { id: "cruzverde", precio: 3990, presentacion: "1 unidad", fecha: "2026-10-22" },
-      { id: "ahumada", precio: 3490, presentacion: "1 unidad", fecha: "2026-10-21" },
+      { id: "cruzverde", precio: 3990, presentacion: "1 unidad", fecha: "2026-10-22" , nombreComercial: "Cepillo desenredante cerdas flexibles", fabricante: "Marca Demo Accesorios", descripcion: "Cepillo para desenredar sin tirones, cabello húmedo o seco.", atributos: [["Material", "Plástico y nylon"], ["Tamaño", "Mediano"], ["Contenido", "1 unidad"]] },
+      { id: "ahumada", precio: 3490, presentacion: "1 unidad", fecha: "2026-10-21" , nombreComercial: "Cepillo de pelo desenredante ovalado", fabricante: "Marca Demo Accesorios", descripcion: "Diseño ergonómico, apto para todo tipo de cabello.", atributos: [["Material", "Plástico"], ["Tamaño", "Grande"], ["Contenido", "1 unidad"]] },
     ],
     proveedores: [
       { nombre: "Accesorios Beauty", precioUnitario: 1500, minimo: 24, presentacion: "1 unidad", disponibilidad: "En stock", condiciones: "Pago contado", estado: "parcial", faltantes: ["Costo de despacho"] },
@@ -77,8 +84,8 @@ export const productos: Producto[] = [
   {
     id: "vet", nombre: "Antiparasitario canino", presentacion: "Pipeta 10–20 kg", categoria: "Veterinario",
     cadenas: [
-      { id: "salcobrand", precio: 8990, presentacion: "1 pipeta", fecha: "2026-10-26" },
-      { id: "cruzverde", precio: 9490, presentacion: "1 pipeta", fecha: "2026-10-20" },
+      { id: "salcobrand", precio: 8990, presentacion: "1 pipeta", fecha: "2026-10-26" , nombreComercial: "Pipeta antiparasitaria perros 10 a 20 kg", fabricante: "Laboratorio Demo Vet", descripcion: "Control de pulgas y garrapatas. Uso veterinario externo.", atributos: [["Especie", "Perro"], ["Peso", "10–20 kg"], ["Forma", "Pipeta tópica"], ["Contenido", "1 pipeta"]] },
+      { id: "cruzverde", precio: 9490, presentacion: "1 pipeta", fecha: "2026-10-20" , nombreComercial: "Antiparasitario externo canino pipeta M", fabricante: "Laboratorio Demo Vet", descripcion: "Protección mensual contra parásitos externos. Uso veterinario.", atributos: [["Especie", "Perro"], ["Peso", "10–20 kg"], ["Forma", "Pipeta tópica"], ["Contenido", "1 pipeta"]] },
     ],
     proveedores: [
       { nombre: "VetDistribución", precioUnitario: 4900, minimo: 6, presentacion: "1 pipeta", disponibilidad: "En stock", condiciones: "Despacho 72 h incluido · IVA incluido", estado: "completa", faltantes: [] },
