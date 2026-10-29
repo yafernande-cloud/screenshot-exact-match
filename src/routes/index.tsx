@@ -101,21 +101,36 @@ function Index() {
                 <Store className="h-5 w-5 text-brand-blue" />
                 <h3 className="text-lg font-semibold">Precios en cadenas de farmacias</h3>
               </div>
-              <p className="mb-4 text-sm text-muted-foreground">Precios ficticios de demostración, referenciales de venta al público. No son costos de abastecimiento.</p>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <p className="mb-4 text-sm text-muted-foreground">Fichas y precios ficticios de demostración, referenciales de venta al público. No son costos de abastecimiento.</p>
+              <div className="grid gap-4 lg:grid-cols-2">
                 {sel.cadenas.map((c) => {
                   const info = cadenasInfo[c.id];
                   return (
-                    <div key={c.id} className="rounded-2xl border bg-card p-5">
-                      <div className="flex h-12 items-center">
-                        <img src={info.logo} alt={`Logo ${info.nombre}`} className="max-h-12 max-w-[140px] object-contain" />
+                    <div key={c.id} className="flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:flex-row">
+                      <div className="flex h-36 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted sm:h-auto sm:w-32">
+                        {c.imagen ? (
+                          <img src={c.imagen} alt={c.nombreComercial} className="h-full w-full object-contain" />
+                        ) : (
+                          <span className="px-2 text-center text-xs text-muted-foreground">Imagen no disponible</span>
+                        )}
                       </div>
-                      <p className="mt-3 font-medium">{info.nombre}</p>
-                      <p className="mt-1 text-3xl font-semibold text-brand-blue">{clp(c.precio)}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{c.presentacion}</p>
-                      <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Ref. {fecha(c.fecha)} · demo</span>
-                        <span className="rounded-full bg-muted px-2 py-0.5">Precio público</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <img src={info.logo} alt={`Logo ${info.nombre}`} className="h-7 max-w-[110px] object-contain object-left" />
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Precio público</span>
+                        </div>
+                        <p className="mt-2 font-medium leading-snug">{c.nombreComercial}</p>
+                        {c.fabricante && <p className="text-xs text-muted-foreground">{c.fabricante}</p>}
+                        <p className="mt-1 text-sm text-muted-foreground">{c.descripcion}</p>
+                        <dl className="mt-2 grid gap-y-0.5 text-xs">
+                          {c.atributos.map(([k, v]) => (
+                            <div key={k}><span className="text-muted-foreground">{k}: </span>{v}</div>
+                          ))}
+                        </dl>
+                        <div className="mt-3 flex flex-wrap items-end justify-between gap-x-3">
+                          <p className="text-2xl font-semibold text-brand-blue">{clp(c.precio)}</p>
+                          <span className="text-xs text-muted-foreground">{info.nombre} · Ref. {fecha(c.fecha)} · demo</span>
+                        </div>
                       </div>
                     </div>
                   );
