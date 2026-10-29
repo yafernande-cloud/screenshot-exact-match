@@ -122,12 +122,12 @@ function Index() {
                         <p className="mt-2 font-medium leading-snug">{c.nombreComercial}</p>
                         {c.fabricante && <p className="text-xs text-muted-foreground">{c.fabricante}</p>}
                         <p className="mt-1 text-sm text-muted-foreground">{c.descripcion}</p>
-                        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                        <dl className="mt-2 grid gap-y-0.5 text-xs">
                           {c.atributos.map(([k, v]) => (
-                            <div key={k} className="truncate"><span className="text-muted-foreground">{k}: </span>{v}</div>
+                            <div key={k}><span className="text-muted-foreground">{k}: </span>{v}</div>
                           ))}
                         </dl>
-                        <div className="mt-3 flex items-end justify-between">
+                        <div className="mt-3 flex flex-wrap items-end justify-between gap-x-3">
                           <p className="text-2xl font-semibold text-brand-blue">{clp(c.precio)}</p>
                           <span className="text-xs text-muted-foreground">{info.nombre} · Ref. {fecha(c.fecha)} · demo</span>
                         </div>
