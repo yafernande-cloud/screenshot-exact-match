@@ -12,4 +12,4 @@
 ## Project rules
 - Quote-cart rules (add/merge, move between suppliers, subtotal/pending logic) live as pure functions in `src/lib/cotizacion.ts` with tests in `src/test/cotizacion.test.ts`; UI components only call them, so rules stay testable.
 - Demo data lives in `src/data/demo.ts`; pharmacy chains are public price references only and must never feed the supplier quote cart.
-- Every page renders the shared `MenuPrincipal` (Cotizador, Historial, Proveedores, Telegram) at the top; the home page keeps the full flow (search → results → supplier comparison → chain references → notes) with «Mis cotizaciones» last, as an addition, never a replacement.
+- Navigation is the collapsible shadcn sidebar (`AppSidebar`, options list in one array) mounted once in `__root`; each page renders `MenuPrincipal` (header with the sidebar trigger). Home keeps the fixed section order: search → chain public prices → supplier offers → «Mis cotizaciones» last.

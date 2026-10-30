@@ -27,6 +27,14 @@ export interface Proveedor {
   presentacion: string;
   disponibilidad: string | null;
   condiciones: string;
+  /** Ficha comercial: solo lo que el proveedor informa; lo ausente se muestra como «No informado» */
+  producto?: string;
+  laboratorio?: string;
+  iva?: "incluido" | "no incluido";
+  descuento?: string;
+  despacho?: string;
+  pago?: string;
+  otros?: string;
   estado: Estado;
   /** Datos que faltan para calcular un costo total */
   faltantes: string[];
@@ -42,10 +50,10 @@ export const productos: Producto[] = [
       { id: "ahumada", precio: 4590, presentacion: "Caja 30 comp.", fecha: "2026-10-25" , nombreComercial: "Losartán (B) 50 mg caja 30 comprimidos", fabricante: "Laboratorio Andrómaco", descripcion: "Bioequivalente indicado en hipertensión. Venta bajo receta médica.", atributos: [["Principio activo", "Losartán potásico"], ["Forma", "Comprimido recubierto"], ["Dosis", "50 mg"], ["Presentación", "30 comprimidos"]] },
     ],
     proveedores: [
-      { nombre: "Distribuidora Andes", precioUnitario: 2100, minimo: 20, presentacion: "Caja 30 comp.", disponibilidad: "En stock", condiciones: "Despacho 48 h incluido · IVA incluido", estado: "completa", faltantes: [] },
-      { nombre: "Droguería Pacífico", precioUnitario: 1950, minimo: null, presentacion: "Caja 30 comp.", disponibilidad: null, condiciones: "Pago a 30 días", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA", "Cantidad mínima de compra"] },
-      { nombre: "Proveedor Y", precioUnitario: 2050, minimo: 10, presentacion: "Caja 30 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
-      { nombre: "Laboratorio Sur", precioUnitario: null, minimo: null, presentacion: "Caja 30 comp.", disponibilidad: null, condiciones: "Sin información comercial", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Costo de despacho", "Condiciones de compra"] },
+      { nombre: "Distribuidora Andes", precioUnitario: 2100, minimo: 20, presentacion: "Caja 30 comp.", disponibilidad: "En stock", condiciones: "Despacho 48 h incluido · IVA incluido", laboratorio: "Laboratorio Chile", despacho: "Despacho 48 h incluido", iva: "incluido", descuento: "3% por pago al contado", estado: "completa", faltantes: [] },
+      { nombre: "Droguería Pacífico", precioUnitario: 1950, minimo: null, presentacion: "Caja 30 comp.", disponibilidad: null, condiciones: "Pago a 30 días", laboratorio: "Laboratorio Andrómaco", pago: "Pago a 30 días", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA", "Cantidad mínima de compra"] },
+      { nombre: "Proveedor Y", precioUnitario: 2050, minimo: 10, presentacion: "Caja 30 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", laboratorio: "Laboratorio Mintlab", despacho: "Despacho incluido", iva: "incluido", estado: "completa", faltantes: [] },
+      { nombre: "Laboratorio Sur", precioUnitario: null, minimo: null, presentacion: "Caja 30 comp.", disponibilidad: null, condiciones: "Sin información comercial", otros: "Sin información comercial", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Costo de despacho", "Condiciones de compra"] },
     ],
   },
   {
@@ -56,10 +64,10 @@ export const productos: Producto[] = [
       { id: "ahumada", precio: 990, presentacion: "Caja 16 comp.", fecha: "2026-10-24" , nombreComercial: "Paracetamol 500 mg caja 16 comprimidos", fabricante: "Laboratorio Saval", descripcion: "Analgésico y antipirético de uso común. Venta directa.", atributos: [["Principio activo", "Paracetamol"], ["Forma", "Comprimido"], ["Dosis", "500 mg"], ["Presentación", "16 comprimidos"]] },
     ],
     proveedores: [
-      { nombre: "Distribuidora Andes", precioUnitario: 380, minimo: 100, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
-      { nombre: "Proveedor X", precioUnitario: 360, minimo: 20, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
-      { nombre: "Proveedor Y", precioUnitario: 340, minimo: null, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho por confirmar", estado: "parcial", faltantes: ["Cantidad mínima de compra", "Costo de despacho"] },
-      { nombre: "Droguería Pacífico", precioUnitario: 350, minimo: 50, presentacion: "Caja 16 comp.", disponibilidad: "Stock limitado", condiciones: "Despacho semanal", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA"] },
+      { nombre: "Distribuidora Andes", precioUnitario: 380, minimo: 100, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", laboratorio: "Laboratorio Saval", despacho: "Despacho incluido", iva: "incluido", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor X", precioUnitario: 360, minimo: 20, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", laboratorio: "Laboratorio Chile", despacho: "Despacho incluido", iva: "incluido", descuento: "5% de descuento sobre 50 unidades", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor Y", precioUnitario: 340, minimo: null, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho por confirmar", laboratorio: "Laboratorio Mintlab", despacho: "Despacho por confirmar", estado: "parcial", faltantes: ["Cantidad mínima de compra", "Costo de despacho"] },
+      { nombre: "Droguería Pacífico", precioUnitario: 350, minimo: 50, presentacion: "Caja 16 comp.", disponibilidad: "Stock limitado", condiciones: "Despacho semanal", despacho: "Despacho semanal", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA"] },
     ],
   },
   {
@@ -70,8 +78,8 @@ export const productos: Producto[] = [
       { id: "ahumada", precio: 6190, presentacion: "400 ml", fecha: "2026-10-24" , nombreComercial: "Shampoo Hidratante Suave 400 ml", fabricante: "Marca Demo Cosmética", descripcion: "Limpieza suave e hidratación para uso frecuente.", atributos: [["Tipo de cabello", "Normal"], ["Contenido", "400 ml"], ["Formato", "Frasco"]] },
     ],
     proveedores: [
-      { nombre: "Cosmética Total", precioUnitario: 2800, minimo: 12, presentacion: "400 ml", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
-      { nombre: "Distribuidora Andes", precioUnitario: null, minimo: null, presentacion: "400 ml", disponibilidad: null, condiciones: "Precio por confirmar", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Costo de despacho"] },
+      { nombre: "Cosmética Total", precioUnitario: 2800, minimo: 12, presentacion: "400 ml", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", despacho: "Despacho incluido", iva: "incluido", estado: "completa", faltantes: [] },
+      { nombre: "Distribuidora Andes", precioUnitario: null, minimo: null, presentacion: "400 ml", disponibilidad: null, condiciones: "Precio por confirmar", otros: "Precio por confirmar", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Costo de despacho"] },
     ],
   },
   {
@@ -81,7 +89,7 @@ export const productos: Producto[] = [
       { id: "ahumada", precio: 3490, presentacion: "1 unidad", fecha: "2026-10-21" , nombreComercial: "Cepillo de pelo desenredante ovalado", fabricante: "Marca Demo Accesorios", descripcion: "Diseño ergonómico, apto para todo tipo de cabello.", atributos: [["Material", "Plástico"], ["Tamaño", "Grande"], ["Contenido", "1 unidad"]] },
     ],
     proveedores: [
-      { nombre: "Accesorios Beauty", precioUnitario: 1500, minimo: 24, presentacion: "1 unidad", disponibilidad: "En stock", condiciones: "Pago contado", estado: "parcial", faltantes: ["Costo de despacho"] },
+      { nombre: "Accesorios Beauty", precioUnitario: 1500, minimo: 24, presentacion: "1 unidad", disponibilidad: "En stock", condiciones: "Pago contado", pago: "Pago contado", estado: "parcial", faltantes: ["Costo de despacho"] },
     ],
   },
   {
@@ -91,37 +99,37 @@ export const productos: Producto[] = [
       { id: "cruzverde", precio: 9490, presentacion: "1 pipeta", fecha: "2026-10-20" , nombreComercial: "Antiparasitario externo canino pipeta M", fabricante: "Laboratorio Demo Vet", descripcion: "Protección mensual contra parásitos externos. Uso veterinario.", atributos: [["Especie", "Perro"], ["Peso", "10–20 kg"], ["Forma", "Pipeta tópica"], ["Contenido", "1 pipeta"]] },
     ],
     proveedores: [
-      { nombre: "VetDistribución", precioUnitario: 4900, minimo: 6, presentacion: "1 pipeta", disponibilidad: "En stock", condiciones: "Despacho 72 h incluido · IVA incluido", estado: "completa", faltantes: [] },
-      { nombre: "Droguería Pacífico", precioUnitario: 4600, minimo: null, presentacion: "1 pipeta", disponibilidad: null, condiciones: "Sin condiciones informadas", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA", "Cantidad mínima de compra"] },
+      { nombre: "VetDistribución", precioUnitario: 4900, minimo: 6, presentacion: "1 pipeta", disponibilidad: "En stock", condiciones: "Despacho 72 h incluido · IVA incluido", despacho: "Despacho 72 h incluido", iva: "incluido", estado: "completa", faltantes: [] },
+      { nombre: "Droguería Pacífico", precioUnitario: 4600, minimo: null, presentacion: "1 pipeta", disponibilidad: null, condiciones: "Sin condiciones informadas", otros: "Sin condiciones informadas", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA", "Cantidad mínima de compra"] },
     ],
   },
   {
     id: "nivea", nombre: "Crema Nivea 1 litro", presentacion: "Frasco 1 L", categoria: "Cuidado personal",
     cadenas: [],
     proveedores: [
-      { nombre: "Proveedor X", precioUnitario: 6900, minimo: 6, presentacion: "Frasco 1 L", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor X", precioUnitario: 6900, minimo: 6, presentacion: "Frasco 1 L", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", despacho: "Despacho incluido", iva: "incluido", estado: "completa", faltantes: [] },
     ],
   },
   {
     id: "fructis", nombre: "Shampoo Fructis", presentacion: "Frasco 350 ml", categoria: "Cuidado personal",
     cadenas: [],
     proveedores: [
-      { nombre: "Proveedor Y", precioUnitario: 2900, minimo: null, presentacion: "Frasco 350 ml", disponibilidad: "En stock", condiciones: "IVA incluido", estado: "parcial", faltantes: ["Cantidad mínima de compra"] },
+      { nombre: "Proveedor Y", precioUnitario: 2900, minimo: null, presentacion: "Frasco 350 ml", disponibilidad: "En stock", condiciones: "IVA incluido", iva: "incluido", estado: "parcial", faltantes: ["Cantidad mínima de compra"] },
     ],
   },
   {
     id: "encrespador", nombre: "Encrespador", presentacion: "1 unidad", categoria: "Accesorios",
     cadenas: [],
     proveedores: [
-      { nombre: "Proveedor Y", precioUnitario: 8500, minimo: 1, presentacion: "1 unidad", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor Y", precioUnitario: 8500, minimo: 1, presentacion: "1 unidad", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", despacho: "Despacho incluido", iva: "incluido", estado: "completa", faltantes: [] },
     ],
   },
   {
     id: "alcohol", nombre: "Alcohol al 70%", presentacion: "Botella 1 L", categoria: "Insumos",
     cadenas: [],
     proveedores: [
-      { nombre: "Proveedor Z", precioUnitario: null, minimo: null, presentacion: "Botella 1 L", disponibilidad: null, condiciones: "Oferta pendiente de revisión", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Cantidad mínima de compra"] },
-      { nombre: "Proveedor X", precioUnitario: 1800, minimo: 12, presentacion: "Botella 1 L", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor Z", precioUnitario: null, minimo: null, presentacion: "Botella 1 L", disponibilidad: null, condiciones: "Oferta pendiente de revisión", otros: "Oferta pendiente de revisión", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Cantidad mínima de compra"] },
+      { nombre: "Proveedor X", precioUnitario: 1800, minimo: 12, presentacion: "Botella 1 L", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", despacho: "Despacho incluido", iva: "incluido", estado: "completa", faltantes: [] },
     ],
   },
 ];
@@ -163,4 +171,22 @@ export interface AccesoTelegram { nombre: string; usuario: string; rol: "Adminis
 export const accesosTelegramDemo: AccesoTelegram[] = [
   { nombre: "Yarella Fernández", usuario: "@yarella_demo", rol: "Administrador" },
   { nombre: "Químico farmacéutico", usuario: "@qf_demo", rol: "Consulta" },
+];
+
+export interface CotizacionGuardada {
+  id: string; nombre: string; fecha: string;
+  carritos: { proveedor: string; productos: number; subtotal: number | null }[];
+}
+export const cotizacionesGuardadasDemo: CotizacionGuardada[] = [
+  { id: "GUA-004", nombre: "Reposición semanal medicamentos", fecha: "2026-10-29", carritos: [
+    { proveedor: "Proveedor X", productos: 2, subtotal: 27900 },
+    { proveedor: "Proveedor Y", productos: 3, subtotal: null },
+  ] },
+  { id: "GUA-003", nombre: "Cuidado personal noviembre", fecha: "2026-10-26", carritos: [
+    { proveedor: "Cosmética Total", productos: 1, subtotal: 33600 },
+  ] },
+  { id: "GUA-002", nombre: "Insumos y alcohol", fecha: "2026-10-20", carritos: [
+    { proveedor: "Proveedor X", productos: 1, subtotal: 21600 },
+    { proveedor: "Proveedor Z", productos: 1, subtotal: null },
+  ] },
 ];
