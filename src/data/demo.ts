@@ -44,6 +44,7 @@ export const productos: Producto[] = [
     proveedores: [
       { nombre: "Distribuidora Andes", precioUnitario: 2100, minimo: 20, presentacion: "Caja 30 comp.", disponibilidad: "En stock", condiciones: "Despacho 48 h incluido · IVA incluido", estado: "completa", faltantes: [] },
       { nombre: "Droguería Pacífico", precioUnitario: 1950, minimo: null, presentacion: "Caja 30 comp.", disponibilidad: null, condiciones: "Pago a 30 días", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA", "Cantidad mínima de compra"] },
+      { nombre: "Proveedor Y", precioUnitario: 2050, minimo: 10, presentacion: "Caja 30 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
       { nombre: "Laboratorio Sur", precioUnitario: null, minimo: null, presentacion: "Caja 30 comp.", disponibilidad: null, condiciones: "Sin información comercial", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Costo de despacho", "Condiciones de compra"] },
     ],
   },
@@ -56,6 +57,8 @@ export const productos: Producto[] = [
     ],
     proveedores: [
       { nombre: "Distribuidora Andes", precioUnitario: 380, minimo: 100, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor X", precioUnitario: 360, minimo: 20, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor Y", precioUnitario: 340, minimo: null, presentacion: "Caja 16 comp.", disponibilidad: "En stock", condiciones: "Despacho por confirmar", estado: "parcial", faltantes: ["Cantidad mínima de compra", "Costo de despacho"] },
       { nombre: "Droguería Pacífico", precioUnitario: 350, minimo: 50, presentacion: "Caja 16 comp.", disponibilidad: "Stock limitado", condiciones: "Despacho semanal", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA"] },
     ],
   },
@@ -90,6 +93,35 @@ export const productos: Producto[] = [
     proveedores: [
       { nombre: "VetDistribución", precioUnitario: 4900, minimo: 6, presentacion: "1 pipeta", disponibilidad: "En stock", condiciones: "Despacho 72 h incluido · IVA incluido", estado: "completa", faltantes: [] },
       { nombre: "Droguería Pacífico", precioUnitario: 4600, minimo: null, presentacion: "1 pipeta", disponibilidad: null, condiciones: "Sin condiciones informadas", estado: "parcial", faltantes: ["Costo de despacho", "Si el precio incluye IVA", "Cantidad mínima de compra"] },
+    ],
+  },
+  {
+    id: "nivea", nombre: "Crema Nivea 1 litro", presentacion: "Frasco 1 L", categoria: "Cuidado personal",
+    cadenas: [],
+    proveedores: [
+      { nombre: "Proveedor X", precioUnitario: 6900, minimo: 6, presentacion: "Frasco 1 L", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
+    ],
+  },
+  {
+    id: "fructis", nombre: "Shampoo Fructis", presentacion: "Frasco 350 ml", categoria: "Cuidado personal",
+    cadenas: [],
+    proveedores: [
+      { nombre: "Proveedor Y", precioUnitario: 2900, minimo: null, presentacion: "Frasco 350 ml", disponibilidad: "En stock", condiciones: "IVA incluido", estado: "parcial", faltantes: ["Cantidad mínima de compra"] },
+    ],
+  },
+  {
+    id: "encrespador", nombre: "Encrespador", presentacion: "1 unidad", categoria: "Accesorios",
+    cadenas: [],
+    proveedores: [
+      { nombre: "Proveedor Y", precioUnitario: 8500, minimo: 1, presentacion: "1 unidad", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
+    ],
+  },
+  {
+    id: "alcohol", nombre: "Alcohol al 70%", presentacion: "Botella 1 L", categoria: "Insumos",
+    cadenas: [],
+    proveedores: [
+      { nombre: "Proveedor Z", precioUnitario: null, minimo: null, presentacion: "Botella 1 L", disponibilidad: null, condiciones: "Oferta pendiente de revisión", estado: "pendiente", faltantes: ["Precio unitario", "Disponibilidad", "Cantidad mínima de compra"] },
+      { nombre: "Proveedor X", precioUnitario: 1800, minimo: 12, presentacion: "Botella 1 L", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", estado: "completa", faltantes: [] },
     ],
   },
 ];

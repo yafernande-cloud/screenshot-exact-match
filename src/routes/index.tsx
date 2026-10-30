@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { Search, Store, Truck, MessageSquarePlus, X, Minus, Plus, ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Search, Store, Truck, MessageSquarePlus, X, Minus, Plus, ChevronDown, ShoppingCart, Check } from "lucide-react";
 import { productos, clp, cadenasInfo, totalProveedor, type Producto, type Estado, type Proveedor } from "@/data/demo";
+import { agregar, cambiarCantidad, carritoInicial, mover, quitar, vaciar, type Linea } from "@/lib/cotizacion";
+import { PanelCotizacion, CotizacionMovil, type CotizacionAcciones } from "@/components/MiCotizacion";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,6 +35,35 @@ function Index() {
   const [sel, setSel] = useState<Producto | null>(null);
   const [cantidad, setCantidad] = useState(1);
   const [notes, setNotes] = useState<{ target: string; text: string }[]>([]);
+  const [lineas, setLineas] = useState<Linea[]>(carritoInicial);
+  const [cargado, setCargado] = useState(false);
+
+  useEffect(() => {
+    try {
+      const guardado = sessionStorage.getItem("cotizacion-demo");
+      if (guardado) setLineas(JSON.parse(guardado));
+    } catch { /* datos de demo: si falla, se usa el carrito inicial */ }
+    setCargado(true);
+  }, []);
+  useEffect(() => {
+    if (cargado) sessionStorage.setItem("cotizacion-demo", JSON.stringify(lineas));
+  }, [lineas, cargado]);
+
+  const acciones: CotizacionAcciones = {
+    lineas,
+    onCantidad: (id, prov, c) => setLineas((ls) => cambiarCantidad(ls, id, prov, c)),
+    onQuitar: (id, prov) => setLineas((ls) => quitar(ls, id, prov)),
+    onVaciar: (prov) => setLineas((ls) => vaciar(ls, prov)),
+    onMover: (id, desde, hacia) => {
+      setLineas((ls) => mover(ls, id, desde, hacia));
+      toast(`Producto movido a ${hacia}`);
+    },
+  };
+  const agregarACotizacion = (p: Producto, prov: string) => {
+    const existia = lineas.some((l) => l.productoId === p.id && l.proveedor === prov);
+    setLineas((ls) => agregar(ls, p.id, prov, cantidad));
+    toast.success(existia ? `Cantidad actualizada: ${cantidad} u. en ${prov}` : `${p.nombre} agregado a ${prov}`);
+  };
 
   const sugerencias = useMemo(
     () => (q.trim() ? productos.filter((p) => norm(p.nombre + " " + p.categoria).includes(norm(q.trim()))) : productos),
@@ -39,7 +71,8 @@ function Index() {
   );
 
   return (
-    <div className="min-h-screen bg-hero">
+    <div className="flex min-h-screen bg-hero">
+     <div className="min-w-0 flex-1">
       <header className="px-6 py-5 text-sm font-medium text-primary-foreground/90">Cotizador inteligente para farmacia</header>
 
       <main className="mx-auto max-w-5xl px-4 pb-24">
@@ -102,7 +135,8 @@ function Index() {
                 <h3 className="text-lg font-semibold">Precios en cadenas de farmacias</h3>
               </div>
               <p className="mb-4 text-sm text-muted-foreground">Fichas y precios ficticios de demostración, referenciales de venta al público. No son costos de abastecimiento.</p>
-              <div className="grid gap-4 lg:grid-cols-2">
+              {sel.cadenas.length === 0 && <p className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">Sin precios de cadenas para este producto en los datos de demostración.</p>}
+              <div className="grid gap-4 xl:grid-cols-2">
                 {sel.cadenas.map((c) => {
                   const info = cadenasInfo[c.id];
                   return (
@@ -148,7 +182,9 @@ function Index() {
                 {sel.proveedores.some((p) => p.estado !== "completa") && " Hay información incompleta: no es posible determinar cuál es el más conveniente."}
               </p>
               <div className="divide-y">
-                {sel.proveedores.map((p) => <ProveedorFila key={p.nombre} p={p} cantidad={cantidad} />)}
+                {sel.proveedores.map((p) => (
+                  <ProveedorFila key={p.nombre} p={p} cantidad={cantidad} enCarrito={lineas.find((l) => l.productoId === sel.id && l.proveedor === p.nombre)?.cantidad} onAgregar={() => agregarACotizacion(sel, p.nombre)} />
+                ))}
               </div>
             </section>
 
@@ -156,11 +192,14 @@ function Index() {
           </div>
         )}
       </main>
+     </div>
+      <PanelCotizacion {...acciones} />
+      <CotizacionMovil {...acciones} />
     </div>
   );
 }
 
-function ProveedorFila({ p, cantidad }: { p: Proveedor; cantidad: number }) {
+function ProveedorFila({ p, cantidad, enCarrito, onAgregar }: { p: Proveedor; cantidad: number; enCarrito?: number | undefined; onAgregar: () => void }) {
   const [open, setOpen] = useState(false);
   const t = totalProveedor(p, cantidad);
   return (
@@ -199,6 +238,16 @@ function ProveedorFila({ p, cantidad }: { p: Proveedor; cantidad: number }) {
           <p className="mt-2 text-xs text-muted-foreground">
             {"total" in t ? <>Total {cantidad} u.: <span className="font-medium text-foreground">{clp(t.total)}</span></> : t.pendiente}
           </p>
+          <button
+            onClick={onAgregar}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-brand-green/40 px-3 py-1.5 text-xs font-medium text-brand-green hover:bg-brand-green/10"
+          >
+            <ShoppingCart className="h-3.5 w-3.5" />
+            {enCarrito === undefined ? "Agregar a cotización" : enCarrito === cantidad ? "En cotización" : "Actualizar cantidad"}
+          </button>
+          {enCarrito !== undefined && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground md:justify-end"><Check className="h-3 w-3 text-brand-green" /> {enCarrito} u. en tu cotización</p>
+          )}
         </div>
       </div>
       {p.faltantes.length > 0 && (
