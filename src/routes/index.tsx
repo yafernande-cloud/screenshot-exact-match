@@ -5,6 +5,7 @@ import { Search, Store, Truck, MessageSquarePlus, X, Minus, Plus, ChevronDown, S
 import { productos, clp, cadenasInfo, totalProveedor, type Producto, type Estado, type Proveedor } from "@/data/demo";
 import { agregar, cambiarCantidad, carritoInicial, mover, quitar, vaciar, type Linea } from "@/lib/cotizacion";
 import { SeccionCotizaciones, type CotizacionAcciones } from "@/components/MiCotizacion";
+import { MenuPrincipal } from "@/components/MenuPrincipal";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,7 +33,7 @@ const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").t
 function Index() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [sel, setSel] = useState<Producto | null>(null);
+  const [sel, setSel] = useState<Producto | null>(productos[0] ?? null);
   const [cantidad, setCantidad] = useState(1);
   const [notes, setNotes] = useState<{ target: string; text: string }[]>([]);
   const [lineas, setLineas] = useState<Linea[]>(carritoInicial);
@@ -72,10 +73,10 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-hero">
-      <header className="px-6 py-5 text-sm font-medium text-primary-foreground/90">Cotizador inteligente para farmacia</header>
+      <MenuPrincipal />
 
       <main className="mx-auto max-w-5xl px-4 pb-24">
-        <section className="flex flex-col items-center pt-16 pb-12">
+        <section className="flex flex-col items-center pt-12 pb-10">
           <h1 className="mb-8 text-center text-4xl font-semibold tracking-tight text-primary-foreground md:text-5xl">¿Qué estás buscando?</h1>
           <div className="relative w-full max-w-2xl">
             <div className="flex items-center gap-3 rounded-full bg-card px-5 py-4 shadow-soft">
@@ -110,6 +111,40 @@ function Index() {
           <p className="mt-4 text-xs text-primary-foreground/80">Prototipo con datos ficticios de demostración</p>
         </section>
 
+        <section className="mb-10 rounded-3xl border bg-card p-6" aria-label="Resultados de búsqueda">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-lg font-semibold">Resultados de búsqueda</h3>
+            <span className="text-xs text-muted-foreground">
+              {q.trim() ? `${sugerencias.length} para «${q.trim()}»` : `${productos.length} productos de demostración`}
+            </span>
+          </div>
+          {sugerencias.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin resultados en los datos de demostración.</p>
+          ) : (
+            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {sugerencias.map((p) => {
+                const activo = sel?.id === p.id;
+                return (
+                  <li key={p.id}>
+                    <button
+                      onClick={() => setSel(p)}
+                      aria-pressed={activo}
+                      className={`flex w-full flex-col rounded-2xl border px-4 py-3 text-left transition-colors ${activo ? "border-brand-green bg-brand-green/5" : "hover:bg-muted"}`}
+                    >
+                      <span className="font-medium">{p.nombre}</span>
+                      <span className="text-xs text-muted-foreground">{p.presentacion} · {p.categoria}</span>
+                      <span className="mt-1 text-xs text-muted-foreground">
+                        {p.proveedores.length} {p.proveedores.length === 1 ? "proveedor" : "proveedores"} · {p.cadenas.length} {p.cadenas.length === 1 ? "cadena" : "cadenas"}
+                        {activo && <span className="ml-1 font-medium text-brand-green">· Comparando</span>}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
         {sel && (
           <div className="space-y-10">
             <div className="rounded-2xl border bg-card p-6 shadow-soft">
@@ -128,10 +163,27 @@ function Index() {
               </div>
             </div>
 
+            <section className="rounded-3xl border bg-card p-6">
+              <div className="mb-1 flex items-center gap-2">
+                <Truck className="h-5 w-5 text-brand-green" />
+                <h3 className="text-lg font-semibold">Comparación de ofertas por proveedor</h3>
+              </div>
+              <p className="mb-5 text-sm text-muted-foreground">
+                Precio unitario informado por cada proveedor (datos de demostración). El total solo se muestra cuando la información está completa.
+                {sel.proveedores.some((p) => p.estado !== "completa") && " Hay información incompleta: no es posible determinar cuál es el más conveniente."}
+              </p>
+              <div className="divide-y">
+                {sel.proveedores.map((p) => (
+                  <ProveedorFila key={p.nombre} p={p} cantidad={cantidad} enCarrito={lineas.find((l) => l.productoId === sel.id && l.proveedor === p.nombre)?.cantidad} onAgregar={() => agregarACotizacion(sel, p.nombre)} />
+                ))}
+              </div>
+            </section>
+
             <section>
               <div className="mb-4 flex items-center gap-2">
                 <Store className="h-5 w-5 text-brand-blue" />
-                <h3 className="text-lg font-semibold">Precios en cadenas de farmacias</h3>
+                <h3 className="text-lg font-semibold">Precios públicos en cadenas de farmacias</h3>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Solo referencia</span>
               </div>
               <p className="mb-4 text-sm text-muted-foreground">Fichas y precios ficticios de demostración, referenciales de venta al público. No son costos de abastecimiento.</p>
               {sel.cadenas.length === 0 && <p className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">Sin precios de cadenas para este producto en los datos de demostración.</p>}
@@ -168,22 +220,6 @@ function Index() {
                     </div>
                   );
                 })}
-              </div>
-            </section>
-
-            <section className="rounded-3xl border bg-card p-6">
-              <div className="mb-1 flex items-center gap-2">
-                <Truck className="h-5 w-5 text-brand-green" />
-                <h3 className="text-lg font-semibold">Proveedores</h3>
-              </div>
-              <p className="mb-5 text-sm text-muted-foreground">
-                Precio unitario informado por cada proveedor (datos de demostración). El total solo se muestra cuando la información está completa.
-                {sel.proveedores.some((p) => p.estado !== "completa") && " Hay información incompleta: no es posible determinar cuál es el más conveniente."}
-              </p>
-              <div className="divide-y">
-                {sel.proveedores.map((p) => (
-                  <ProveedorFila key={p.nombre} p={p} cantidad={cantidad} enCarrito={lineas.find((l) => l.productoId === sel.id && l.proveedor === p.nombre)?.cantidad} onAgregar={() => agregarACotizacion(sel, p.nombre)} />
-                ))}
               </div>
             </section>
 
