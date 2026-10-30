@@ -172,3 +172,21 @@ export const accesosTelegramDemo: AccesoTelegram[] = [
   { nombre: "Yarella Fernández", usuario: "@yarella_demo", rol: "Administrador" },
   { nombre: "Químico farmacéutico", usuario: "@qf_demo", rol: "Consulta" },
 ];
+
+export interface CotizacionGuardada {
+  id: string; nombre: string; fecha: string;
+  carritos: { proveedor: string; productos: number; subtotal: number | null }[];
+}
+export const cotizacionesGuardadasDemo: CotizacionGuardada[] = [
+  { id: "GUA-004", nombre: "Reposición semanal medicamentos", fecha: "2026-10-29", carritos: [
+    { proveedor: "Proveedor X", productos: 2, subtotal: 27900 },
+    { proveedor: "Proveedor Y", productos: 3, subtotal: null },
+  ] },
+  { id: "GUA-003", nombre: "Cuidado personal noviembre", fecha: "2026-10-26", carritos: [
+    { proveedor: "Cosmética Total", productos: 1, subtotal: 33600 },
+  ] },
+  { id: "GUA-002", nombre: "Insumos y alcohol", fecha: "2026-10-20", carritos: [
+    { proveedor: "Proveedor X", productos: 1, subtotal: 21600 },
+    { proveedor: "Proveedor Z", productos: 1, subtotal: null },
+  ] },
+];

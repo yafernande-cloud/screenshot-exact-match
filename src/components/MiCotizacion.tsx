@@ -43,7 +43,7 @@ export function SeccionCotizaciones(props: CotizacionAcciones) {
       {lineas.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
           <ShoppingCart className="h-8 w-8" />
-          Aún no has agregado productos. Busca un producto y usa «Agregar a cotización» en la sección Proveedores.
+          Aún no has agregado productos. Busca un producto y usa «Agregar a cotización» en la ficha de un proveedor.
         </div>
       ) : (
         <>
@@ -126,6 +126,7 @@ function LineaItem({ l, onCantidad, onQuitar, onMover }: { l: Linea } & Cotizaci
           <p className="text-xs text-muted-foreground">
             {r.oferta.precioUnitario !== null ? `${clp(r.oferta.precioUnitario)} c/u` : "Sin precio informado"} · {r.oferta.presentacion}
           </p>
+          <p className="text-xs text-muted-foreground">Condiciones: {r.oferta.condiciones}</p>
         </div>
         <button onClick={() => onQuitar(l.productoId, l.proveedor)} aria-label={`Quitar ${r.producto.nombre}`} className="p-1 text-muted-foreground hover:text-destructive">
           <Trash2 className="h-4 w-4" />
