@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Search, Store, Truck, MessageSquarePlus, X, Minus, Plus, ChevronDown, ShoppingCart, Check } from "lucide-react";
 import { productos, clp, cadenasInfo, totalProveedor, type Producto, type Estado, type Proveedor } from "@/data/demo";
 import { agregar, cambiarCantidad, carritoInicial, mover, quitar, vaciar, type Linea } from "@/lib/cotizacion";
-import { PanelCotizacion, CotizacionMovil, type CotizacionAcciones } from "@/components/MiCotizacion";
+import { SeccionCotizaciones, type CotizacionAcciones } from "@/components/MiCotizacion";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -71,8 +71,7 @@ function Index() {
   );
 
   return (
-    <div className="flex min-h-screen bg-hero">
-     <div className="min-w-0 flex-1">
+    <div className="min-h-screen bg-hero">
       <header className="px-6 py-5 text-sm font-medium text-primary-foreground/90">Cotizador inteligente para farmacia</header>
 
       <main className="mx-auto max-w-5xl px-4 pb-24">
@@ -136,7 +135,7 @@ function Index() {
               </div>
               <p className="mb-4 text-sm text-muted-foreground">Fichas y precios ficticios de demostración, referenciales de venta al público. No son costos de abastecimiento.</p>
               {sel.cadenas.length === 0 && <p className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">Sin precios de cadenas para este producto en los datos de demostración.</p>}
-              <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid gap-4 lg:grid-cols-2">
                 {sel.cadenas.map((c) => {
                   const info = cadenasInfo[c.id];
                   return (
@@ -191,10 +190,11 @@ function Index() {
             <Observaciones sel={sel} notes={notes} onAdd={(n) => setNotes([...notes, n])} />
           </div>
         )}
+
+        <div className={sel ? "mt-10" : ""}>
+          <SeccionCotizaciones {...acciones} />
+        </div>
       </main>
-     </div>
-      <PanelCotizacion {...acciones} />
-      <CotizacionMovil {...acciones} />
     </div>
   );
 }

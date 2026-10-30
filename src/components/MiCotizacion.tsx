@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { ShoppingCart, ChevronDown, ChevronsRight, ChevronsLeft, Minus, Plus, Trash2, AlertTriangle, Clock } from "lucide-react";
+import { ShoppingCart, ChevronDown, Minus, Plus, Trash2, AlertTriangle, Clock } from "lucide-react";
 import { clp } from "@/data/demo";
 import {
   agrupar, buscarOferta, evaluarLinea, proveedoresCon, resumen, subtotalProveedor, type Linea,
 } from "@/lib/cotizacion";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -20,76 +19,83 @@ export interface CotizacionAcciones {
 
 const iniciales = (n: string) => n.split(" ").map((w) => w[0]).slice(0, 2).join("");
 
-function Contenido(props: CotizacionAcciones) {
+/** Sección «Mis cotizaciones»: un contenedor independiente por proveedor, al final de la página. */
+export function SeccionCotizaciones(props: CotizacionAcciones) {
   const { lineas } = props;
   const grupos = agrupar(lineas);
   const r = resumen(lineas);
   const [cerrados, setCerrados] = useState<string[]>([]);
   const [vaciarProv, setVaciarProv] = useState<string | null>(null);
 
-  if (lineas.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-        <ShoppingCart className="h-8 w-8" />
-        Aún no hay productos. Usa «Agregar a cotización» en la sección Proveedores.
-      </div>
-    );
-  }
-
   return (
-    <>
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {grupos.map((g) => {
-          const abierto = !cerrados.includes(g.proveedor);
-          const sub = subtotalProveedor(lineas, g.proveedor);
-          return (
-            <div key={g.proveedor} className="rounded-xl border bg-card">
-              <button
-                onClick={() => setCerrados(abierto ? [...cerrados, g.proveedor] : cerrados.filter((c) => c !== g.proveedor))}
-                className="flex w-full items-center gap-3 p-3 text-left"
-                aria-expanded={abierto}
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-brand-blue">{iniciales(g.proveedor)}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{g.proveedor}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {g.lineas.length} {g.lineas.length === 1 ? "producto" : "productos"} ·{" "}
-                    {sub !== null ? <span className="font-medium text-brand-green">{clp(sub)}</span> : "Subtotal pendiente"}
-                  </p>
-                </div>
-                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${abierto ? "rotate-180" : ""}`} />
-              </button>
-              {abierto && (
-                <div className="border-t">
-                  <ul className="divide-y">
-                    {g.lineas.map((l) => <LineaItem key={l.productoId} l={l} {...props} />)}
-                  </ul>
-                  <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
-                    <button onClick={() => setVaciarProv(g.proveedor)} className="text-muted-foreground hover:text-destructive">Vaciar carrito</button>
-                    {sub !== null ? <span>Subtotal: <span className="font-semibold text-foreground">{clp(sub)}</span></span> : <span className="text-muted-foreground">Subtotal pendiente</span>}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="space-y-1 border-t p-4 text-sm">
-        <div className="flex justify-between text-muted-foreground"><span>Productos</span><span>{r.productos}</span></div>
-        <div className="flex justify-between text-muted-foreground"><span>Proveedores</span><span>{r.proveedores}</span></div>
-        {r.total !== null ? (
-          <div className="flex justify-between pt-1 font-semibold"><span>Total referencial</span><span className="text-brand-green">{clp(r.total)}</span></div>
-        ) : (
-          <>
-            {r.confirmado > 0 && <div className="flex justify-between"><span>Subtotales completos</span><span className="font-medium">{clp(r.confirmado)}</span></div>}
-            <p className="pt-1 text-xs text-muted-foreground">
-              Total general pendiente: {r.pendientes} {r.pendientes === 1 ? "carrito tiene" : "carritos tienen"} información incompleta.
-            </p>
-          </>
+    <section className="rounded-3xl border bg-card p-6">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <ShoppingCart className="h-5 w-5 text-brand-blue" />
+        <h3 className="text-lg font-semibold">Mis cotizaciones</h3>
+        {lineas.length > 0 && (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {r.productos} {r.productos === 1 ? "producto" : "productos"} · {r.proveedores} {r.proveedores === 1 ? "proveedor" : "proveedores"}
+          </span>
         )}
-        <p className="pt-1 text-[11px] text-muted-foreground">Cotización en preparación · datos de demostración</p>
       </div>
+      <p className="mb-5 text-sm text-muted-foreground">Cotización en preparación, separada por proveedor (datos de demostración). Los subtotales solo se muestran cuando la información está completa.</p>
+
+      {lineas.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+          <ShoppingCart className="h-8 w-8" />
+          Aún no has agregado productos. Busca un producto y usa «Agregar a cotización» en la sección Proveedores.
+        </div>
+      ) : (
+        <>
+          <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {grupos.map((g) => {
+              const abierto = !cerrados.includes(g.proveedor);
+              const sub = subtotalProveedor(lineas, g.proveedor);
+              return (
+                <div key={g.proveedor} className="rounded-2xl border bg-card">
+                  <button
+                    onClick={() => setCerrados(abierto ? [...cerrados, g.proveedor] : cerrados.filter((c) => c !== g.proveedor))}
+                    className="flex w-full items-center gap-3 p-4 text-left"
+                    aria-expanded={abierto}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-sm font-semibold text-brand-blue">{iniciales(g.proveedor)}</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{g.proveedor} <span className="text-xs font-normal text-muted-foreground">(demo)</span></p>
+                      <p className="text-xs text-muted-foreground">
+                        {g.lineas.length} {g.lineas.length === 1 ? "producto" : "productos"} ·{" "}
+                        {sub !== null ? <span className="font-medium text-brand-green">{clp(sub)}</span> : "Subtotal pendiente"}
+                      </p>
+                    </div>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${abierto ? "rotate-180" : ""}`} />
+                  </button>
+                  {abierto && (
+                    <div className="border-t">
+                      <ul className="divide-y">
+                        {g.lineas.map((l) => <LineaItem key={l.productoId} l={l} {...props} />)}
+                      </ul>
+                      <div className="flex items-center justify-between border-t px-4 py-3 text-sm">
+                        <button onClick={() => setVaciarProv(g.proveedor)} className="text-xs text-muted-foreground hover:text-destructive">Vaciar carrito</button>
+                        {sub !== null ? <span>Subtotal: <span className="font-semibold text-brand-green">{clp(sub)}</span></span> : <span className="text-muted-foreground">Subtotal pendiente</span>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-muted px-4 py-3 text-sm">
+            {r.total !== null ? (
+              <span className="font-semibold">Total referencial: <span className="text-brand-green">{clp(r.total)}</span></span>
+            ) : (
+              <span className="text-muted-foreground">
+                Total general pendiente: {r.pendientes} {r.pendientes === 1 ? "carrito tiene" : "carritos tienen"} información incompleta.
+              </span>
+            )}
+            {r.total === null && r.confirmado > 0 && <span>Subtotales completos: <span className="font-medium">{clp(r.confirmado)}</span></span>}
+          </div>
+        </>
+      )}
 
       <AlertDialog open={vaciarProv !== null} onOpenChange={(o) => !o && setVaciarProv(null)}>
         <AlertDialogContent>
@@ -103,7 +109,7 @@ function Contenido(props: CotizacionAcciones) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </section>
   );
 }
 
@@ -113,7 +119,7 @@ function LineaItem({ l, onCantidad, onQuitar, onMover }: { l: Linea } & Cotizaci
   const e = evaluarLinea(l);
   const otros = proveedoresCon(l.productoId).filter((p) => p !== l.proveedor);
   return (
-    <li className="space-y-2 px-3 py-3">
+    <li className="space-y-2 px-4 py-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium leading-snug">{r.producto.nombre}</p>
@@ -155,67 +161,5 @@ function LineaItem({ l, onCantidad, onQuitar, onMover }: { l: Linea } & Cotizaci
         </select>
       )}
     </li>
-  );
-}
-
-function Contador({ n }: { n: number }) {
-  return <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-green px-1.5 text-[11px] font-semibold text-primary-foreground">{n}</span>;
-}
-
-/** Panel lateral en escritorio; ocupa su propio espacio para no tapar los resultados. */
-export function PanelCotizacion(props: CotizacionAcciones) {
-  const [abierto, setAbierto] = useState(true);
-  const n = props.lineas.length;
-  if (!abierto) {
-    return (
-      <aside className="sticky top-0 hidden h-screen w-14 shrink-0 flex-col items-center gap-3 border-l bg-card py-5 lg:flex">
-        <button onClick={() => setAbierto(true)} aria-label="Expandir Mi cotización" className="flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ChevronsLeft className="h-4 w-4" />
-          <ShoppingCart className="h-5 w-5 text-brand-blue" />
-          <Contador n={n} />
-        </button>
-      </aside>
-    );
-  }
-  return (
-    <aside className="sticky top-0 hidden h-screen w-[340px] shrink-0 flex-col border-l bg-background lg:flex">
-      <div className="flex items-center justify-between border-b px-4 py-4">
-        <div className="flex items-center gap-2">
-          <ShoppingCart className="h-5 w-5 text-brand-blue" />
-          <h2 className="font-semibold">Mi cotización</h2>
-          <Contador n={n} />
-        </div>
-        <button onClick={() => setAbierto(false)} aria-label="Contraer Mi cotización" className="p-1 text-muted-foreground hover:text-foreground">
-          <ChevronsRight className="h-4 w-4" />
-        </button>
-      </div>
-      <Contenido {...props} />
-    </aside>
-  );
-}
-
-/** Botón flotante y panel deslizable en pantallas pequeñas. */
-export function CotizacionMovil(props: CotizacionAcciones) {
-  const [abierto, setAbierto] = useState(false);
-  return (
-    <>
-      <button
-        onClick={() => setAbierto(true)}
-        aria-label="Abrir Mi cotización"
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-soft lg:hidden"
-      >
-        <ShoppingCart className="h-5 w-5" />
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-foreground px-1.5 text-[11px] font-semibold text-primary">{props.lineas.length}</span>
-      </button>
-      <Sheet open={abierto} onOpenChange={setAbierto}>
-        <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-sm">
-          <SheetHeader className="border-b p-4 text-left">
-            <SheetTitle>Mi cotización</SheetTitle>
-            <SheetDescription>{props.lineas.length} productos agrupados por proveedor</SheetDescription>
-          </SheetHeader>
-          <Contenido {...props} />
-        </SheetContent>
-      </Sheet>
-    </>
   );
 }
