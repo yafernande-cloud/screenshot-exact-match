@@ -66,10 +66,7 @@ function Contenido(props: CotizacionAcciones) {
                   </ul>
                   <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
                     <button onClick={() => setVaciarProv(g.proveedor)} className="text-muted-foreground hover:text-destructive">Vaciar carrito</button>
-                    <span>
-                      Subtotal:{" "}
-                      {sub !== null ? <span className="font-semibold text-foreground">{clp(sub)}</span> : <span className="text-muted-foreground">Subtotal pendiente</span>}
-                    </span>
+                    {sub !== null ? <span>Subtotal: <span className="font-semibold text-foreground">{clp(sub)}</span></span> : <span className="text-muted-foreground">Subtotal pendiente</span>}
                   </div>
                 </div>
               )}
