@@ -134,3 +134,33 @@ export function totalProveedor(p: Proveedor, cantidad: number): { total: number 
   if (p.minimo !== null && cantidad < p.minimo) return { pendiente: `Total pendiente: mínimo ${p.minimo} unidades` };
   return { total: p.precioUnitario * cantidad };
 }
+
+/* ---------- Datos de demostración para Historial, Proveedores y Telegram ---------- */
+
+export interface CotizacionHistorial {
+  id: string; fecha: string; proveedor: string; productos: number; total: number | null;
+  estado: "Enviada" | "Borrador" | "Respondida";
+}
+export const historialDemo: CotizacionHistorial[] = [
+  { id: "COT-0012", fecha: "2026-10-28", proveedor: "Proveedor X", productos: 4, total: 48600, estado: "Respondida" },
+  { id: "COT-0011", fecha: "2026-10-24", proveedor: "Distribuidora Andes", productos: 6, total: 132400, estado: "Enviada" },
+  { id: "COT-0010", fecha: "2026-10-21", proveedor: "Proveedor Y", productos: 3, total: null, estado: "Borrador" },
+  { id: "COT-0009", fecha: "2026-10-15", proveedor: "Droguería Pacífico", productos: 5, total: null, estado: "Enviada" },
+  { id: "COT-0008", fecha: "2026-10-09", proveedor: "Cosmética Total", productos: 2, total: 33600, estado: "Respondida" },
+];
+
+export interface ProveedorAdmin { nombre: string; contacto: string; telefono: string; activo: boolean }
+export const proveedoresAdminDemo: ProveedorAdmin[] = Array.from(
+  new Set(productos.flatMap((p) => p.proveedores.map((o) => o.nombre))),
+).map((nombre, i) => ({
+  nombre,
+  contacto: `ventas@${nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]+/g, "")}.demo`,
+  telefono: `+56 9 0000 00${String(i + 10)}`,
+  activo: nombre !== "Laboratorio Sur",
+}));
+
+export interface AccesoTelegram { nombre: string; usuario: string; rol: "Administrador" | "Consulta" }
+export const accesosTelegramDemo: AccesoTelegram[] = [
+  { nombre: "Yarella Fernández", usuario: "@yarella_demo", rol: "Administrador" },
+  { nombre: "Químico farmacéutico", usuario: "@qf_demo", rol: "Consulta" },
+];
