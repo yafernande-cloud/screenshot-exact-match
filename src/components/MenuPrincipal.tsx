@@ -22,7 +22,7 @@ export function MenuPrincipal() {
         <Link to="/" className="text-sm font-semibold text-primary-foreground">Cotizador inteligente para farmacia</Link>
         <nav className="hidden items-center gap-1 md:flex" aria-label="Menú principal">
           {opciones.map((o) => (
-            <Link key={o.to} to={o.to} className={inactivo} activeProps={{ className: activo }} activeOptions={{ exact: true }}>
+            <Link key={o.to} to={o.to} activeProps={{ className: activo }} inactiveProps={{ className: inactivo }} activeOptions={{ exact: true }}>
               {o.label}
             </Link>
           ))}
@@ -38,8 +38,8 @@ export function MenuPrincipal() {
               key={o.to}
               to={o.to}
               onClick={() => setAbierto(false)}
-              className="rounded-xl px-3 py-2 text-sm text-foreground hover:bg-muted"
-              activeProps={{ className: "bg-muted font-medium" }}
+              activeProps={{ className: "rounded-xl bg-muted px-3 py-2 text-sm font-medium text-foreground" }}
+              inactiveProps={{ className: "rounded-xl px-3 py-2 text-sm text-foreground hover:bg-muted" }}
               activeOptions={{ exact: true }}
             >
               {o.label}
