@@ -223,7 +223,7 @@ function Index() {
               </div>
             </section>
 
-            <Observaciones sel={sel} notes={notes} onAdd={(n) => setNotes([...notes, n])} />
+            <Observaciones key={sel.id} sel={sel} notes={notes} onAdd={(n) => setNotes([...notes, n])} />
           </div>
         )}
 
