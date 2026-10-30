@@ -34,14 +34,16 @@ export function AppSidebar() {
               {opcionesMenu.map((o) => {
                 const activo = ruta === o.to;
                 return (
-                  <SidebarMenuButton key={o.to} asChild isActive={activo} tooltip={o.label} className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary">
+                  <SidebarMenuItem key={o.to}>
+                  <SidebarMenuButton asChild isActive={activo} tooltip={o.label} className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary">
                     <Link to={o.to} onClick={() => isMobile && setOpenMobile(false)}>
                       <o.icon className="h-4 w-4" />
                       <span>{o.label}</span>
                     </Link>
                   </SidebarMenuButton>
+                  </SidebarMenuItem>
                 );
-              }).map((btn, i) => <SidebarMenuItem key={opcionesMenu[i]!.to}>{btn}</SidebarMenuItem>)}
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
