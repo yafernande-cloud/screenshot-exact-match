@@ -199,7 +199,7 @@ function Index() {
   );
 }
 
-function ProveedorFila({ p, cantidad, enCarrito, onAgregar }: { p: Proveedor; cantidad: number; enCarrito?: number; onAgregar: () => void }) {
+function ProveedorFila({ p, cantidad, enCarrito, onAgregar }: { p: Proveedor; cantidad: number; enCarrito?: number | undefined; onAgregar: () => void }) {
   const [open, setOpen] = useState(false);
   const t = totalProveedor(p, cantidad);
   return (
