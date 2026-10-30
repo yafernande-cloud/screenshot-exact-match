@@ -122,19 +122,19 @@ function Index() {
         {sel && (
           <div className="space-y-10">
             {/* 1. Precios públicos de cadenas: solo referencia, sin acciones de compra */}
-            <section>
+            <section className="rounded-3xl border bg-card p-6">
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <Store className="h-5 w-5 text-brand-blue" />
                 <h2 className="text-lg font-semibold">Precios públicos de cadenas farmacéuticas</h2>
                 <span className="text-sm text-muted-foreground">· {sel.nombre}</span>
               </div>
               <p className="mb-4 text-sm text-muted-foreground">Precios ficticios de demostración, referenciales de venta al público. No son ofertas de abastecimiento.</p>
-              {sel.cadenas.length === 0 && <p className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">Sin precios de cadenas para este producto en los datos de demostración.</p>}
+              {sel.cadenas.length === 0 && <p className="rounded-2xl border p-4 text-sm text-muted-foreground">Sin precios de cadenas para este producto en los datos de demostración.</p>}
               <div className="grid gap-4 lg:grid-cols-2">
                 {sel.cadenas.map((c) => {
                   const info = cadenasInfo[c.id];
                   return (
-                    <div key={c.id} className="flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:flex-row">
+                    <div key={c.id} className="flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row">
                       <div className="flex h-36 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted sm:h-auto sm:w-32">
                         {c.imagen ? (
                           <img src={c.imagen} alt={c.nombreComercial} className="h-full w-full object-contain" />
