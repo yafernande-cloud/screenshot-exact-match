@@ -15,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { SolicitudesProvider } from "@/components/SolicitudesAcceso";
 
 function NotFoundComponent() {
   return (
@@ -124,6 +125,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <SolicitudesProvider>
       <SidebarProvider defaultOpen={false}>
         <div className="flex min-h-screen w-full">
           <AppSidebar />
@@ -133,6 +135,7 @@ function RootComponent() {
           </div>
         </div>
       </SidebarProvider>
+      </SolicitudesProvider>
       <Toaster position="bottom-center" />
     </QueryClientProvider>
   );

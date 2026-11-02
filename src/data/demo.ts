@@ -132,6 +132,14 @@ export const productos: Producto[] = [
       { nombre: "Proveedor X", precioUnitario: 1800, minimo: 12, presentacion: "Botella 1 L", disponibilidad: "En stock", condiciones: "Despacho incluido · IVA incluido", despacho: "Despacho incluido", iva: "incluido", estado: "completa", faltantes: [] },
     ],
   },
+  {
+    id: "omeprazol", nombre: "Omeprazol 20 mg", presentacion: "Caja 30 cápsulas", categoria: "Medicamento",
+    cadenas: [],
+    proveedores: [
+      { nombre: "Distribuidora Andes", precioUnitario: 1450, minimo: 10, presentacion: "Caja 30 cáps.", disponibilidad: "En stock", condiciones: "Despacho 48 h incluido · IVA incluido", laboratorio: "Laboratorio Chile", despacho: "Despacho 48 h incluido", iva: "incluido", estado: "completa", faltantes: [] },
+      { nombre: "Proveedor X", precioUnitario: 1390, minimo: null, presentacion: "Caja 30 cáps.", disponibilidad: "Stock limitado", condiciones: "IVA incluido", laboratorio: "Laboratorio Saval", iva: "incluido", estado: "parcial", faltantes: ["Costo de despacho", "Cantidad mínima de compra"] },
+    ],
+  },
 ];
 
 export const clp = (n: number) => "$" + n.toLocaleString("es-CL");
@@ -189,4 +197,29 @@ export const cotizacionesGuardadasDemo: CotizacionGuardada[] = [
     { proveedor: "Proveedor X", productos: 1, subtotal: 21600 },
     { proveedor: "Proveedor Z", productos: 1, subtotal: null },
   ] },
+];
+
+/** Administrador de demostración (en el futuro vendrá de la sesión con Google). */
+export const adminDemo = { usuarioId: "adm-demo-1", nombre: "Pao" };
+
+/** Reporte individual de un auxiliar vía Telegram. Varios reportes pueden compartir un ciclo de faltante. */
+export interface ReporteFaltante {
+  reporteId: string; cicloId: string; productoId: string | null;
+  medicamento: string; presentacion: string | null; auxiliar: string;
+  cantidad: number; unidad: string; estado: "pendiente"; fecha: string;
+}
+export const faltantesDemo: ReporteFaltante[] = [
+  { reporteId: "rep-001", cicloId: "cic-losartan-01", productoId: "losartan", medicamento: "Losartán 50 mg", presentacion: "Caja 30 comprimidos", auxiliar: "Juanito Pérez", cantidad: 10, unidad: "cajas", estado: "pendiente", fecha: "2026-11-02" },
+  { reporteId: "rep-002", cicloId: "cic-losartan-01", productoId: "losartan", medicamento: "Losartán 50 mg", presentacion: "Caja 30 comprimidos", auxiliar: "María González", cantidad: 10, unidad: "cajas", estado: "pendiente", fecha: "2026-11-02" },
+  { reporteId: "rep-003", cicloId: "cic-paracetamol-01", productoId: "paracetamol", medicamento: "Paracetamol 500 mg", presentacion: "Caja 16 comprimidos", auxiliar: "Juanito Pérez", cantidad: 6, unidad: "cajas", estado: "pendiente", fecha: "2026-11-01" },
+  { reporteId: "rep-004", cicloId: "cic-omeprazol-01", productoId: "omeprazol", medicamento: "Omeprazol 20 mg", presentacion: "Caja 30 cápsulas", auxiliar: "Pedro Soto", cantidad: 4, unidad: "cajas", estado: "pendiente", fecha: "2026-11-01" },
+];
+
+/** Solicitud de acceso de un usuario que ingresó con Google. Ingresar no otorga acceso por sí solo. */
+export interface SolicitudAcceso {
+  solicitudId: string; usuarioId: string; nombre: string | null; correo: string; fecha: string | null;
+  estado: "pendiente" | "aprobada" | "rechazada"; revisadaPor?: string;
+}
+export const solicitudesDemo: SolicitudAcceso[] = [
+  { solicitudId: "sol-001", usuarioId: "usr-google-demo-1", nombre: "Camila Rojas", correo: "camila.rojas.demo@gmail.com", fecha: "2026-11-02", estado: "pendiente" },
 ];
