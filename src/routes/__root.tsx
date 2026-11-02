@@ -82,10 +82,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Cotizador inteligente para farmacia" },
+      { title: "Cotizador Inteligente Farmacia" },
       { name: "description", content: "Compara precios de farmacias y proveedores" },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Cotizador inteligente para farmacia" },
+      { property: "og:title", content: "Cotizador Inteligente Farmacia" },
       { property: "og:description", content: "Compara precios de farmacias y proveedores" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

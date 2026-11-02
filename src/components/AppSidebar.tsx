@@ -24,7 +24,7 @@ export function AppSidebar() {
       <SidebarHeader>
         <div className="flex h-9 items-center gap-2 px-1">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">C</div>
-          {!contraido && <span className="truncate text-sm font-semibold">Cotizador farmacia</span>}
+          {!contraido && <span className="truncate text-sm font-semibold">Cotizador Inteligente Farmacia</span>}
         </div>
       </SidebarHeader>
       <SidebarContent>
