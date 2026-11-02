@@ -159,7 +159,7 @@ function Index() {
             <span className="text-sm text-muted-foreground">· {consulta}</span>
           </div>
           <p className="mb-4 text-sm text-muted-foreground">Aún no hay conexión con las cadenas, por eso no se muestran precios, productos ni disponibilidad.</p>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {(Object.keys(cadenasInfo) as CadenaId[]).map((id) => <TarjetaCadena key={id} id={id} />)}
           </div>
         </section>
@@ -407,7 +407,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
 
   return (
     <article className="rounded-2xl border p-4">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 gap-4">
           {p.logo ? (
             <img src={p.logo} alt={p.nombre} className="h-10 w-10 object-contain" />
@@ -429,7 +429,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-start gap-2 md:items-end md:text-right">
+        <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end lg:text-right">
           {p.precioUnitario !== null ? (
             <div>
               <p className="text-2xl font-semibold text-brand-green">{clp(p.precioUnitario)}</p>
@@ -453,7 +453,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
           <p className="text-xs text-muted-foreground">
             {"total" in t ? <>Total {cantidad} u.: <span className="font-medium text-foreground">{clp(t.total)}</span></> : t.pendiente}
           </p>
-          <div className="flex flex-wrap gap-2 md:justify-end">
+          <div className="flex flex-wrap gap-2 lg:justify-end">
             <button
               onClick={() => setModal(true)}
               className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/40 px-3 py-1.5 text-xs font-medium text-brand-blue hover:bg-brand-blue/10"
@@ -475,7 +475,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
       </div>
 
       {observaciones.length > 0 && (
-        <ul className="mt-3 space-y-1 md:pl-14">
+        <ul className="mt-3 space-y-1 lg:pl-14">
           {observaciones.map((o) => (
             <li key={o.observacionId} className="rounded-lg bg-muted px-3 py-1.5 text-xs"><span className="text-muted-foreground">Observación de {o.adminNombre}: </span>{o.texto}</li>
           ))}
@@ -483,7 +483,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
       )}
 
       {p.faltantes.length > 0 && (
-        <div className="mt-3 md:pl-14">
+        <div className="mt-3 lg:pl-14">
           <button onClick={() => setVerFaltantes(!verFaltantes)} className="flex items-center gap-1 text-xs text-brand-blue hover:underline">
             ¿Qué falta para calcular el costo completo? <ChevronDown className={`h-3 w-3 transition-transform ${verFaltantes ? "rotate-180" : ""}`} />
           </button>
