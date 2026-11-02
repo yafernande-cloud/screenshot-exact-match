@@ -414,9 +414,9 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
   if (p.otros) datos.push(["Otros datos", p.otros]);
 
   return (
-    <article className="rounded-2xl border p-4">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 gap-4">
+    <article className="@container rounded-2xl border p-4">
+      <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-start @2xl:justify-between">
+        <div className="flex min-w-0 flex-1 gap-4">
           {p.logo ? (
             <img src={p.logo} alt={p.nombre} className="h-10 w-10 object-contain" />
           ) : (
@@ -429,7 +429,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
               <h3 className="font-medium">{p.nombre} <span className="text-xs font-normal text-muted-foreground">(demo)</span></h3>
               <span className={`rounded-full px-2 py-0.5 text-xs ${estadoStyle[p.estado]}`}>{estadoLabel[p.estado]}</span>
             </div>
-            <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+            <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm @md:grid-cols-2 @5xl:grid-cols-3">
               {datos.map(([k, v]) => (
                 <div key={k}><span className="text-muted-foreground">{k}: </span><span className="text-foreground">{v}</span></div>
               ))}
@@ -437,7 +437,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end lg:text-right">
+        <div className="flex shrink-0 flex-col items-start gap-2 border-t pt-3 @2xl:ml-auto @2xl:items-end @2xl:border-t-0 @2xl:pt-0 @2xl:text-right">
           {p.precioUnitario !== null ? (
             <div>
               <p className="text-2xl font-semibold text-brand-green">{clp(p.precioUnitario)}</p>
@@ -461,7 +461,7 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
           <p className="text-xs text-muted-foreground">
             {"total" in t ? <>Total {cantidad} u.: <span className="font-medium text-foreground">{clp(t.total)}</span></> : t.pendiente}
           </p>
-          <div className="flex flex-wrap gap-2 lg:justify-end">
+          <div className="flex flex-wrap gap-2 @2xl:justify-end">
             <button
               onClick={() => setModal(true)}
               className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/40 px-3 py-1.5 text-xs font-medium text-brand-blue hover:bg-brand-blue/10"
