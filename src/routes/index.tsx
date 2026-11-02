@@ -245,7 +245,7 @@ function TarjetaCadena({ id }: { id: CadenaId }) {
   return (
     <div className="flex flex-col gap-4 rounded-2xl border p-4">
       <div className="flex items-center justify-between gap-2">
-        <img src={info.logo} alt={`Logo ${info.nombre}`} className="h-12 min-w-0 max-w-[180px] object-contain object-left" />
+        <img src={info.logo} alt={`Logo ${info.nombre}`} className="h-16 min-w-0 max-w-[240px] object-contain object-left sm:h-20 sm:max-w-[280px]" />
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           <WifiOff className="h-3 w-3" /> Sin conexión
         </span>
