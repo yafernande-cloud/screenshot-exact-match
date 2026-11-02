@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
-  Search, Store, Truck, MessageSquarePlus, Minus, Plus, ChevronDown, ShoppingCart, Check, ClipboardList, Trash2, WifiOff, ExternalLink,
+  Search, Store, Truck, Minus, Plus, ChevronDown, ShoppingCart, Check, ClipboardList, Trash2, WifiOff, ExternalLink,
   Sparkles,
 } from "lucide-react";
 import {
