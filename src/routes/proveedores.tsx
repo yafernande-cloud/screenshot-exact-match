@@ -40,7 +40,7 @@ function Proveedores() {
   return (
     <div className="min-h-screen bg-hero">
       <MenuPrincipal />
-      <main className="mx-auto max-w-5xl space-y-6 px-4 pb-24">
+      <main className="mx-auto w-full max-w-[1760px] px-4 sm:px-6 lg:w-[90%] lg:px-0 space-y-6 pb-24">
         <EncabezadoPagina titulo="Proveedores" bajada="Agrega y administra proveedores. Datos de demostración: los cambios no se guardan al recargar." />
         <section className="rounded-3xl border bg-card p-6">
           <h2 className="mb-4 text-lg font-semibold">Agregar proveedor</h2>

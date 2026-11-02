@@ -26,9 +26,9 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Cotizador — Farmacia Parque Lantaño" },
+      { title: "Cotizador Inteligente Farmacia" },
       { name: "description", content: "Busca medicamentos, revisa faltantes y compara ofertas de proveedores." },
-      { property: "og:title", content: "Cotizador — Farmacia Parque Lantaño" },
+      { property: "og:title", content: "Cotizador Inteligente Farmacia" },
       { property: "og:description", content: "Busca medicamentos, revisa faltantes y compara ofertas de proveedores." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -108,12 +108,12 @@ function Index() {
     <div className="min-h-screen bg-hero">
       <MenuPrincipal />
 
-      <main className="mx-auto max-w-5xl space-y-10 px-4 pb-24">
+      <main className="mx-auto w-full max-w-[1760px] px-4 sm:px-6 lg:w-[90%] lg:px-0 space-y-10 pb-24">
         {/* 1. Buscar medicamento */}
         <section className="flex flex-col items-center pt-10">
           <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight text-primary-foreground md:text-4xl">Buscar medicamento</h1>
           <form
-            className="relative w-full max-w-2xl"
+            className="relative w-full max-w-5xl"
             onSubmit={(e) => { e.preventDefault(); buscar(q); }}
           >
             <div className="flex items-center gap-2 rounded-full bg-card py-2 pl-5 pr-2 shadow-soft">
@@ -245,7 +245,7 @@ function TarjetaCadena({ id }: { id: CadenaId }) {
   return (
     <div className="flex flex-col gap-4 rounded-2xl border p-4">
       <div className="flex items-center justify-between gap-2">
-        <img src={info.logo} alt={`Logo ${info.nombre}`} className="h-7 max-w-[120px] object-contain object-left" />
+        <img src={info.logo} alt={`Logo ${info.nombre}`} className="h-12 min-w-0 max-w-[180px] object-contain object-left" />
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           <WifiOff className="h-3 w-3" /> Sin conexión
         </span>

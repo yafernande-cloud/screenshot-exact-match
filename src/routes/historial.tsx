@@ -30,7 +30,7 @@ function Historial() {
   return (
     <div className="min-h-screen bg-hero">
       <MenuPrincipal />
-      <main className="mx-auto max-w-5xl px-4 pb-24">
+      <main className="mx-auto w-full max-w-[1760px] px-4 sm:px-6 lg:w-[90%] lg:px-0 pb-24">
         <EncabezadoPagina titulo="Historial de cotizaciones" bajada="Cotizaciones anteriores con datos ficticios de demostración." />
         <section className="rounded-3xl border bg-card p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
