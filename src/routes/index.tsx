@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
-  Search, Store, Truck, MessageSquarePlus, Minus, Plus, ChevronDown, ShoppingCart, Check, ClipboardList, Trash2, WifiOff, ExternalLink,
+  Search, Store, Truck, Minus, Plus, ChevronDown, ShoppingCart, Check, ClipboardList, Trash2, WifiOff, ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import {
   productos, clp, cadenasInfo, totalProveedor, adminDemo, faltantesDemo,
@@ -455,9 +456,9 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
           <div className="flex flex-wrap gap-2 md:justify-end">
             <button
               onClick={() => setModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/40 px-3 py-1.5 text-xs font-medium text-brand-blue hover:bg-brand-blue/10"
             >
-              <MessageSquarePlus className="h-3.5 w-3.5" /> Observación
+              <Sparkles className="h-3.5 w-3.5" /> Enseñar a la IA
             </button>
             <button
               onClick={() => onAgregar(cantidad)}
@@ -497,15 +498,16 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
       <Dialog open={modal} onOpenChange={(o) => { setModal(o); if (!o) setTexto(""); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Observación</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-brand-blue"><Sparkles className="h-4 w-4" /> Enseñar a la IA</DialogTitle>
             <DialogDescription>
               {producto.nombre} · {p.laboratorio ?? "Laboratorio no informado"} · {p.nombre}
             </DialogDescription>
           </DialogHeader>
+          <p className="text-sm text-muted-foreground">Cuéntale a la IA tus preferencias sobre este producto, laboratorio o proveedor para que pueda considerarlas en futuras recomendaciones.</p>
           <textarea
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
-            placeholder="Ej: Este laboratorio no es bueno, prefiero no comprarlo"
+            placeholder="Ej: Prefiero Laboratorio Chile aunque sea un poco más caro"
             aria-label="Texto de la observación"
             rows={4}
             className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
