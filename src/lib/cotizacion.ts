@@ -95,3 +95,27 @@ export function resumen(lineas: Linea[]) {
   const pendientes = subtotales.filter((s) => s === null).length;
   return { productos: lineas.length, proveedores: grupos.length, confirmado, pendientes, total: pendientes === 0 && grupos.length > 0 ? confirmado : null };
 }
+
+const normalizar = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Busca por nombre, dosis o presentación con coincidencia parcial: todas las palabras deben aparecer. */
+export function buscarProducto(texto: string): Producto | null {
+  const palabras = normalizar(texto).split(/\s+/).filter(Boolean);
+  if (palabras.length === 0) return null;
+  return productos.find((p) => {
+    const base = normalizar(`${p.nombre} ${p.presentacion} ${p.categoria}`);
+    return palabras.every((w) => base.includes(w));
+  }) ?? null;
+}
+
+/** Total del carrito: suma las líneas con precio completo e informa cuántas quedan pendientes. */
+export function totalCarrito(lineas: Linea[]): { total: number; pendientes: number } {
+  let total = 0;
+  let pendientes = 0;
+  for (const l of lineas) {
+    const e = evaluarLinea(l);
+    if (e.ok) total += e.subtotal;
+    else pendientes++;
+  }
+  return { total, pendientes };
+}
