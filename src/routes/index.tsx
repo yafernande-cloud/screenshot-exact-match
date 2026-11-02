@@ -27,9 +27,9 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Cotizador Inteligente Farmacia" },
-      { name: "description", content: "Busca medicamentos, revisa faltantes y compara ofertas de proveedores." },
+      { name: "description", content: "Busca productos de farmacia, revisa faltantes y compara ofertas de proveedores." },
       { property: "og:title", content: "Cotizador Inteligente Farmacia" },
-      { property: "og:description", content: "Busca medicamentos, revisa faltantes y compara ofertas de proveedores." },
+      { property: "og:description", content: "Busca productos de farmacia, revisa faltantes y compara ofertas de proveedores." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -109,9 +109,9 @@ function Index() {
       <MenuPrincipal />
 
       <main className="mx-auto w-full max-w-[1760px] px-4 sm:px-6 lg:w-[90%] lg:px-0 space-y-10 pb-24">
-        {/* 1. Buscar medicamento */}
+        {/* 1. Buscar producto */}
         <section className="flex flex-col items-center pt-10">
-          <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight text-primary-foreground md:text-4xl">Buscar medicamento</h1>
+          <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight text-primary-foreground md:text-4xl">Buscar producto</h1>
           <form
             className="relative w-full max-w-5xl"
             onSubmit={(e) => { e.preventDefault(); buscar(q); }}
@@ -123,8 +123,8 @@ function Index() {
                 onChange={(e) => { setQ(e.target.value); setOpen(true); }}
                 onFocus={() => setOpen(true)}
                 onBlur={() => setTimeout(() => setOpen(false), 150)}
-                placeholder="Nombre, dosis o presentación..."
-                aria-label="Buscar medicamento"
+                placeholder="Buscar medicamentos, cremas, shampoo, perfumes y más..."
+                aria-label="Buscar producto"
                 className="min-w-0 flex-1 bg-transparent py-2 text-base outline-none placeholder:text-muted-foreground"
               />
               <button type="submit" className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-green px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-brand-green/90">
@@ -348,7 +348,7 @@ function Carrito({ acciones }: { acciones: CotizacionAcciones }) {
         ) : (
           <>
             <div className="hidden grid-cols-[2fr_1.5fr_0.7fr_1fr_1fr_auto] gap-3 border-b px-3 pb-2 text-xs text-muted-foreground md:grid">
-              <span>Medicamento</span><span>Proveedor</span><span>Cantidad</span><span>Precio unitario</span><span>Subtotal</span><span className="w-8" />
+              <span>Producto</span><span>Proveedor</span><span>Cantidad</span><span>Precio unitario</span><span>Subtotal</span><span className="w-8" />
             </div>
             <ul className="divide-y">
               {lineas.map((l) => {
@@ -401,8 +401,10 @@ function ProveedorFicha({ producto, p, enCarrito, observaciones, onAgregar, onOb
   const t = totalProveedor(p, cantidad);
 
   const datos: [string, React.ReactNode][] = [
-    ["Medicamento", p.producto ?? producto.nombre],
-    ["Laboratorio", p.laboratorio ?? <NoInformado />],
+    ["Producto", p.producto ?? producto.nombre],
+    ...(producto.categoria === "Medicamento" || p.laboratorio
+      ? [["Laboratorio", p.laboratorio ?? <NoInformado />] as [string, React.ReactNode]]
+      : []),
     ["Presentación", p.presentacion],
     ["IVA", p.iva ? (p.iva === "incluido" ? "Precio con IVA incluido" : "Precio sin IVA") : <NoInformado />],
     ["Stock", p.disponibilidad ?? <NoInformado />],
