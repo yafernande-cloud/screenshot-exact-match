@@ -121,7 +121,12 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {children}
+        {/*
+          El proveedor de sesión va en el shell, por encima del componente raíz: todo lo que el
+          router renderiza (incluido AppShell y `useSession`) queda siempre dentro del proveedor,
+          sin depender de qué componente se monte primero.
+        */}
+        <SessionProvider>{children}</SessionProvider>
         <Scripts />
       </body>
     </html>
@@ -133,12 +138,10 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SessionProvider>
-        {/* La campanita de solicitudes se monta una sola vez en la raíz (regla del proyecto). */}
-        <SolicitudesProvider>
-          <AppShell />
-        </SolicitudesProvider>
-      </SessionProvider>
+      {/* La campanita de solicitudes se monta una sola vez en la raíz (regla del proyecto). */}
+      <SolicitudesProvider>
+        <AppShell />
+      </SolicitudesProvider>
       <Toaster position="bottom-center" />
     </QueryClientProvider>
   );

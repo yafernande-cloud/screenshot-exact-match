@@ -1,5 +1,4 @@
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -12,30 +11,18 @@ import type { Session } from "@supabase/supabase-js";
 
 import { ApiError, fetchMe, type MeProfile } from "@/lib/api";
 import type { AuthStatus } from "@/lib/auth";
+import { SessionContext, type SessionContextValue, type SessionError } from "@/lib/session-context";
 import { getSupabase, logSupabaseConfigIssue, supabaseIsConfigured } from "@/lib/supabase";
 
-export interface SessionError {
-  code: string;
-  message: string;
-}
-
-interface SessionContextValue {
-  status: AuthStatus;
-  /** Perfil autorizado devuelto por `GET /api/v1/me`; nunca se inventa en el frontend. */
-  profile: MeProfile | null;
-  error: SessionError | null;
-  signInWithGoogle: () => Promise<void>;
-  signOut: () => Promise<void>;
-  retry: () => Promise<void>;
-}
+// El contexto se importa de un módulo propio para que proveedor y consumidores compartan
+// siempre el mismo objeto, incluso si este archivo se reevalúa con una recarga en caliente.
+export type { SessionContextValue, SessionError } from "@/lib/session-context";
 
 interface SessionState {
   status: AuthStatus;
   profile: MeProfile | null;
   error: SessionError | null;
 }
-
-const SessionContext = createContext<SessionContextValue | null>(null);
 
 /**
  * Aviso único para cuando la autenticación no puede usarse. El detalle técnico (qué variable
