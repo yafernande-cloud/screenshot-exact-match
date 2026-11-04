@@ -203,7 +203,7 @@ function LoginPage() {
           </div>
         </div>
         <p className="mt-4 text-center text-[11px] text-white/80">
-          © Cotizador Inteligente Farmacia
+          © Cotizador Inteligente Farmacia YF
         </p>
       </main>
     </div>

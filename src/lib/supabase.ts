@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { PUBLIC_SUPABASE_KEY, PUBLIC_SUPABASE_URL } from "@/lib/public-config";
+
 /**
  * Cliente de Supabase Auth, creado de forma perezosa y **solo en el navegador**.
  *
@@ -15,9 +17,17 @@ function env(name: string): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
-/** ¿Están cargadas las variables públicas de Supabase? (sin exponer sus valores). */
+/**
+ * Valores efectivos: la variable de entorno tiene prioridad; si no existe (por ejemplo, en el
+ * preview de Lovable, que no recibe variables de build) se usa la configuración pública
+ * versionada en `public-config.ts`.
+ */
+const SUPABASE_URL = env("VITE_SUPABASE_URL") ?? PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = env("VITE_SUPABASE_ANON_KEY") ?? PUBLIC_SUPABASE_KEY;
+
+/** ¿Hay configuración de Supabase disponible? (sin exponer los valores). */
 export function supabaseIsConfigured(): boolean {
-  return Boolean(env("VITE_SUPABASE_URL") && env("VITE_SUPABASE_ANON_KEY"));
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 }
 
 /**
@@ -26,10 +36,10 @@ export function supabaseIsConfigured(): boolean {
  */
 export function logSupabaseConfigIssue(): void {
   if (!import.meta.env.DEV) return;
-  const missing = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"].filter((name) => !env(name));
-  if (missing.length > 0) {
-    console.warn(`[auth] Inicio de sesión no disponible: faltan ${missing.join(", ")}.`);
-  }
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) return;
+  console.warn(
+    "[auth] Inicio de sesión no disponible: revisa `src/lib/public-config.ts` o define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.",
+  );
 }
 
 export function getSupabase(): SupabaseClient {
@@ -37,12 +47,10 @@ export function getSupabase(): SupabaseClient {
     throw new Error("El cliente de Supabase solo está disponible en el navegador.");
   }
   if (client) return client;
-  const url = env("VITE_SUPABASE_URL");
-  const anonKey = env("VITE_SUPABASE_ANON_KEY");
-  if (!url || !anonKey) {
-    throw new Error("Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el entorno.");
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error("Falta la configuración pública de Supabase.");
   }
-  client = createClient(url, anonKey, {
+  client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,

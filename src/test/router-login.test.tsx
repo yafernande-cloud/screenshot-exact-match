@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/react-router";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { routeTree } from "@/routeTree.gen";
@@ -56,22 +56,28 @@ describe("montaje real del router en /login", () => {
     expect(
       await screen.findByRole("heading", { name: "Cotizador Inteligente Farmacia" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continuar con google/i })).toBeInTheDocument();
+    // Con la configuración pública de Supabase el inicio de sesión queda habilitado.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /continuar con google/i })).toBeEnabled(),
+    );
+    expect(screen.queryByText(/todavía no está disponible/i)).not.toBeInTheDocument();
     expect(consoleOutput(errorSpy)).not.toContain(CONTEXT_ERROR);
   });
 
   it("navega desde la raíz a /login sin salir del proveedor", async () => {
     const { router } = await renderAt("/");
 
-    // La portada sin sesión nunca muestra datos comerciales: solo la validación o el bloqueo.
-    expect(await screen.findByText(/no pudimos validar tu acceso/i)).toBeInTheDocument();
+    // Sin sesión guardada, la portada protegida redirige al login dentro del mismo proveedor.
+    expect(
+      await screen.findByRole("heading", { name: "Cotizador Inteligente Farmacia" }),
+    ).toBeInTheDocument();
 
     await act(async () => {
       await router.navigate({ to: "/login" });
     });
 
     expect(
-      await screen.findByRole("heading", { name: "Cotizador Inteligente Farmacia" }),
+      await screen.findByRole("button", { name: /continuar con google/i }),
     ).toBeInTheDocument();
     expect(consoleOutput(errorSpy)).not.toContain(CONTEXT_ERROR);
   });

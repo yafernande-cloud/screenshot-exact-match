@@ -68,8 +68,11 @@ describe("contexto de sesión", () => {
 
     // Si el proveedor y el hook usaran contextos distintos, el sondeo leería `null`.
     expect(screen.getByTestId("session-probe")).not.toHaveTextContent("sin-contexto");
-    // Sin variables de Supabase el estado pasa a "error", pero el contexto ya está disponible.
-    await waitFor(() => expect(screen.getByTestId("session-probe")).toHaveTextContent("error"));
+    // Con la configuración pública de Supabase el contexto arranca y, sin sesión guardada,
+    // el estado termina en "signed_out".
+    await waitFor(() =>
+      expect(screen.getByTestId("session-probe")).toHaveTextContent("signed_out"),
+    );
   });
 
   it("mantiene el mismo objeto aunque el módulo se evalúe dos veces (actualización en caliente)", async () => {
