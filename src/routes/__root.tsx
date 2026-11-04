@@ -3,7 +3,9 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
+  useNavigate,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
   type ErrorComponentProps,
@@ -16,6 +18,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SolicitudesProvider } from "@/components/SolicitudesAcceso";
+import { AccessBlockedScreen, SessionLoadingScreen } from "@/components/AuthGate";
+import { gateFor } from "@/lib/auth";
+import { SessionProvider, useSession } from "@/lib/session";
 
 function NotFoundComponent() {
   return (
@@ -96,7 +101,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap",
+      },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -125,7 +133,36 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SolicitudesProvider>
+      <SessionProvider>
+        {/* La campanita de solicitudes se monta una sola vez en la raíz (regla del proyecto). */}
+        <SolicitudesProvider>
+          <AppShell />
+        </SolicitudesProvider>
+      </SessionProvider>
+      <Toaster position="bottom-center" />
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * Decide qué se monta según la sesión: la app comercial solo aparece con una persona autorizada
+ * por el backend. `/login` se renderiza sin menú lateral ni campanita.
+ */
+function AppShell() {
+  const { status } = useSession();
+  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const navigate = useNavigate();
+  const isLogin = pathname === "/login";
+  const gate = gateFor(status, pathname);
+
+  useEffect(() => {
+    if (!isLogin && gate === "redirect_login") navigate({ to: "/login", replace: true });
+  }, [gate, isLogin, navigate]);
+
+  if (isLogin) return <Outlet />;
+  if (gate === "blocked") return <AccessBlockedScreen />;
+  if (gate === "render") {
+    return (
       <SidebarProvider defaultOpen={false}>
         <div className="flex min-h-screen w-full">
           <AppSidebar />
@@ -135,8 +172,7 @@ function RootComponent() {
           </div>
         </div>
       </SidebarProvider>
-      </SolicitudesProvider>
-      <Toaster position="bottom-center" />
-    </QueryClientProvider>
-  );
+    );
+  }
+  return <SessionLoadingScreen />;
 }
