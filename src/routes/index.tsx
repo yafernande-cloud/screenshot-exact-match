@@ -44,6 +44,13 @@ import {
   type Offer,
   type SearchResult,
 } from "@/lib/catalogo";
+import {
+  buscarCadenasAhumada,
+  estadoFuenteAhumada,
+  type ChainSource,
+  type EstadoFuenteAhumada,
+} from "@/lib/cadenas";
+import { TarjetaAhumada } from "@/components/TarjetaAhumada";
 import { SeccionCotizaciones, type CotizacionAcciones } from "@/components/MiCotizacion";
 import { MenuPrincipal } from "@/components/MenuPrincipal";
 import {
@@ -99,6 +106,12 @@ function Index() {
   const [estadoOfertas, setEstadoOfertas] = useState<"inicial" | "cargando" | "listo" | "error">(
     "inicial",
   );
+  // E15: la tarjeta de Ahumada tiene su propio estado para no bloquear la búsqueda de proveedores.
+  const [fuenteAhumada, setFuenteAhumada] = useState<ChainSource | null>(null);
+  const [estadoCadenas, setEstadoCadenas] = useState<"inicial" | "cargando" | "listo" | "error">(
+    "inicial",
+  );
+  const [errorCadenas, setErrorCadenas] = useState<string | null>(null);
   const [reportes, setReportes] = useState<ReporteFaltante[]>(faltantesDemo);
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [cargado, setCargado] = useState(false);
@@ -119,6 +132,21 @@ function Index() {
     if (cargado) sessionStorage.setItem(CLAVE_CARRITO, JSON.stringify(lineas));
   }, [lineas, cargado]);
 
+  // E15 corre en paralelo con la búsqueda de proveedores: si Ahumada falla, sus ofertas siguen.
+  const ejecutarAhumada = async (texto: string, seq: number) => {
+    try {
+      const fuente = await buscarCadenasAhumada(texto);
+      if (seq !== busquedaSeq.current) return;
+      setFuenteAhumada(fuente);
+      setEstadoCadenas("listo");
+    } catch (error) {
+      if (seq !== busquedaSeq.current) return;
+      setFuenteAhumada(null);
+      setEstadoCadenas("error");
+      setErrorCadenas(mensajeDeError(error));
+    }
+  };
+
   const ejecutarBusqueda = async (texto: string) => {
     const t = texto.trim();
     const seq = ++busquedaSeq.current;
@@ -128,19 +156,32 @@ function Index() {
     setOfertas([]);
     setAvisoBusqueda(null);
     setErrorBusqueda(null);
+    setFuenteAhumada(null);
+    setErrorCadenas(null);
 
     if (t.length < 3) {
       const corto = t !== "";
       setEstadoBusqueda(corto ? "error" : "inicial");
       setEstadoOfertas(corto ? "error" : "inicial");
+      setEstadoCadenas("inicial");
       setErrorBusqueda(corto ? "Escribe al menos 3 caracteres para buscar." : null);
       return;
     }
 
     setEstadoBusqueda("buscando");
     setEstadoOfertas("cargando");
+    setEstadoCadenas("cargando");
+    // La cadena arranca cuando el catálogo ya respondió: así no hay dos solicitudes autenticadas
+    // compitiendo por la misma renovación de sesión al mismo tiempo.
+    let cadenaIniciada = false;
+    const iniciarCadena = () => {
+      if (cadenaIniciada) return;
+      cadenaIniciada = true;
+      void ejecutarAhumada(t, seq);
+    };
     try {
       const data = await buscarCatalogo(t);
+      iniciarCadena();
       if (seq !== busquedaSeq.current) return;
       setResultados(data.results);
 
@@ -195,6 +236,7 @@ function Index() {
       setEstadoOfertas("listo");
     } catch (error) {
       if (seq !== busquedaSeq.current) return;
+      iniciarCadena();
       setEstadoBusqueda("error");
       setEstadoOfertas("error");
       setErrorBusqueda(mensajeDeError(error));
@@ -213,6 +255,7 @@ function Index() {
   };
 
   const buscando = estadoBusqueda === "buscando";
+  const estadoAhumada = estadoFuenteAhumada(estadoCadenas, fuenteAhumada, errorCadenas);
 
   return (
     <div className="min-h-screen bg-hero">
@@ -261,7 +304,7 @@ function Index() {
           </p>
         </section>
 
-        {/* 2. Grandes farmacias: sin integración real, no se muestran precios */}
+        {/* 2. Grandes farmacias: referencia publicada; nunca alimenta el carrito */}
         <section id="grandes-farmacias" className="scroll-mt-4 rounded-3xl border bg-card p-6">
           <div className="mb-1 flex flex-wrap items-center gap-2">
             <Store className="h-5 w-5 text-brand-blue" />
@@ -269,12 +312,12 @@ function Index() {
             {consulta && <span className="text-sm text-muted-foreground">· {consulta}</span>}
           </div>
           <p className="mb-4 text-sm text-muted-foreground">
-            Aún no hay conexión con las cadenas, por eso no se muestran precios, productos ni
-            disponibilidad.
+            Precios e información publicados por cada cadena. Cuando una cadena no tiene conexión
+            autorizada, no se muestran precios, productos ni disponibilidad.
           </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {(Object.keys(cadenasInfo) as CadenaId[]).map((id) => (
-              <TarjetaCadena key={id} id={id} />
+              <TarjetaCadena key={id} id={id} ahumada={id === "ahumada" ? estadoAhumada : null} />
             ))}
           </div>
         </section>
@@ -394,7 +437,11 @@ function Index() {
   );
 }
 
-function TarjetaCadena({ id }: { id: CadenaId }) {
+function TarjetaCadena({ id, ahumada }: { id: CadenaId; ahumada: EstadoFuenteAhumada | null }) {
+  // La tarjeta de Ahumada conserva su posición en la grilla, pero su contenido publicado vive en
+  // un componente propio. Cruz Verde y Salcobrand mantienen exactamente su presentación actual.
+  if (id === "ahumada") return <TarjetaAhumada estado={ahumada ?? { tipo: "inicial" }} />;
+
   const info = cadenasInfo[id];
   const campos = ["Producto", "Laboratorio", "Presentación", "Descripción", "Disponibilidad"];
   return (
@@ -403,11 +450,7 @@ function TarjetaCadena({ id }: { id: CadenaId }) {
         <img
           src={info.logo}
           alt={`Logo ${info.nombre}`}
-          className={
-            id === "ahumada"
-              ? "h-12 min-w-0 max-w-[180px] object-contain object-left sm:h-14 sm:max-w-[200px]"
-              : "h-16 min-w-0 max-w-[240px] object-contain object-left sm:h-20 sm:max-w-[280px]"
-          }
+          className="h-16 min-w-0 max-w-[240px] object-contain object-left sm:h-20 sm:max-w-[280px]"
         />
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           <WifiOff className="h-3 w-3" /> Sin conexión
