@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2, Pill, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -46,12 +46,53 @@ function GoogleMark() {
   );
 }
 
+function startErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() !== ""
+    ? error.message
+    : "No pudimos iniciar sesión con Google. Inténtalo otra vez.";
+}
+
+/**
+ * La vista previa de Lovable corre dentro de un iframe y Google rechaza OAuth en ese contexto
+ * (403). En una pestaña normal `self` y `top` son la misma ventana y el flujo no cambia.
+ */
+function isEmbeddedWindow(): boolean {
+  try {
+    return window.self !== window.top;
+  } catch {
+    // Un acceso bloqueado a `top` también implica que estamos embebidos.
+    return true;
+  }
+}
+
+/**
+ * Abre la pantalla de login en una pestaña de nivel superior. El flujo de Supabase se inicia
+ * allí —no aquí— para que el verificador PKCE y la sesión queden en el almacenamiento de esa
+ * pestaña, y no se mezclen con el almacenamiento particionado del iframe.
+ *
+ * Devuelve `false` si el navegador bloqueó la ventana; en ese caso no se inicia OAuth embebido.
+ */
+function openLoginInNewTab(): boolean {
+  const url = new URL("/login", window.location.origin);
+  url.searchParams.set("oauth", "1");
+
+  try {
+    const tab = window.open(url.toString(), "_blank");
+    if (!tab) return false;
+    tab.opener = null;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function LoginPage() {
   const { status, error, signInWithGoogle, signOut, retry } = useSession();
   const navigate = useNavigate();
   const [sending, setSending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [manualError, setManualError] = useState<string | null>(null);
+  const autoStarted = useRef(false);
   const configured = supabaseIsConfigured();
 
   useEffect(() => {
@@ -61,6 +102,30 @@ function LoginPage() {
   useEffect(() => {
     if (status === "authorized") navigate({ to: "/", replace: true });
   }, [status, navigate]);
+
+  // La pestaña abierta desde la vista previa llega con `oauth=1` y arranca aquí el mismo flujo
+  // de Supabase. Se quita la marca antes de salir para no reintentarlo si el inicio falla.
+  useEffect(() => {
+    if (autoStarted.current || !configured || status !== "signed_out") return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("oauth") !== "1") return;
+
+    autoStarted.current = true;
+    params.delete("oauth");
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+    );
+
+    setSending(true);
+    void signInWithGoogle().catch((e) => {
+      setSending(false);
+      setManualError(startErrorMessage(e));
+    });
+  }, [configured, status, signInWithGoogle]);
 
   const pending = sending || status === "loading";
   const notProvisioned = status === "not_provisioned";
@@ -72,17 +137,22 @@ function LoginPage() {
   const start = async () => {
     setManualError(null);
     setOauthError(null);
+
+    if (isEmbeddedWindow()) {
+      if (openLoginInNewTab()) return;
+      setManualError(
+        "El navegador bloqueó la pestaña de inicio de sesión. Permite las ventanas emergentes para este sitio e inténtalo otra vez.",
+      );
+      return;
+    }
+
     setSending(true);
     try {
       await signInWithGoogle();
       // El navegador sale hacia Google: el estado de carga se mantiene.
     } catch (e) {
       setSending(false);
-      setManualError(
-        e instanceof Error && e.message.trim() !== ""
-          ? e.message
-          : "No pudimos iniciar sesión con Google. Inténtalo otra vez.",
-      );
+      setManualError(startErrorMessage(e));
     }
   };
 
