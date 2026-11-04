@@ -9,7 +9,6 @@ import {
   Plus,
   ChevronDown,
   ShoppingCart,
-  Check,
   ClipboardList,
   Trash2,
   WifiOff,
@@ -40,10 +39,8 @@ import {
   formatearDinero,
   mensajeDeError,
   obtenerArticulo,
-  obtenerBusqueda,
   resumenPresentacion,
   type Article,
-  type ArticleDetail,
   type Offer,
   type SearchResult,
 } from "@/lib/catalogo";
@@ -83,31 +80,31 @@ export const Route = createFileRoute("/")({
 const fecha = (s: string) => new Date(s + "T12:00").toLocaleDateString("es-CL");
 const CLAVE_CARRITO = "carrito-demo";
 
+/** Una oferta siempre va acompañada del artículo al que pertenece; nunca se mezclan artículos. */
+interface OfertaConArticulo {
+  oferta: Offer;
+  articulo: Article;
+}
+
 function Index() {
   const [q, setQ] = useState("");
   const [consulta, setConsulta] = useState("");
   const [resultados, setResultados] = useState<SearchResult[]>([]);
-  const [searchId, setSearchId] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [ofertas, setOfertas] = useState<OfertaConArticulo[]>([]);
   const [estadoBusqueda, setEstadoBusqueda] = useState<"inicial" | "buscando" | "listo" | "error">(
     "inicial",
   );
   const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
   const [avisoBusqueda, setAvisoBusqueda] = useState<string | null>(null);
-  const [cargandoMas, setCargandoMas] = useState(false);
-  const [seleccionado, setSeleccionado] = useState<string | null>(null);
-  const [articulo, setArticulo] = useState<ArticleDetail | null>(null);
   const [estadoOfertas, setEstadoOfertas] = useState<"inicial" | "cargando" | "listo" | "error">(
     "inicial",
   );
-  const [errorOfertas, setErrorOfertas] = useState<string | null>(null);
   const [reportes, setReportes] = useState<ReporteFaltante[]>(faltantesDemo);
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [cargado, setCargado] = useState(false);
 
-  // Cada búsqueda y cada selección llevan un número: una respuesta vieja nunca pisa a la nueva.
+  // Cada búsqueda lleva un número: una respuesta vieja nunca pisa a la nueva.
   const busquedaSeq = useRef(0);
-  const ofertaSeq = useRef(0);
 
   useEffect(() => {
     try {
@@ -125,82 +122,82 @@ function Index() {
   const ejecutarBusqueda = async (texto: string) => {
     const t = texto.trim();
     const seq = ++busquedaSeq.current;
-    ofertaSeq.current++;
     setQ(t);
     setConsulta(t);
     setResultados([]);
-    setSearchId(null);
-    setNextCursor(null);
+    setOfertas([]);
     setAvisoBusqueda(null);
-    setCargandoMas(false);
-    setSeleccionado(null);
-    setArticulo(null);
-    setEstadoOfertas("inicial");
-    setErrorOfertas(null);
+    setErrorBusqueda(null);
 
     if (t.length < 3) {
-      setEstadoBusqueda(t === "" ? "inicial" : "listo");
-      setErrorBusqueda(t === "" ? null : "Escribe al menos 3 caracteres para buscar.");
+      const corto = t !== "";
+      setEstadoBusqueda(corto ? "error" : "inicial");
+      setEstadoOfertas(corto ? "error" : "inicial");
+      setErrorBusqueda(corto ? "Escribe al menos 3 caracteres para buscar." : null);
       return;
     }
 
     setEstadoBusqueda("buscando");
-    setErrorBusqueda(null);
+    setEstadoOfertas("cargando");
     try {
       const data = await buscarCatalogo(t);
       if (seq !== busquedaSeq.current) return;
       setResultados(data.results);
-      setSearchId(data.search_id);
-      setNextCursor(data.next_cursor);
-      setEstadoBusqueda("listo");
+
       if (data.status === "failed") {
+        setEstadoBusqueda("error");
+        setEstadoOfertas("error");
         setErrorBusqueda("No pudimos completar la búsqueda en el catálogo. Inténtalo otra vez.");
-      } else if (data.status === "partial") {
-        setAvisoBusqueda(
-          "Algunas fuentes no respondieron. Los resultados pueden estar incompletos.",
-        );
+        return;
       }
+
+      // Solo se piden las ofertas de los artículos que el backend informa con ofertas. Cada
+      // oferta queda ligada a su propio artículo para no mezclar presentaciones ni precios.
+      // Se piden en serie: una sola renovación de sesión sirve para todas las consultas.
+      const conOfertas = data.results.filter((r) => r.offer_count > 0);
+      const vistas = new Set<string>();
+      const encontradas: OfertaConArticulo[] = [];
+      let fallidas = 0;
+      let primerError: unknown = null;
+      for (const resultado of conOfertas) {
+        try {
+          const detalle = await obtenerArticulo(resultado.article_id);
+          if (seq !== busquedaSeq.current) return;
+          for (const oferta of detalle.offers) {
+            if (vistas.has(oferta.offer_id)) continue;
+            vistas.add(oferta.offer_id);
+            encontradas.push({ oferta, articulo: detalle.article });
+          }
+        } catch (error) {
+          if (seq !== busquedaSeq.current) return;
+          fallidas += 1;
+          primerError ??= error;
+        }
+      }
+      setOfertas(encontradas);
+
+      if (fallidas > 0 && encontradas.length === 0 && conOfertas.length > 0) {
+        setEstadoBusqueda("error");
+        setEstadoOfertas("error");
+        setErrorBusqueda(mensajeDeError(primerError));
+        return;
+      }
+
+      const avisos: string[] = [];
+      if (data.status === "partial") {
+        avisos.push("Algunas fuentes no respondieron. Los resultados pueden estar incompletos.");
+      }
+      if (fallidas > 0) {
+        avisos.push("No pudimos cargar las ofertas de algunos artículos.");
+      }
+      setAvisoBusqueda(avisos.length > 0 ? avisos.join(" ") : null);
+      setEstadoBusqueda("listo");
+      setEstadoOfertas("listo");
     } catch (error) {
       if (seq !== busquedaSeq.current) return;
       setEstadoBusqueda("error");
-      setErrorBusqueda(mensajeDeError(error));
-    }
-  };
-
-  const seleccionarArticulo = async (resultado: SearchResult) => {
-    const seq = ++ofertaSeq.current;
-    setSeleccionado(resultado.article_id);
-    setArticulo(null);
-    setEstadoOfertas("cargando");
-    setErrorOfertas(null);
-    try {
-      const data = await obtenerArticulo(resultado.article_id);
-      if (seq !== ofertaSeq.current) return;
-      setArticulo(data);
-      setEstadoOfertas("listo");
-    } catch (error) {
-      if (seq !== ofertaSeq.current) return;
       setEstadoOfertas("error");
-      setErrorOfertas(mensajeDeError(error));
-    }
-  };
-
-  const cargarMas = async () => {
-    if (!searchId || !nextCursor || cargandoMas) return;
-    const seq = busquedaSeq.current;
-    setCargandoMas(true);
-    try {
-      const data = await obtenerBusqueda(searchId, nextCursor);
-      if (seq !== busquedaSeq.current) return;
-      setResultados((previos) => {
-        const vistos = new Set(previos.map((r) => r.article_id));
-        return [...previos, ...data.results.filter((r) => !vistos.has(r.article_id))];
-      });
-      setNextCursor(data.next_cursor);
-    } catch (error) {
-      if (seq === busquedaSeq.current) toast.error(mensajeDeError(error));
-    } finally {
-      setCargandoMas(false);
+      setErrorBusqueda(mensajeDeError(error));
     }
   };
 
@@ -215,9 +212,6 @@ function Index() {
     },
   };
 
-  const resultadoSeleccionado = resultados.find((r) => r.article_id === seleccionado) ?? null;
-  const nombreArticulo =
-    articulo?.article.display_name ?? resultadoSeleccionado?.display_name ?? null;
   const buscando = estadoBusqueda === "buscando";
 
   return (
@@ -263,125 +257,8 @@ function Index() {
             </div>
           </form>
           <p className="mt-4 text-xs text-primary-foreground/80">
-            Catálogo de demostración: los datos del servidor son simulados
+            Prototipo con datos de demostración
           </p>
-
-          {estadoBusqueda !== "inicial" && (
-            <div className="mt-5 w-full max-w-5xl">
-              {buscando && (
-                <p
-                  role="status"
-                  className="flex items-center justify-center gap-2 rounded-2xl border bg-card px-4 py-6 text-sm text-muted-foreground"
-                >
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Buscando en el catálogo…
-                </p>
-              )}
-
-              {estadoBusqueda === "error" && errorBusqueda && (
-                <p
-                  role="alert"
-                  className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-                >
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> {errorBusqueda}
-                </p>
-              )}
-
-              {estadoBusqueda === "listo" && (
-                <div className="space-y-4 rounded-3xl border bg-card p-5">
-                  {errorBusqueda && (
-                    <p
-                      role="alert"
-                      className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-                    >
-                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{" "}
-                      {errorBusqueda}
-                    </p>
-                  )}
-                  {!errorBusqueda && avisoBusqueda && (
-                    <p
-                      role="status"
-                      className="rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground"
-                    >
-                      {avisoBusqueda}
-                    </p>
-                  )}
-
-                  {resultados.length === 0 && !errorBusqueda ? (
-                    <p className="rounded-2xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-                      No encontramos coincidencias para «{consulta}». Prueba con otro nombre o
-                      principio activo.
-                    </p>
-                  ) : resultados.length > 0 ? (
-                    <>
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <h2 className="text-base font-semibold">Resultados para «{consulta}»</h2>
-                        <span className="text-xs text-muted-foreground">
-                          {resultados.length} {resultados.length === 1 ? "artículo" : "artículos"} ·
-                          datos simulados
-                        </span>
-                      </div>
-                      <ul className="space-y-2">
-                        {resultados.map((r) => {
-                          const activo = seleccionado === r.article_id;
-                          const presentacion = resumenPresentacion(r.presentation);
-                          const precio = formatearDinero(r.lowest_verified_price);
-                          return (
-                            <li key={r.article_id}>
-                              <button
-                                type="button"
-                                onClick={() => void seleccionarArticulo(r)}
-                                aria-pressed={activo}
-                                className={`flex w-full flex-col gap-2 rounded-2xl border p-4 text-left transition-colors hover:bg-muted/60 sm:flex-row sm:items-center sm:justify-between ${activo ? "border-brand-green bg-brand-green/5" : ""}`}
-                              >
-                                <span className="min-w-0">
-                                  <span className="flex items-center gap-2">
-                                    <span className="font-medium">{r.display_name}</span>
-                                    {activo && (
-                                      <Check
-                                        className="h-4 w-4 shrink-0 text-brand-green"
-                                        aria-hidden
-                                      />
-                                    )}
-                                  </span>
-                                  <span className="mt-0.5 block text-sm text-muted-foreground">
-                                    {r.identity_summary}
-                                    {presentacion ? ` · ${presentacion}` : ""}
-                                  </span>
-                                </span>
-                                <span className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                  <span className="rounded-full bg-muted px-2 py-0.5">
-                                    {r.offer_count} {r.offer_count === 1 ? "oferta" : "ofertas"} ·{" "}
-                                    {r.supplier_count}{" "}
-                                    {r.supplier_count === 1 ? "proveedor" : "proveedores"}
-                                  </span>
-                                  {precio && (
-                                    <span className="font-medium text-brand-green">
-                                      Desde {precio}
-                                    </span>
-                                  )}
-                                </span>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      {nextCursor && (
-                        <button
-                          type="button"
-                          onClick={() => void cargarMas()}
-                          disabled={cargandoMas}
-                          className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium hover:bg-background disabled:opacity-60"
-                        >
-                          {cargandoMas && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
-                          Ver más resultados
-                        </button>
-                      )}
-                    </>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          )}
         </section>
 
         {/* 2. Grandes farmacias: sin integración real, no se muestran precios */}
@@ -446,16 +323,12 @@ function Index() {
           <div className="mb-1 flex flex-wrap items-center gap-2">
             <Truck className="h-5 w-5 text-brand-green" />
             <h2 className="text-lg font-semibold">Proveedores</h2>
-            {nombreArticulo && (
-              <span className="text-sm text-muted-foreground">· {nombreArticulo}</span>
-            )}
+            {consulta && <span className="text-sm text-muted-foreground">· {consulta}</span>}
           </div>
 
           {estadoOfertas === "inicial" && (
             <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-              {consulta
-                ? "Selecciona un artículo de los resultados para ver sus ofertas."
-                : "Busca un producto para ver las ofertas de proveedores."}
+              Busca un producto para ver las ofertas de proveedores.
             </p>
           )}
 
@@ -464,43 +337,54 @@ function Index() {
               role="status"
               className="mt-3 flex items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-sm text-muted-foreground"
             >
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Cargando ofertas…
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Buscando en el catálogo…
             </p>
           )}
 
-          {estadoOfertas === "error" && errorOfertas && (
+          {estadoOfertas === "error" && errorBusqueda && (
             <p
               role="alert"
               className="mt-3 flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
             >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> {errorOfertas}
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> {errorBusqueda}
             </p>
           )}
 
-          {estadoOfertas === "listo" &&
-            articulo &&
-            (articulo.offers.length === 0 ? (
-              <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                Este artículo no tiene ofertas de proveedores informadas.
-              </p>
-            ) : (
-              <>
-                <p className="mb-5 text-sm text-muted-foreground">
-                  Ofertas informadas por cada proveedor en el catálogo del servidor (datos de
-                  demostración). Los campos que el proveedor no informa se muestran como «No
-                  informado».
+          {estadoOfertas === "listo" && resultados.length === 0 && (
+            <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No encontramos coincidencias para «{consulta}». Prueba con otro nombre o principio
+              activo.
+            </p>
+          )}
+
+          {estadoOfertas === "listo" && resultados.length > 0 && ofertas.length === 0 && (
+            <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No encontramos ofertas de proveedores para «{consulta}».
+            </p>
+          )}
+
+          {estadoOfertas === "listo" && ofertas.length > 0 && (
+            <>
+              {avisoBusqueda && (
+                <p
+                  role="status"
+                  className="mb-3 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground"
+                >
+                  {avisoBusqueda}
                 </p>
-                <div className="space-y-4">
-                  {articulo.offers.map((oferta) => (
-                    <ProveedorFicha
-                      key={oferta.offer_id}
-                      oferta={oferta}
-                      articulo={articulo.article}
-                    />
-                  ))}
-                </div>
-              </>
-            ))}
+              )}
+              <p className="mb-5 text-sm text-muted-foreground">
+                Ofertas informadas por cada proveedor en el catálogo del servidor (datos de
+                demostración). Cada tarjeta indica el artículo al que corresponde; los campos que el
+                proveedor no informa se muestran como «No informado».
+              </p>
+              <div className="space-y-4">
+                {ofertas.map(({ oferta, articulo }) => (
+                  <ProveedorFicha key={oferta.offer_id} oferta={oferta} articulo={articulo} />
+                ))}
+              </div>
+            </>
+          )}
         </section>
 
         {/* 5. Carrito: siempre al final */}
