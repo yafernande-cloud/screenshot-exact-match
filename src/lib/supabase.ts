@@ -20,6 +20,18 @@ export function supabaseIsConfigured(): boolean {
   return Boolean(env("VITE_SUPABASE_URL") && env("VITE_SUPABASE_ANON_KEY"));
 }
 
+/**
+ * Detalle técnico para la consola de desarrollo: qué falta, nunca los valores.
+ * En producción no registra nada; la pantalla solo muestra un aviso neutral.
+ */
+export function logSupabaseConfigIssue(): void {
+  if (!import.meta.env.DEV) return;
+  const missing = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"].filter((name) => !env(name));
+  if (missing.length > 0) {
+    console.warn(`[auth] Inicio de sesión no disponible: faltan ${missing.join(", ")}.`);
+  }
+}
+
 export function getSupabase(): SupabaseClient {
   if (typeof window === "undefined") {
     throw new Error("El cliente de Supabase solo está disponible en el navegador.");

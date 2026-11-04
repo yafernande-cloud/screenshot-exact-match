@@ -28,7 +28,7 @@ export function AccessBlockedScreen() {
   const detail =
     error?.message ??
     (notProvisioned
-      ? "Tu cuenta de Google todavía no está habilitada en esta farmacia."
+      ? "Tu cuenta de Google todavía no está habilitada en este cotizador."
       : "Inténtalo de nuevo en unos segundos.");
 
   return (
@@ -47,9 +47,7 @@ export function AccessBlockedScreen() {
         </div>
         <p className="mt-4 text-sm text-muted-foreground">{detail}</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          {notProvisioned
-            ? "Si crees que es un error, pide a una administradora que habilite tu cuenta en el Cotizador."
-            : "Si el problema continúa, avisa a una administradora."}
+          Si el problema persiste, contacta a YF.
         </p>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <Button

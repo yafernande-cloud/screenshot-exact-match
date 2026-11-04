@@ -12,7 +12,7 @@ import type { Session } from "@supabase/supabase-js";
 
 import { ApiError, fetchMe, type MeProfile } from "@/lib/api";
 import type { AuthStatus } from "@/lib/auth";
-import { getSupabase, supabaseIsConfigured } from "@/lib/supabase";
+import { getSupabase, logSupabaseConfigIssue, supabaseIsConfigured } from "@/lib/supabase";
 
 export interface SessionError {
   code: string;
@@ -37,15 +37,21 @@ interface SessionState {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+/**
+ * Aviso único para cuando la autenticación no puede usarse. El detalle técnico (qué variable
+ * falta) se registra solo en la consola de desarrollo, nunca en pantalla.
+ */
+const LOGIN_UNAVAILABLE_MESSAGE =
+  "El inicio de sesión todavía no está disponible. Inténtalo nuevamente más tarde.";
+
 const NOT_CONFIGURED: SessionError = {
   code: "AUTH_NOT_CONFIGURED",
-  message:
-    "La autenticación no está configurada en este entorno. Faltan las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.",
+  message: LOGIN_UNAVAILABLE_MESSAGE,
 };
 
 const NOT_PROVISIONED: SessionError = {
   code: "USER_NOT_PROVISIONED",
-  message: "Tu cuenta de Google todavía no está habilitada en esta farmacia.",
+  message: "Tu cuenta de Google todavía no está habilitada en este cotizador.",
 };
 
 function toSessionError(error: unknown): SessionError {
@@ -122,6 +128,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!supabaseIsConfigured()) {
+      logSupabaseConfigIssue();
       setState({ status: "error", profile: null, error: NOT_CONFIGURED });
       return;
     }
@@ -196,6 +203,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const retry = useCallback(async () => {
     if (!supabaseIsConfigured()) {
+      logSupabaseConfigIssue();
       setState({ status: "error", profile: null, error: NOT_CONFIGURED });
       return;
     }

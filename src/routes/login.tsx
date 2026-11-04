@@ -14,7 +14,7 @@ export const Route = createFileRoute("/login")({
       { title: "Iniciar sesión · Cotizador Inteligente Farmacia" },
       {
         name: "description",
-        content: "Acceso del personal autorizado de Farmacia Parque Lantaño.",
+        content: "Acceso del personal autorizado al Cotizador Inteligente Farmacia.",
       },
       { name: "robots", content: "noindex" },
     ],
@@ -63,7 +63,10 @@ function LoginPage() {
   }, [status, navigate]);
 
   const pending = sending || status === "loading";
-  const blocked = status === "not_provisioned" || status === "error";
+  const notProvisioned = status === "not_provisioned";
+  // Un fallo del backend solo se muestra si la autenticación está configurada: si faltan las
+  // variables, la pantalla informa una sola vez que el inicio de sesión no está disponible.
+  const backendError = configured && status === "error";
   const message = manualError ?? oauthError ?? error?.message ?? null;
 
   const start = async () => {
@@ -92,19 +95,23 @@ function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background px-4 py-10 sm:px-6">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[linear-gradient(135deg,#17845F_0%,#1B7A76_48%,#27718A_100%)] px-4 py-10 sm:px-6">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-brand-green/15 via-brand-blue/5 to-transparent"
+        className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-32 -right-16 h-80 w-80 rounded-full bg-[#0f3f4f]/30 blur-3xl"
       />
       <main className="relative w-full max-w-md">
-        <div className="rounded-2xl border border-border/70 bg-card p-6 shadow-[var(--shadow-soft)] sm:p-8">
+        <div className="rounded-3xl bg-white p-6 shadow-2xl shadow-black/25 ring-1 ring-black/5 sm:p-8">
           <header className="flex flex-col items-center text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-green text-primary-foreground">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-green text-white shadow-lg shadow-brand-green/25">
               <Pill className="h-7 w-7" aria-hidden />
             </div>
             <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-brand-blue">
-              Farmacia Parque Lantaño
+              Acceso seguro
             </p>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-[26px]">
               Cotizador Inteligente Farmacia
@@ -115,85 +122,88 @@ function LoginPage() {
           <div className="mt-8 space-y-3">
             {!configured && (
               <Alert>
-                <AlertTitle>Autenticación sin configurar</AlertTitle>
                 <AlertDescription>
-                  Faltan las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el entorno.
+                  El inicio de sesión todavía no está disponible. Inténtalo nuevamente más tarde.
                 </AlertDescription>
               </Alert>
             )}
 
-            {blocked && (
+            {notProvisioned && (
               <Alert variant="destructive">
-                <AlertTitle>
-                  {status === "not_provisioned"
-                    ? "Acceso no habilitado"
-                    : "No pudimos validar tu acceso"}
-                </AlertTitle>
+                <AlertTitle>Acceso no habilitado</AlertTitle>
                 <AlertDescription>
                   {error?.message ??
-                    "Tu cuenta de Google todavía no está habilitada en esta farmacia."}
+                    "Tu cuenta de Google todavía no está habilitada en este cotizador."}
+                  <span className="mt-1 block">Si el problema persiste, contacta a YF.</span>
                 </AlertDescription>
               </Alert>
             )}
 
-            {!blocked && message && (
+            {backendError && (
+              <Alert variant="destructive">
+                <AlertTitle>No pudimos validar tu acceso</AlertTitle>
+                <AlertDescription>
+                  {message ?? "Inténtalo de nuevo en unos segundos."}
+                  <span className="mt-1 block">Si el problema persiste, contacta a YF.</span>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {configured && !notProvisioned && !backendError && message && (
               <Alert variant="destructive">
                 <AlertTitle>No pudimos iniciar sesión</AlertTitle>
                 <AlertDescription>{message}</AlertDescription>
               </Alert>
             )}
 
-            {blocked ? (
-              <>
-                <Button
-                  type="button"
-                  onClick={() => void retry()}
-                  className="w-full bg-brand-green text-primary-foreground hover:bg-brand-green/90"
-                >
-                  Reintentar
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => void signOut()}
-                >
-                  Usar otra cuenta
-                </Button>
-              </>
-            ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 w-full gap-3 border-border bg-white text-sm font-medium shadow-sm hover:bg-slate-50 disabled:opacity-60"
+              onClick={() => void start()}
+              disabled={pending || !configured}
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Conectando con Google…
+                </>
+              ) : (
+                <>
+                  <GoogleMark />
+                  Continuar con Google
+                </>
+              )}
+            </Button>
+
+            {notProvisioned && (
               <Button
                 type="button"
-                variant="outline"
-                className="h-11 w-full gap-3 text-sm font-medium"
-                onClick={() => void start()}
-                disabled={pending || !configured}
+                variant="ghost"
+                className="w-full"
+                onClick={() => void signOut()}
               >
-                {pending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    Conectando con Google…
-                  </>
-                ) : (
-                  <>
-                    <GoogleMark />
-                    Continuar con Google
-                  </>
-                )}
+                Usar otra cuenta
+              </Button>
+            )}
+
+            {backendError && (
+              <Button type="button" variant="ghost" className="w-full" onClick={() => void retry()}>
+                Reintentar
               </Button>
             )}
           </div>
 
-          <div className="mt-8 flex items-start gap-2 border-t pt-4 text-xs text-muted-foreground">
+          <div className="mt-8 flex items-start gap-2 border-t border-slate-100 pt-4 text-xs text-muted-foreground">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-green" aria-hidden />
             <p>
-              Solo cuentas habilitadas por una administradora pueden ingresar al cotizador. Al
-              continuar, Google compartirá tu nombre y correo con este sistema.
+              Solo cuentas habilitadas pueden ingresar al cotizador. Al continuar, Google compartirá
+              tu nombre y correo con este sistema.
             </p>
           </div>
         </div>
-        <p className="mt-4 text-center text-[11px] text-muted-foreground">
-          © Farmacia Parque Lantaño · Cotizador Inteligente
+        <p className="mt-4 text-center text-[11px] text-white/80">
+          © Cotizador Inteligente Farmacia
         </p>
       </main>
     </div>
