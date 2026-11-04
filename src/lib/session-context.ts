@@ -1,4 +1,4 @@
-import { createContext } from "react";
+import { createContext, type Context } from "react";
 
 import type { MeProfile } from "@/lib/api";
 import type { AuthStatus } from "@/lib/auth";
@@ -6,11 +6,15 @@ import type { AuthStatus } from "@/lib/auth";
 /**
  * Objeto de contexto de la sesión.
  *
- * Vive en este módulo —sin componentes— para que su identidad nunca cambie cuando se reevalúa
- * `session.tsx` (por ejemplo, con una actualización en caliente del preview). Si el contexto se
- * creara dentro de `session.tsx`, una recarga parcial podría dejar al proveedor montado y a los
- * consumidores usando dos objetos distintos, y `useSession()` fallaría aunque el árbol de React
- * fuera el correcto.
+ * Vive en este módulo —sin componentes— y se registra en `globalThis` con `Symbol.for` para que
+ * exista **un único objeto por página**, aunque el runtime evalúe este módulo más de una vez.
+ *
+ * Vite resuelve una actualización en caliente reimportando el módulo cambiado con `?t=…`: la
+ * instancia nueva convive con la anterior, que siguen usando los módulos que no cambiaron. En ese
+ * estado mixto, `SessionProvider` (instancia nueva) y `useSession` (instancia anterior) podían
+ * leer dos objetos distintos y el hook fallaba aunque el árbol de React fuera el correcto.
+ * Compartir el objeto en `globalThis` elimina esa diferencia de identidad sin simular un contexto:
+ * si de verdad no hay proveedor arriba, el hook sigue lanzando el mismo error.
  */
 
 export interface SessionError {
@@ -28,4 +32,18 @@ export interface SessionContextValue {
   retry: () => Promise<void>;
 }
 
-export const SessionContext = createContext<SessionContextValue | null>(null);
+type SessionContextType = Context<SessionContextValue | null>;
+
+const CONTEXT_KEY = Symbol.for("cotizador-farmacia.session-context");
+
+function sharedSessionContext(): SessionContextType {
+  const registry = globalThis as typeof globalThis & { [key: symbol]: unknown };
+  const existing = registry[CONTEXT_KEY];
+  if (existing) return existing as SessionContextType;
+
+  const created = createContext<SessionContextValue | null>(null);
+  registry[CONTEXT_KEY] = created;
+  return created;
+}
+
+export const SessionContext = sharedSessionContext();

@@ -71,4 +71,15 @@ describe("contexto de sesión", () => {
     // Sin variables de Supabase el estado pasa a "error", pero el contexto ya está disponible.
     await waitFor(() => expect(screen.getByTestId("session-probe")).toHaveTextContent("error"));
   });
+
+  it("mantiene el mismo objeto aunque el módulo se evalúe dos veces (actualización en caliente)", async () => {
+    // Vite reimporta el módulo cambiado con `?t=…` y la instancia nueva convive con la anterior,
+    // que siguen usando los módulos que no cambiaron. Simulamos esa doble evaluación.
+    const primera = await import("@/lib/session-context");
+    vi.resetModules();
+    const segunda = await import("@/lib/session-context");
+
+    expect(primera.SessionContext).toBe(SessionContext);
+    expect(segunda.SessionContext).toBe(SessionContext);
+  });
 });
