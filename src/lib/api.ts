@@ -3,6 +3,8 @@
  * los permisos los resuelve el backend, nunca este archivo.
  */
 
+import { getSupabase } from "@/lib/supabase";
+
 const DEFAULT_API_URL = "https://cotizador-farmacia-demo-3ea67af09b39.herokuapp.com";
 
 function env(name: string): string | undefined {
@@ -35,7 +37,10 @@ export class ApiError extends Error {
   }
 }
 
-async function errorBody(response: Response): Promise<{ code: string; message: string }> {
+async function errorBody(
+  response: Response,
+  fallback: string,
+): Promise<{ code: string; message: string }> {
   try {
     const data = (await response.json()) as {
       error?: { code?: unknown; message?: unknown };
@@ -49,7 +54,7 @@ async function errorBody(response: Response): Promise<{ code: string; message: s
   if (response.status === 503) {
     return { code: "UNAVAILABLE", message: "El servidor no está disponible en este momento." };
   }
-  return { code: "UNEXPECTED", message: "No pudimos validar tu acceso. Inténtalo otra vez." };
+  return { code: "UNEXPECTED", message: fallback };
 }
 
 async function request(path: string, token: string, init?: RequestInit): Promise<Response> {
@@ -75,6 +80,60 @@ async function request(path: string, token: string, init?: RequestInit): Promise
 export async function fetchMe(token: string): Promise<MeProfile> {
   const response = await request("/api/v1/me", token);
   if (response.ok) return (await response.json()) as MeProfile;
-  const { code, message } = await errorBody(response);
+  const { code, message } = await errorBody(
+    response,
+    "No pudimos validar tu acceso. Inténtalo otra vez.",
+  );
   throw new ApiError(response.status, code, message);
+}
+
+const SESION_EXPIRADA = "Tu sesión expiró. Inicia sesión otra vez.";
+
+/** Token vigente del único cliente de Supabase; nunca se guarda ni se expone fuera de este módulo. */
+async function accessToken(): Promise<string> {
+  const { data, error } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  if (error || !token) throw new ApiError(401, "UNAUTHENTICATED", SESION_EXPIRADA);
+  return token;
+}
+
+/** Un único intento de refresco; si falla, la sesión se cierra con el flujo de autenticación existente. */
+async function refreshedToken(): Promise<string | null> {
+  try {
+    const { data, error } = await getSupabase().auth.refreshSession();
+    return !error && data.session ? data.session.access_token : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Llamada autenticada al backend. Renueva el token una vez si expiró y, si el backend sigue
+ * rechazando la identidad, cierra la sesión para que el proveedor de sesión y la protección de
+ * rutas hagan su trabajo. Los errores se normalizan a `ApiError` con mensajes para la persona.
+ */
+export async function apiRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  fallbackMessage = "No pudimos completar la solicitud. Inténtalo otra vez.",
+): Promise<T> {
+  const token = await accessToken();
+  let response = await request(path, token, init);
+  if (response.status === 401) {
+    const renewed = await refreshedToken();
+    if (renewed) response = await request(path, renewed, init);
+    if (response.status === 401) {
+      try {
+        await getSupabase().auth.signOut();
+      } catch {
+        // La sesión local se descarta igual mediante el evento de autenticación.
+      }
+      throw new ApiError(401, "UNAUTHENTICATED", SESION_EXPIRADA);
+    }
+  }
+  if (!response.ok) {
+    const { code, message } = await errorBody(response, fallbackMessage);
+    throw new ApiError(response.status, code, message);
+  }
+  return (await response.json()) as T;
 }
