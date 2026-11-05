@@ -46,11 +46,15 @@ import {
 } from "@/lib/catalogo";
 import {
   buscarCadenasAhumada,
+  buscarCadenasSalcobrand,
   estadoFuenteAhumada,
+  estadoFuenteSalcobrand,
   type ChainSource,
   type EstadoFuenteAhumada,
+  type EstadoFuenteSalcobrand,
 } from "@/lib/cadenas";
 import { TarjetaAhumada } from "@/components/TarjetaAhumada";
+import { TarjetaSalcobrand } from "@/components/TarjetaSalcobrand";
 import { SeccionCotizaciones, type CotizacionAcciones } from "@/components/MiCotizacion";
 import { MenuPrincipal } from "@/components/MenuPrincipal";
 import {
@@ -106,12 +110,18 @@ function Index() {
   const [estadoOfertas, setEstadoOfertas] = useState<"inicial" | "cargando" | "listo" | "error">(
     "inicial",
   );
-  // E15: la tarjeta de Ahumada tiene su propio estado para no bloquear la búsqueda de proveedores.
+  // E15: cada tarjeta tiene su propio estado para no bloquear la búsqueda de proveedores ni a la
+  // otra cadena.
   const [fuenteAhumada, setFuenteAhumada] = useState<ChainSource | null>(null);
   const [estadoCadenas, setEstadoCadenas] = useState<"inicial" | "cargando" | "listo" | "error">(
     "inicial",
   );
   const [errorCadenas, setErrorCadenas] = useState<string | null>(null);
+  const [fuenteSalcobrand, setFuenteSalcobrand] = useState<ChainSource | null>(null);
+  const [estadoCadenasSalcobrand, setEstadoCadenasSalcobrand] = useState<
+    "inicial" | "cargando" | "listo" | "error"
+  >("inicial");
+  const [errorSalcobrand, setErrorSalcobrand] = useState<string | null>(null);
   const [reportes, setReportes] = useState<ReporteFaltante[]>(faltantesDemo);
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [cargado, setCargado] = useState(false);
@@ -132,7 +142,9 @@ function Index() {
     if (cargado) sessionStorage.setItem(CLAVE_CARRITO, JSON.stringify(lineas));
   }, [lineas, cargado]);
 
-  // E15 corre en paralelo con la búsqueda de proveedores: si Ahumada falla, sus ofertas siguen.
+  // E15 corre en paralelo con la búsqueda de proveedores: si una cadena falla, las demás siguen.
+  // Cada cadena usa su propia solicitud E15 para que un fallo o una demora de Salcobrand no
+  // retrase ni altere el resultado de Ahumada.
   const ejecutarAhumada = async (texto: string, seq: number) => {
     try {
       const fuente = await buscarCadenasAhumada(texto);
@@ -147,6 +159,20 @@ function Index() {
     }
   };
 
+  const ejecutarSalcobrand = async (texto: string, seq: number) => {
+    try {
+      const fuente = await buscarCadenasSalcobrand(texto);
+      if (seq !== busquedaSeq.current) return;
+      setFuenteSalcobrand(fuente);
+      setEstadoCadenasSalcobrand("listo");
+    } catch (error) {
+      if (seq !== busquedaSeq.current) return;
+      setFuenteSalcobrand(null);
+      setEstadoCadenasSalcobrand("error");
+      setErrorSalcobrand(mensajeDeError(error));
+    }
+  };
+
   const ejecutarBusqueda = async (texto: string) => {
     const t = texto.trim();
     const seq = ++busquedaSeq.current;
@@ -158,12 +184,15 @@ function Index() {
     setErrorBusqueda(null);
     setFuenteAhumada(null);
     setErrorCadenas(null);
+    setFuenteSalcobrand(null);
+    setErrorSalcobrand(null);
 
     if (t.length < 3) {
       const corto = t !== "";
       setEstadoBusqueda(corto ? "error" : "inicial");
       setEstadoOfertas(corto ? "error" : "inicial");
       setEstadoCadenas("inicial");
+      setEstadoCadenasSalcobrand("inicial");
       setErrorBusqueda(corto ? "Escribe al menos 3 caracteres para buscar." : null);
       return;
     }
@@ -171,13 +200,15 @@ function Index() {
     setEstadoBusqueda("buscando");
     setEstadoOfertas("cargando");
     setEstadoCadenas("cargando");
-    // La cadena arranca cuando el catálogo ya respondió: así no hay dos solicitudes autenticadas
+    setEstadoCadenasSalcobrand("cargando");
+    // Las cadenas arrancan cuando el catálogo ya respondió: así no hay dos solicitudes autenticadas
     // compitiendo por la misma renovación de sesión al mismo tiempo.
     let cadenaIniciada = false;
     const iniciarCadena = () => {
       if (cadenaIniciada) return;
       cadenaIniciada = true;
       void ejecutarAhumada(t, seq);
+      void ejecutarSalcobrand(t, seq);
     };
     try {
       const data = await buscarCatalogo(t);
@@ -256,6 +287,11 @@ function Index() {
 
   const buscando = estadoBusqueda === "buscando";
   const estadoAhumada = estadoFuenteAhumada(estadoCadenas, fuenteAhumada, errorCadenas);
+  const estadoSalcobrand = estadoFuenteSalcobrand(
+    estadoCadenasSalcobrand,
+    fuenteSalcobrand,
+    errorSalcobrand,
+  );
 
   return (
     <div className="min-h-screen bg-hero">
@@ -317,7 +353,12 @@ function Index() {
           </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {(Object.keys(cadenasInfo) as CadenaId[]).map((id) => (
-              <TarjetaCadena key={id} id={id} ahumada={id === "ahumada" ? estadoAhumada : null} />
+              <TarjetaCadena
+                key={id}
+                id={id}
+                ahumada={id === "ahumada" ? estadoAhumada : null}
+                salcobrand={id === "salcobrand" ? estadoSalcobrand : null}
+              />
             ))}
           </div>
         </section>
@@ -437,10 +478,21 @@ function Index() {
   );
 }
 
-function TarjetaCadena({ id, ahumada }: { id: CadenaId; ahumada: EstadoFuenteAhumada | null }) {
-  // La tarjeta de Ahumada conserva su posición en la grilla, pero su contenido publicado vive en
-  // un componente propio. Cruz Verde y Salcobrand mantienen exactamente su presentación actual.
+function TarjetaCadena({
+  id,
+  ahumada,
+  salcobrand,
+}: {
+  id: CadenaId;
+  ahumada: EstadoFuenteAhumada | null;
+  salcobrand: EstadoFuenteSalcobrand | null;
+}) {
+  // Ahumada y Salcobrand conservan su posición en la grilla y su propio estado independiente.
+  // Cruz Verde mantiene exactamente su presentación actual, sin conexión.
   if (id === "ahumada") return <TarjetaAhumada estado={ahumada ?? { tipo: "inicial" }} />;
+  if (id === "salcobrand") {
+    return <TarjetaSalcobrand estado={salcobrand ?? { tipo: "inicial" }} />;
+  }
 
   const info = cadenasInfo[id];
   const campos = ["Producto", "Laboratorio", "Presentación", "Descripción", "Disponibilidad"];
