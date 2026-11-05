@@ -7,7 +7,7 @@
  */
 
 import { apiRequest } from "@/lib/api";
-import type { Money } from "@/lib/catalogo";
+import { mensajeDeError, type Money } from "@/lib/catalogo";
 
 export interface ChainPrice extends Money {
   per_unit?: string | null;
@@ -84,6 +84,10 @@ type Cadena = "ahumada" | "salcobrand" | "cruz_verde";
 
 const POLL_MS = 400;
 const MAX_POLLS = 25;
+/** Un solo reintento del GET por identificador para tolerar un cambio de proceso transitorio. */
+const REINTENTOS_404 = 1;
+/** Mensaje final cuando ni siquiera la búsqueda reiniciada conserva su identificador. */
+export const MENSAJE_BUSQUEDA_INTERRUMPIDA = "La consulta se interrumpió. Inténtalo nuevamente";
 /** Tope de publicaciones que muestra la tarjeta de Salcobrand, aunque el backend entregue más. */
 const MAX_SALCOBRAND = 24;
 /** Cruz Verde entrega hasta 24 resultados orgánicos; este es el mismo tope de presentación. */
@@ -115,10 +119,17 @@ function esperar(ms: number): Promise<void> {
 }
 
 /**
- * Inicia E15 para una sola cadena y sondea hasta obtener su fuente. Cada cadena lleva su propia
- * solicitud: si una falla o tarda, la otra conserva su resultado y su estado.
+ * Un `SEARCH_NOT_FOUND` de E15 significa que el sondeo llegó a un proceso que no tiene el
+ * identificador en memoria. Es distinto de un 404 del catálogo: aquí sí es recuperable.
  */
-async function buscarCadena(query: string, cadena: Cadena, nombre: string): Promise<ChainSource> {
+function esBusquedaNoEncontrada(error: unknown): boolean {
+  if (error === null || typeof error !== "object") return false;
+  const fallo = error as { status?: unknown; code?: unknown };
+  return fallo.status === 404 && fallo.code === "SEARCH_NOT_FOUND";
+}
+
+/** Inicia E15 para una cadena y devuelve el identificador que hay que sondear. */
+async function iniciarBusqueda(query: string, cadena: Cadena, nombre: string): Promise<string> {
   const started = await apiRequest<ChainSearchAccepted>(
     "/api/v1/chain-searches",
     {
@@ -128,19 +139,68 @@ async function buscarCadena(query: string, cadena: Cadena, nombre: string): Prom
     },
     `No pudimos buscar en ${nombre}. Inténtalo otra vez.`,
   );
+  return started.search_id;
+}
+
+/**
+ * Sondea un identificador. Ante `SEARCH_NOT_FOUND`, `permitirReintento` habilita un único GET
+ * adicional con el mismo identificador antes de darlo por perdido. No se reintenta nada más.
+ */
+async function sondearBusqueda(
+  searchId: string,
+  cadena: Cadena,
+  nombre: string,
+  permitirReintento: boolean,
+): Promise<ChainSource> {
+  let reintentos404 = 0;
 
   for (let intento = 0; intento < MAX_POLLS; intento += 1) {
-    const data = await apiRequest<ChainSearchResponse>(
-      `/api/v1/chain-searches/${encodeURIComponent(started.search_id)}`,
-      {},
-      `No pudimos leer el resultado de ${nombre}.`,
-    );
-    const source = data.sources.find((item) => item.chain === cadena);
-    if (source) return source;
+    try {
+      const data = await apiRequest<ChainSearchResponse>(
+        `/api/v1/chain-searches/${encodeURIComponent(searchId)}`,
+        {},
+        `No pudimos leer el resultado de ${nombre}.`,
+      );
+      const source = data.sources.find((item) => item.chain === cadena);
+      if (source) return source;
+    } catch (error) {
+      if (!esBusquedaNoEncontrada(error)) throw error;
+      if (!permitirReintento || reintentos404 >= REINTENTOS_404) throw error;
+      reintentos404 += 1;
+    }
     if (intento < MAX_POLLS - 1) await esperar(POLL_MS);
   }
 
   throw new Error(`La búsqueda en ${nombre} no respondió a tiempo.`);
+}
+
+/**
+ * Inicia E15 para una sola cadena y sondea hasta obtener su fuente. Cada cadena lleva su propia
+ * solicitud: si una falla o tarda, la otra conserva su resultado y su estado.
+ *
+ * Si el identificador desaparece del almacén en memoria (reinicio o cambio de proceso), se
+ * reinicia **una sola vez** la búsqueda de esta cadena con un POST nuevo. No hay bucles: un
+ * segundo `SEARCH_NOT_FOUND` termina con el mensaje específico de consulta interrumpida.
+ */
+async function buscarCadena(query: string, cadena: Cadena, nombre: string): Promise<ChainSource> {
+  const primerId = await iniciarBusqueda(query, cadena, nombre);
+  try {
+    return await sondearBusqueda(primerId, cadena, nombre, true);
+  } catch (error) {
+    if (!esBusquedaNoEncontrada(error)) throw error;
+  }
+
+  const segundoId = await iniciarBusqueda(query, cadena, nombre);
+  return sondearBusqueda(segundoId, cadena, nombre, false);
+}
+
+/**
+ * Mensaje de una búsqueda de cadena. Un `SEARCH_NOT_FOUND` persistente no es «artículo no
+ * encontrado en el catálogo»: el catálogo conserva su propio mapeo en `mensajeDeError`.
+ */
+export function mensajeDeErrorCadena(error: unknown): string {
+  if (esBusquedaNoEncontrada(error)) return MENSAJE_BUSQUEDA_INTERRUMPIDA;
+  return mensajeDeError(error);
 }
 
 /** Inicia E15 para Ahumada con la misma solicitud y los mismos mensajes de siempre. */

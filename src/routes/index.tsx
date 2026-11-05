@@ -49,6 +49,7 @@ import {
   estadoFuenteAhumada,
   estadoFuenteCruzVerde,
   estadoFuenteSalcobrand,
+  mensajeDeErrorCadena,
   type ChainSource,
   type EstadoFuenteAhumada,
   type EstadoFuenteCruzVerde,
@@ -162,7 +163,7 @@ function Index() {
       if (seq !== busquedaSeq.current) return;
       setFuenteAhumada(null);
       setEstadoCadenas("error");
-      setErrorCadenas(mensajeDeError(error));
+      setErrorCadenas(mensajeDeErrorCadena(error));
     }
   };
 
@@ -176,7 +177,7 @@ function Index() {
       if (seq !== busquedaSeq.current) return;
       setFuenteSalcobrand(null);
       setEstadoCadenasSalcobrand("error");
-      setErrorSalcobrand(mensajeDeError(error));
+      setErrorSalcobrand(mensajeDeErrorCadena(error));
     }
   };
 
@@ -190,7 +191,7 @@ function Index() {
       if (seq !== busquedaSeq.current) return;
       setFuenteCruzVerde(null);
       setEstadoCadenasCruzVerde("error");
-      setErrorCruzVerde(mensajeDeError(error));
+      setErrorCruzVerde(mensajeDeErrorCadena(error));
     }
   };
 
