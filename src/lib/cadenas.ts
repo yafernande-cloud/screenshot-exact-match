@@ -30,7 +30,8 @@ export interface ChainResult {
     fractional: ChainPrice | null;
   };
   conditions: string | null;
-  source_url: string;
+  /** Enlace público a la publicación; puede faltar y entonces se informa en la tarjeta. */
+  source_url: string | null;
   observed_at: string;
   provenance: Record<string, unknown>;
   match: Record<string, unknown>;
@@ -77,13 +78,16 @@ export type EstadoFuenteCadena =
 /** Nombre histórico del estado de Ahumada; ambas tarjetas comparten la misma forma. */
 export type EstadoFuenteAhumada = EstadoFuenteCadena;
 export type EstadoFuenteSalcobrand = EstadoFuenteCadena;
+export type EstadoFuenteCruzVerde = EstadoFuenteCadena;
 
-type Cadena = "ahumada" | "salcobrand";
+type Cadena = "ahumada" | "salcobrand" | "cruz_verde";
 
 const POLL_MS = 400;
 const MAX_POLLS = 25;
 /** Tope de publicaciones que muestra la tarjeta de Salcobrand, aunque el backend entregue más. */
 const MAX_SALCOBRAND = 24;
+/** Cruz Verde entrega hasta 24 resultados orgánicos; este es el mismo tope de presentación. */
+const MAX_CRUZVERDE = 24;
 
 const MENSAJES_AHUMADA: Record<string, string> = {
   access_not_authorized:
@@ -97,6 +101,13 @@ const MENSAJES_SALCOBRAND: Record<string, string> = {
     "La conexión con Farmacias Salcobrand aún no tiene autorización de uso. No se muestran precios.",
   live_source_not_configured:
     "La fuente autorizada de Farmacias Salcobrand no está configurada. No se muestran precios.",
+};
+
+const MENSAJES_CRUZVERDE: Record<string, string> = {
+  access_not_authorized:
+    "La conexión con Cruz Verde aún no tiene autorización de uso. No se muestran precios.",
+  live_source_not_configured:
+    "La fuente autorizada de Cruz Verde no está configurada. No se muestran precios.",
 };
 
 function esperar(ms: number): Promise<void> {
@@ -140,6 +151,11 @@ export async function buscarCadenasAhumada(query: string): Promise<ChainSource> 
 /** Inicia E15 para Salcobrand; no consulta Ahumada ni ninguna otra cadena. */
 export async function buscarCadenasSalcobrand(query: string): Promise<ChainSource> {
   return buscarCadena(query, "salcobrand", "Farmacias Salcobrand");
+}
+
+/** Inicia E15 para Cruz Verde con su propio interruptor y su propia solicitud. */
+export async function buscarCadenasCruzVerde(query: string): Promise<ChainSource> {
+  return buscarCadena(query, "cruz_verde", "Cruz Verde");
 }
 
 /**
@@ -209,4 +225,12 @@ export function estadoFuenteSalcobrand(
     MENSAJES_SALCOBRAND,
     MAX_SALCOBRAND,
   );
+}
+
+export function estadoFuenteCruzVerde(
+  estado: "inicial" | "cargando" | "listo" | "error",
+  fuente: ChainSource | null,
+  error: string | null,
+): EstadoFuenteCruzVerde {
+  return estadoFuenteCadena(estado, fuente, error, "Cruz Verde", MENSAJES_CRUZVERDE, MAX_CRUZVERDE);
 }

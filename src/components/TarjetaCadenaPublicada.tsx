@@ -195,15 +195,21 @@ function Resultado({
           ) : (
             <span />
           )}
-          <a
-            href={resultado.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Ver publicación de ${resultado.published_name}`}
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-brand-blue hover:underline"
-          >
-            Ver publicación <ExternalLink className="h-3 w-3" aria-hidden />
-          </a>
+          {resultado.source_url ? (
+            <a
+              href={resultado.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Ver publicación de ${resultado.published_name}`}
+              className="inline-flex shrink-0 items-center gap-1 text-[11px] text-brand-blue hover:underline"
+            >
+              Ver publicación <ExternalLink className="h-3 w-3" aria-hidden />
+            </a>
+          ) : (
+            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+              Enlace no disponible
+            </span>
+          )}
         </div>
       </div>
     </div>

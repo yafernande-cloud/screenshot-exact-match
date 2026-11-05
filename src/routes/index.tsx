@@ -11,8 +11,6 @@ import {
   ShoppingCart,
   ClipboardList,
   Trash2,
-  WifiOff,
-  ExternalLink,
   Sparkles,
   Loader2,
   AlertCircle,
@@ -46,14 +44,18 @@ import {
 } from "@/lib/catalogo";
 import {
   buscarCadenasAhumada,
+  buscarCadenasCruzVerde,
   buscarCadenasSalcobrand,
   estadoFuenteAhumada,
+  estadoFuenteCruzVerde,
   estadoFuenteSalcobrand,
   type ChainSource,
   type EstadoFuenteAhumada,
+  type EstadoFuenteCruzVerde,
   type EstadoFuenteSalcobrand,
 } from "@/lib/cadenas";
 import { TarjetaAhumada } from "@/components/TarjetaAhumada";
+import { TarjetaCruzVerde } from "@/components/TarjetaCruzVerde";
 import { TarjetaSalcobrand } from "@/components/TarjetaSalcobrand";
 import { SeccionCotizaciones, type CotizacionAcciones } from "@/components/MiCotizacion";
 import { MenuPrincipal } from "@/components/MenuPrincipal";
@@ -122,6 +124,11 @@ function Index() {
     "inicial" | "cargando" | "listo" | "error"
   >("inicial");
   const [errorSalcobrand, setErrorSalcobrand] = useState<string | null>(null);
+  const [fuenteCruzVerde, setFuenteCruzVerde] = useState<ChainSource | null>(null);
+  const [estadoCadenasCruzVerde, setEstadoCadenasCruzVerde] = useState<
+    "inicial" | "cargando" | "listo" | "error"
+  >("inicial");
+  const [errorCruzVerde, setErrorCruzVerde] = useState<string | null>(null);
   const [reportes, setReportes] = useState<ReporteFaltante[]>(faltantesDemo);
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [cargado, setCargado] = useState(false);
@@ -173,6 +180,20 @@ function Index() {
     }
   };
 
+  const ejecutarCruzVerde = async (texto: string, seq: number) => {
+    try {
+      const fuente = await buscarCadenasCruzVerde(texto);
+      if (seq !== busquedaSeq.current) return;
+      setFuenteCruzVerde(fuente);
+      setEstadoCadenasCruzVerde("listo");
+    } catch (error) {
+      if (seq !== busquedaSeq.current) return;
+      setFuenteCruzVerde(null);
+      setEstadoCadenasCruzVerde("error");
+      setErrorCruzVerde(mensajeDeError(error));
+    }
+  };
+
   const ejecutarBusqueda = async (texto: string) => {
     const t = texto.trim();
     const seq = ++busquedaSeq.current;
@@ -186,6 +207,8 @@ function Index() {
     setErrorCadenas(null);
     setFuenteSalcobrand(null);
     setErrorSalcobrand(null);
+    setFuenteCruzVerde(null);
+    setErrorCruzVerde(null);
 
     if (t.length < 3) {
       const corto = t !== "";
@@ -193,6 +216,7 @@ function Index() {
       setEstadoOfertas(corto ? "error" : "inicial");
       setEstadoCadenas("inicial");
       setEstadoCadenasSalcobrand("inicial");
+      setEstadoCadenasCruzVerde("inicial");
       setErrorBusqueda(corto ? "Escribe al menos 3 caracteres para buscar." : null);
       return;
     }
@@ -201,6 +225,7 @@ function Index() {
     setEstadoOfertas("cargando");
     setEstadoCadenas("cargando");
     setEstadoCadenasSalcobrand("cargando");
+    setEstadoCadenasCruzVerde("cargando");
     // Las cadenas arrancan cuando el catálogo ya respondió: así no hay dos solicitudes autenticadas
     // compitiendo por la misma renovación de sesión al mismo tiempo.
     let cadenaIniciada = false;
@@ -209,6 +234,7 @@ function Index() {
       cadenaIniciada = true;
       void ejecutarAhumada(t, seq);
       void ejecutarSalcobrand(t, seq);
+      void ejecutarCruzVerde(t, seq);
     };
     try {
       const data = await buscarCatalogo(t);
@@ -292,6 +318,11 @@ function Index() {
     fuenteSalcobrand,
     errorSalcobrand,
   );
+  const estadoCruzVerde = estadoFuenteCruzVerde(
+    estadoCadenasCruzVerde,
+    fuenteCruzVerde,
+    errorCruzVerde,
+  );
 
   return (
     <div className="min-h-screen bg-hero">
@@ -358,6 +389,7 @@ function Index() {
                 id={id}
                 ahumada={id === "ahumada" ? estadoAhumada : null}
                 salcobrand={id === "salcobrand" ? estadoSalcobrand : null}
+                cruzverde={id === "cruzverde" ? estadoCruzVerde : null}
               />
             ))}
           </div>
@@ -482,59 +514,19 @@ function TarjetaCadena({
   id,
   ahumada,
   salcobrand,
+  cruzverde,
 }: {
   id: CadenaId;
   ahumada: EstadoFuenteAhumada | null;
   salcobrand: EstadoFuenteSalcobrand | null;
+  cruzverde: EstadoFuenteCruzVerde | null;
 }) {
-  // Ahumada y Salcobrand conservan su posición en la grilla y su propio estado independiente.
-  // Cruz Verde mantiene exactamente su presentación actual, sin conexión.
+  // Las tres cadenas conservan su posición en la grilla y su propio estado independiente.
   if (id === "ahumada") return <TarjetaAhumada estado={ahumada ?? { tipo: "inicial" }} />;
   if (id === "salcobrand") {
     return <TarjetaSalcobrand estado={salcobrand ?? { tipo: "inicial" }} />;
   }
-
-  const info = cadenasInfo[id];
-  const campos = ["Producto", "Laboratorio", "Presentación", "Descripción", "Disponibilidad"];
-  return (
-    <div className="flex flex-col gap-4 rounded-2xl border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <img
-          src={info.logo}
-          alt={`Logo ${info.nombre}`}
-          className="h-16 min-w-0 max-w-[240px] object-contain object-left sm:h-20 sm:max-w-[280px]"
-        />
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          <WifiOff className="h-3 w-3" /> Sin conexión
-        </span>
-      </div>
-      <div className="flex gap-3">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-muted px-1 text-center text-[11px] text-muted-foreground">
-          Sin imagen
-        </div>
-        <dl className="min-w-0 space-y-0.5 text-xs">
-          {campos.map((c) => (
-            <div key={c}>
-              <span className="text-muted-foreground">{c}: </span>
-              <span className="text-muted-foreground">—</span>
-            </div>
-          ))}
-        </dl>
-      </div>
-      <div className="mt-auto flex items-end justify-between gap-2">
-        <div>
-          <p className="text-xs text-muted-foreground">Precio publicado</p>
-          <p className="text-xl font-semibold text-muted-foreground">—</p>
-        </div>
-        <button
-          disabled
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-60"
-        >
-          Ver publicación <ExternalLink className="h-3 w-3" />
-        </button>
-      </div>
-    </div>
-  );
+  return <TarjetaCruzVerde estado={cruzverde ?? { tipo: "inicial" }} />;
 }
 
 function FilaFaltante({
