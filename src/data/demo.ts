@@ -196,19 +196,6 @@ export const cotizacionesGuardadasDemo: CotizacionGuardada[] = [
 /** Administrador de demostración (en el futuro vendrá de la sesión con Google). */
 export const adminDemo = { usuarioId: "adm-demo-1", nombre: "Pao" };
 
-/** Reporte individual de un auxiliar vía Telegram. Varios reportes pueden compartir un ciclo de faltante. */
-export interface ReporteFaltante {
-  reporteId: string; cicloId: string; productoId: string | null;
-  medicamento: string; presentacion: string | null; auxiliar: string;
-  cantidad: number; unidad: string; estado: "pendiente"; fecha: string;
-}
-export const faltantesDemo: ReporteFaltante[] = [
-  { reporteId: "rep-001", cicloId: "cic-losartan-01", productoId: "losartan", medicamento: "Losartán 50 mg", presentacion: "Caja 30 comprimidos", auxiliar: "Juanito Pérez", cantidad: 10, unidad: "cajas", estado: "pendiente", fecha: "2026-11-02" },
-  { reporteId: "rep-002", cicloId: "cic-losartan-01", productoId: "losartan", medicamento: "Losartán 50 mg", presentacion: "Caja 30 comprimidos", auxiliar: "María González", cantidad: 10, unidad: "cajas", estado: "pendiente", fecha: "2026-11-02" },
-  { reporteId: "rep-003", cicloId: "cic-paracetamol-01", productoId: "paracetamol", medicamento: "Paracetamol 500 mg", presentacion: "Caja 16 comprimidos", auxiliar: "Juanito Pérez", cantidad: 6, unidad: "cajas", estado: "pendiente", fecha: "2026-11-01" },
-  { reporteId: "rep-004", cicloId: "cic-omeprazol-01", productoId: "omeprazol", medicamento: "Omeprazol 20 mg", presentacion: "Caja 30 cápsulas", auxiliar: "Pedro Soto", cantidad: 4, unidad: "cajas", estado: "pendiente", fecha: "2026-11-01" },
-];
-
 /** Solicitud de acceso de un usuario que ingresó con Google. Ingresar no otorga acceso por sí solo. */
 export interface SolicitudAcceso {
   solicitudId: string; usuarioId: string; nombre: string | null; correo: string; fecha: string | null;

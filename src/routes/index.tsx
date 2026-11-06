@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   Search,
@@ -15,7 +15,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
-import { clp, cadenasInfo, faltantesDemo, type CadenaId, type ReporteFaltante } from "@/data/demo";
+import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
   buscarOferta,
   cambiarCantidad,
@@ -26,7 +26,21 @@ import {
   vaciar,
   type Linea,
 } from "@/lib/cotizacion";
-import { ajustarCantidad, eliminarReporte } from "@/lib/faltantes";
+import {
+  aplicarCambioCantidad,
+  etiquetaEstadoFaltante,
+  fusionarFaltantes,
+  siguienteCantidad,
+  unidadDeAjuste,
+} from "@/lib/faltantes";
+import {
+  cancelarFaltante,
+  esConflictoDeVersion,
+  fijarCantidad,
+  listarFaltantes,
+  mensajeDeErrorFaltantes,
+  type Faltante,
+} from "@/lib/faltantes-api";
 import {
   buscarCatalogo,
   describirCantidad,
@@ -91,8 +105,14 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const fecha = (s: string) => new Date(s + "T12:00").toLocaleDateString("es-CL");
+/** Fecha real del backend (ISO 8601, UTC): se presenta en la zona local de la persona. */
+const fechaDeReporte = (iso: string | null) => {
+  if (!iso) return "fecha no informada";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "fecha no informada" : d.toLocaleDateString("es-CL");
+};
 const CLAVE_CARRITO = "carrito-demo";
+const INTERVALO_FALTANTES_MS = 10_000;
 
 /** Una oferta siempre va acompañada del artículo al que pertenece; nunca se mezclan artículos. */
 interface OfertaConArticulo {
@@ -130,12 +150,116 @@ function Index() {
     "inicial" | "cargando" | "listo" | "error"
   >("inicial");
   const [errorCruzVerde, setErrorCruzVerde] = useState<string | null>(null);
-  const [reportes, setReportes] = useState<ReporteFaltante[]>(faltantesDemo);
+  // Bandeja real: el backend es la única fuente; nunca se vuelve a los datos de demostración.
+  const [faltantes, setFaltantes] = useState<Faltante[]>([]);
+  const [estadoFaltantes, setEstadoFaltantes] = useState<"cargando" | "listo" | "error">(
+    "cargando",
+  );
+  const [errorFaltantes, setErrorFaltantes] = useState<string | null>(null);
+  const [mutandoFaltantes, setMutandoFaltantes] = useState<Set<string>>(new Set());
+  const [faltanteBuscado, setFaltanteBuscado] = useState<{ id: string; nombre: string } | null>(
+    null,
+  );
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [cargado, setCargado] = useState(false);
 
   // Cada búsqueda lleva un número: una respuesta vieja nunca pisa a la nueva.
   const busquedaSeq = useRef(0);
+  // Sondeo de faltantes: una sola solicitud a la vez y una respuesta vieja nunca pisa a la nueva.
+  const faltantesSeq = useRef(0);
+  const faltantesEnVuelo = useRef(false);
+  const mutandoRef = useRef<Set<string>>(new Set());
+
+  const marcarMutando = useCallback((id: string, activo: boolean) => {
+    const siguiente = new Set(mutandoRef.current);
+    if (activo) siguiente.add(id);
+    else siguiente.delete(id);
+    mutandoRef.current = siguiente;
+    setMutandoFaltantes(new Set(siguiente));
+  }, []);
+
+  const cargarFaltantes = useCallback(async (silencioso: boolean) => {
+    // Evita solicitudes duplicadas (sondeo + reintento + cambio de pestaña).
+    if (faltantesEnVuelo.current) return;
+    faltantesEnVuelo.current = true;
+    const seq = ++faltantesSeq.current;
+    if (!silencioso) setEstadoFaltantes("cargando");
+    try {
+      const lista = await listarFaltantes();
+      if (seq !== faltantesSeq.current) return;
+      setFaltantes((previos) => fusionarFaltantes(previos, lista, mutandoRef.current));
+      setEstadoFaltantes("listo");
+      setErrorFaltantes(null);
+    } catch (error) {
+      if (seq !== faltantesSeq.current) return;
+      setErrorFaltantes(mensajeDeErrorFaltantes(error));
+      // Un fallo de actualización no borra lo que ya se está mostrando.
+      setEstadoFaltantes((previo) => (previo === "listo" ? "listo" : "error"));
+    } finally {
+      faltantesEnVuelo.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    void cargarFaltantes(false);
+    const intervalo = window.setInterval(() => {
+      if (!document.hidden) void cargarFaltantes(true);
+    }, INTERVALO_FALTANTES_MS);
+    const alVolverALaPestana = () => {
+      if (!document.hidden) void cargarFaltantes(true);
+    };
+    document.addEventListener("visibilitychange", alVolverALaPestana);
+    return () => {
+      window.clearInterval(intervalo);
+      document.removeEventListener("visibilitychange", alVolverALaPestana);
+    };
+  }, [cargarFaltantes]);
+
+  const ajustarCantidadReal = async (faltante: Faltante, delta: number) => {
+    const unidad = unidadDeAjuste(faltante);
+    const cantidad = siguienteCantidad(faltante, delta);
+    if (unidad === null || cantidad === null) {
+      toast("Este faltante todavía no tiene una unidad definida; no se puede ajustar.");
+      return;
+    }
+    if (faltante.target_quantity !== null && Number(faltante.target_quantity) === cantidad) return;
+
+    marcarMutando(faltante.id, true);
+    try {
+      const resultado = await fijarCantidad(faltante, cantidad, unidad);
+      setFaltantes((previos) =>
+        previos.map((f) => (f.id === faltante.id ? aplicarCambioCantidad(f, resultado.item) : f)),
+      );
+      toast("Cantidad guardada.");
+    } catch (error) {
+      if (esConflictoDeVersion(error)) {
+        toast("La lista cambió mientras ajustabas. Actualizamos los datos.");
+        await cargarFaltantes(true);
+      } else {
+        toast(mensajeDeErrorFaltantes(error));
+      }
+    } finally {
+      marcarMutando(faltante.id, false);
+    }
+  };
+
+  const retirarFaltante = async (faltante: Faltante) => {
+    marcarMutando(faltante.id, true);
+    try {
+      await cancelarFaltante(faltante);
+      setFaltantes((previos) => previos.filter((f) => f.id !== faltante.id));
+      toast("Reporte retirado de la bandeja. Su historial se conserva.");
+    } catch (error) {
+      if (esConflictoDeVersion(error)) {
+        toast("La lista cambió. Actualizamos los datos antes de reintentar.");
+        await cargarFaltantes(true);
+      } else {
+        toast(mensajeDeErrorFaltantes(error));
+      }
+    } finally {
+      marcarMutando(faltante.id, false);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -368,7 +492,7 @@ function Index() {
             </div>
           </form>
           <p className="mt-4 text-xs text-primary-foreground/80">
-            Prototipo con datos de demostración
+            Faltantes conectados a Telegram · catálogo de proveedores en demostración
           </p>
         </section>
 
@@ -402,29 +526,68 @@ function Index() {
             <ClipboardList className="h-5 w-5 text-brand-green" />
             <h2 className="text-lg font-semibold">Faltantes por cotizar</h2>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {reportes.length} {reportes.length === 1 ? "reporte" : "reportes"} · demo
+              {faltantes.length} {faltantes.length === 1 ? "reporte" : "reportes"}
             </span>
           </div>
           <p className="mb-4 text-sm text-muted-foreground">
             Reportes enviados por los auxiliares por Telegram. Cada reporte se ajusta por separado.
           </p>
-          {reportes.length === 0 ? (
-            <p className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No hay faltantes pendientes.
+
+          {estadoFaltantes === "cargando" && faltantes.length === 0 && (
+            <p
+              role="status"
+              className="flex items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-sm text-muted-foreground"
+            >
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Cargando faltantes…
             </p>
-          ) : (
+          )}
+
+          {estadoFaltantes === "error" && faltantes.length === 0 && (
+            <div
+              role="alert"
+              className="flex flex-col items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
+              <p className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                {errorFaltantes ?? "No pudimos cargar los faltantes."}
+              </p>
+              <button
+                onClick={() => void cargarFaltantes(false)}
+                className="rounded-full border border-destructive/40 px-3 py-1.5 text-xs font-medium hover:bg-destructive/10"
+              >
+                Reintentar
+              </button>
+            </div>
+          )}
+
+          {estadoFaltantes === "listo" && errorFaltantes && (
+            <p
+              role="status"
+              className="mb-3 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground"
+            >
+              No pudimos actualizar la lista. Mostramos la última información disponible.
+            </p>
+          )}
+
+          {estadoFaltantes === "listo" && faltantes.length === 0 && (
+            <p className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No hay faltantes pendientes. Los reportes enviados por Telegram aparecerán aquí
+              automáticamente.
+            </p>
+          )}
+
+          {faltantes.length > 0 && (
             <ul className="space-y-3">
-              {reportes.map((r) => (
+              {faltantes.map((f) => (
                 <FilaFaltante
-                  key={r.reporteId}
-                  r={r}
-                  onAjustar={(d) => setReportes((rs) => ajustarCantidad(rs, r.reporteId, d))}
-                  onEliminar={() => {
-                    setReportes((rs) => eliminarReporte(rs, r.reporteId));
-                    toast("Reporte retirado de la bandeja (demo)");
-                  }}
+                  key={f.id}
+                  faltante={f}
+                  ocupado={mutandoFaltantes.has(f.id)}
+                  onAjustar={(d) => void ajustarCantidadReal(f, d)}
+                  onEliminar={() => void retirarFaltante(f)}
                   onBuscar={() => {
-                    void ejecutarBusqueda(r.medicamento);
+                    setFaltanteBuscado({ id: f.id, nombre: f.display_name });
+                    void ejecutarBusqueda(f.display_name);
                     document
                       .getElementById("grandes-farmacias")
                       ?.scrollIntoView({ behavior: "smooth" });
@@ -442,6 +605,13 @@ function Index() {
             <h2 className="text-lg font-semibold">Proveedores</h2>
             {consulta && <span className="text-sm text-muted-foreground">· {consulta}</span>}
           </div>
+          {faltanteBuscado && (
+            <p className="mb-3 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground">
+              Búsqueda iniciada desde el faltante{" "}
+              <span className="font-medium text-foreground">«{faltanteBuscado.nombre}»</span>. La
+              referencia se conserva para asociarlo a la cotización.
+            </p>
+          )}
 
           {estadoOfertas === "inicial" && (
             <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -531,55 +701,85 @@ function TarjetaCadena({
 }
 
 function FilaFaltante({
-  r,
+  faltante,
+  ocupado,
   onAjustar,
   onEliminar,
   onBuscar,
 }: {
-  r: ReporteFaltante;
+  faltante: Faltante;
+  ocupado: boolean;
   onAjustar: (delta: number) => void;
   onEliminar: () => void;
   onBuscar: () => void;
 }) {
   const [confirmar, setConfirmar] = useState(false);
+  const autor = faltante.reported_by_name?.trim() || "Sin identificar";
+  const solicitado = describirCantidad(
+    faltante.requested_quantity ?? faltante.declared_quantity,
+    faltante.requested_unit ?? faltante.declared_unit,
+  );
+  const objetivo = describirCantidad(faltante.target_quantity, faltante.quantity_unit);
+  const puedeAjustar = unidadDeAjuste(faltante) !== null;
+  const porDefecto = faltante.requested_quantity_origin === "default";
+
   return (
     <li className="flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="font-medium">{r.medicamento}</p>
+          <p className="font-medium">{faltante.display_name}</p>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            Pendiente
+            {etiquetaEstadoFaltante(faltante.status)}
           </span>
+          {faltante.observation_count > 1 && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {faltante.observation_count} avisos
+            </span>
+          )}
         </div>
         <p className="text-xs text-muted-foreground">
-          {r.presentacion ? `${r.presentacion} · ` : ""}Reportado por{" "}
-          <span className="text-foreground">{r.auxiliar}</span> · {fecha(r.fecha)}
+          {faltante.branch_label ? `${faltante.branch_label} · ` : ""}Reportado por{" "}
+          <span className="text-foreground">{autor}</span> ·{" "}
+          {fechaDeReporte(faltante.reported_at ?? faltante.created_at)}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Solicitado: {solicitado ?? "sin cantidad informada"}
+          {porDefecto ? " (1 por defecto)" : ""} · A cotizar: {objetivo ?? "sin definir"}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center rounded-full border">
           <button
-            aria-label={`Disminuir cantidad de ${r.auxiliar}`}
+            aria-label={`Disminuir cantidad de ${faltante.display_name}`}
             onClick={() => onAjustar(-1)}
-            className="p-1.5 text-muted-foreground hover:text-foreground"
+            disabled={ocupado || !puedeAjustar}
+            title={puedeAjustar ? undefined : "Este faltante no tiene una unidad definida"}
+            className="p-1.5 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Minus className="h-3.5 w-3.5" />
           </button>
-          <span className="min-w-16 text-center text-sm font-medium">
-            {r.cantidad} {r.unidad}
+          <span className="min-w-20 text-center text-sm font-medium" aria-live="polite">
+            {ocupado ? (
+              <Loader2 className="mx-auto h-4 w-4 animate-spin" aria-label="Guardando" />
+            ) : (
+              (objetivo ?? "Sin definir")
+            )}
           </span>
           <button
-            aria-label={`Aumentar cantidad de ${r.auxiliar}`}
+            aria-label={`Aumentar cantidad de ${faltante.display_name}`}
             onClick={() => onAjustar(1)}
-            className="p-1.5 text-muted-foreground hover:text-foreground"
+            disabled={ocupado || !puedeAjustar}
+            title={puedeAjustar ? undefined : "Este faltante no tiene una unidad definida"}
+            className="p-1.5 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
         <button
-          aria-label={`Eliminar reporte de ${r.auxiliar}`}
+          aria-label={`Eliminar reporte de ${faltante.display_name}`}
           onClick={() => setConfirmar(true)}
-          className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive"
+          disabled={ocupado}
+          className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -595,8 +795,9 @@ function FilaFaltante({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Retirar este reporte?</AlertDialogTitle>
             <AlertDialogDescription>
-              {r.medicamento} · {r.cantidad} {r.unidad} · reportado por {r.auxiliar}. Los demás
-              reportes no cambian. Retirarlo no equivale a una compra confirmada.
+              {faltante.display_name} · {objetivo ?? "cantidad sin definir"} · reportado por {autor}
+              . Los demás reportes no cambian. Se conserva el historial; retirarlo no equivale a una
+              compra confirmada.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
