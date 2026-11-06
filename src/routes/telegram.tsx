@@ -1,18 +1,35 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { toast } from "sonner";
-import { Send, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Send, ShieldAlert } from "lucide-react";
+
 import { MenuPrincipal, EncabezadoPagina } from "@/components/MenuPrincipal";
-import { Switch } from "@/components/ui/switch";
-import { accesosTelegramDemo, type AccesoTelegram } from "@/data/demo";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AuxiliaresSection } from "@/components/telegram/AuxiliaresSection";
+import { SolicitudesSection } from "@/components/telegram/SolicitudesSection";
+import { TelefonosSection } from "@/components/telegram/TelefonosSection";
+import { Tarjeta } from "@/components/telegram/Comunes";
+import { useSession } from "@/lib/session";
+import { listarCuentasTelegram, listarPersonal } from "@/lib/telegram-api";
+import type { CuentaTelegram, PersonaStaff } from "@/lib/telegram-api";
+import {
+  mensajeDeErrorTelegram,
+  personalOperativo,
+  puedeAdministrarTelegram,
+} from "@/lib/telegram";
 
 export const Route = createFileRoute("/telegram")({
   head: () => ({
     meta: [
       { title: "Configuración de Telegram · Cotizador para farmacia" },
-      { name: "description", content: "Habilita el bot de Telegram y administra quién puede usarlo." },
+      {
+        name: "description",
+        content: "Administra auxiliares, solicitudes de acceso y teléfonos autorizados del bot.",
+      },
       { property: "og:title", content: "Configuración de Telegram · Cotizador para farmacia" },
-      { property: "og:description", content: "Habilita el bot de Telegram y administra quién puede usarlo." },
+      {
+        property: "og:description",
+        content: "Administra auxiliares, solicitudes de acceso y teléfonos autorizados del bot.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -21,70 +38,118 @@ export const Route = createFileRoute("/telegram")({
 });
 
 function Telegram() {
-  const [habilitado, setHabilitado] = useState(false);
-  const [accesos, setAccesos] = useState<AccesoTelegram[]>(accesosTelegramDemo);
-  const [nombre, setNombre] = useState("");
-  const [usuario, setUsuario] = useState("");
-  const [rol, setRol] = useState<AccesoTelegram["rol"]>("Consulta");
+  const { profile } = useSession();
+  const autorizado = puedeAdministrarTelegram(profile?.roles);
 
-  const agregar = (e: React.FormEvent) => {
-    e.preventDefault();
-    const u = usuario.trim().replace(/^@?/, "@");
-    if (!nombre.trim() || u === "@") return;
-    if (accesos.some((a) => a.usuario.toLowerCase() === u.toLowerCase())) { toast.error("Ese usuario ya tiene acceso"); return; }
-    setAccesos([...accesos, { nombre: nombre.trim(), usuario: u, rol }]);
-    setNombre(""); setUsuario("");
-    toast.success(`Acceso otorgado a ${u}`);
-  };
-  const input = "rounded-lg border bg-background px-3 py-2 text-sm outline-none";
+  const [staff, setStaff] = useState<PersonaStaff[]>([]);
+  const [cuentas, setCuentas] = useState<CuentaTelegram[]>([]);
+  const [cargandoPersonal, setCargandoPersonal] = useState(false);
+  const [cargandoCuentas, setCargandoCuentas] = useState(false);
+  const [errorPersonal, setErrorPersonal] = useState<string | null>(null);
+  const [errorCuentas, setErrorCuentas] = useState<string | null>(null);
+
+  const cargarPersonal = useCallback(async () => {
+    setCargandoPersonal(true);
+    setErrorPersonal(null);
+    try {
+      setStaff(await listarPersonal(true));
+    } catch (error) {
+      setErrorPersonal(
+        mensajeDeErrorTelegram(error, "No pudimos cargar el personal. Inténtalo otra vez."),
+      );
+    } finally {
+      setCargandoPersonal(false);
+    }
+  }, []);
+
+  const cargarCuentas = useCallback(async () => {
+    setCargandoCuentas(true);
+    setErrorCuentas(null);
+    try {
+      setCuentas(await listarCuentasTelegram());
+    } catch (error) {
+      setErrorCuentas(
+        mensajeDeErrorTelegram(
+          error,
+          "No pudimos cargar los teléfonos autorizados. Inténtalo otra vez.",
+        ),
+      );
+    } finally {
+      setCargandoCuentas(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!autorizado) return;
+    void Promise.all([cargarPersonal(), cargarCuentas()]);
+  }, [autorizado, cargarPersonal, cargarCuentas]);
 
   return (
     <div className="min-h-screen bg-hero">
       <MenuPrincipal />
       <main className="mx-auto w-full max-w-[1760px] px-4 sm:px-6 lg:w-[90%] lg:px-0 space-y-6 pb-24">
-        <EncabezadoPagina titulo="Configuración de Telegram" bajada="Simulación visual: no se conecta a Telegram ni guarda cambios al recargar." />
-        <section className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border bg-card p-6">
-          <div className="flex items-start gap-3">
-            <Send className="mt-0.5 h-5 w-5 text-brand-blue" />
-            <div>
-              <h2 className="text-lg font-semibold">Bot de cotizaciones</h2>
-              <p className="text-sm text-muted-foreground">@CotizadorFarmaciaDemoBot · permite consultar precios y cotizaciones desde Telegram.</p>
+        <EncabezadoPagina
+          titulo="Configuración de Telegram"
+          bajada="Administra los auxiliares, las solicitudes de acceso y los teléfonos autorizados del bot. Los cambios se guardan en el sistema."
+        />
+
+        {!autorizado ? (
+          <Tarjeta>
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 h-6 w-6 shrink-0 text-brand-blue" aria-hidden />
+              <div>
+                <h2 className="text-lg font-semibold">Solo para administradoras</h2>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                  Esta configuración la administra una persona con perfil de administración. Si
+                  necesitas cambiar un auxiliar o un teléfono, pídeselo a una administradora de la
+                  farmacia.
+                </p>
+              </div>
             </div>
-          </div>
-          <label className="flex items-center gap-3 text-sm font-medium">
-            <Switch checked={habilitado} onCheckedChange={setHabilitado} aria-label="Habilitar Telegram" />
-            {habilitado ? "Habilitado" : "Deshabilitado"}
-          </label>
-        </section>
-        <section className={`rounded-3xl border bg-card p-6 transition-opacity ${habilitado ? "" : "opacity-60"}`}>
-          <h2 className="text-lg font-semibold">Accesos autorizados</h2>
-          <p className="mb-4 text-sm text-muted-foreground">
-            {habilitado ? "Solo estas personas pueden usar el bot." : "El bot está deshabilitado: nadie puede usarlo aunque tenga acceso."}
-          </p>
-          <form onSubmit={agregar} className="mb-4 grid gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
-            <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" className={input} aria-label="Nombre" />
-            <input value={usuario} onChange={(e) => setUsuario(e.target.value)} placeholder="@usuario de Telegram" className={input} aria-label="Usuario de Telegram" />
-            <select value={rol} onChange={(e) => setRol(e.target.value as AccesoTelegram["rol"])} className={input} aria-label="Rol">
-              <option>Consulta</option>
-              <option>Administrador</option>
-            </select>
-            <button className="inline-flex items-center justify-center gap-1 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground"><Plus className="h-4 w-4" /> Dar acceso</button>
-          </form>
-          <ul className="divide-y">
-            {accesos.map((a) => (
-              <li key={a.usuario} className="flex items-center justify-between gap-3 py-3">
-                <div>
-                  <p className="font-medium">{a.nombre} <span className="text-xs font-normal text-muted-foreground">(demo)</span></p>
-                  <p className="text-sm text-muted-foreground">{a.usuario} · {a.rol}</p>
-                </div>
-                <button onClick={() => setAccesos(accesos.filter((x) => x.usuario !== a.usuario))} className="p-1 text-muted-foreground hover:text-destructive" aria-label={`Quitar acceso a ${a.usuario}`}>
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </li>
-            ))}
-            {accesos.length === 0 && <li className="py-4 text-sm text-muted-foreground">Nadie tiene acceso todavía.</li>}
-          </ul>
-        </section>
+          </Tarjeta>
+        ) : (
+          <Tabs defaultValue="auxiliares" className="space-y-4">
+            <TabsList className="h-auto w-full flex-wrap justify-start gap-1 p-1">
+              <TabsTrigger value="auxiliares" className="px-4 py-2">
+                Auxiliares ({personalOperativo(staff).length})
+              </TabsTrigger>
+              <TabsTrigger value="solicitudes" className="px-4 py-2">
+                Solicitudes de acceso
+              </TabsTrigger>
+              <TabsTrigger value="telefonos" className="px-4 py-2">
+                Teléfonos ({cuentas.length})
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="auxiliares">
+              <AuxiliaresSection
+                staff={staff}
+                cargando={cargandoPersonal}
+                error={errorPersonal}
+                recargar={cargarPersonal}
+              />
+            </TabsContent>
+
+            <TabsContent value="solicitudes">
+              <SolicitudesSection staff={staff} onCuentasCambiadas={cargarCuentas} />
+            </TabsContent>
+
+            <TabsContent value="telefonos">
+              <TelefonosSection
+                cuentas={cuentas}
+                staff={staff}
+                cargando={cargandoCuentas}
+                error={errorCuentas}
+                recargar={cargarCuentas}
+              />
+            </TabsContent>
+          </Tabs>
+        )}
+
+        <p className="flex items-center justify-center gap-2 text-xs text-primary-foreground/80">
+          <Send className="h-3 w-3" aria-hidden />
+          El código de acceso se comparte solo por Telegram. Esta pantalla nunca lo muestra.
+        </p>
       </main>
     </div>
   );

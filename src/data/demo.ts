@@ -175,12 +175,6 @@ export const proveedoresAdminDemo: ProveedorAdmin[] = Array.from(
   activo: nombre !== "Laboratorio Sur",
 }));
 
-export interface AccesoTelegram { nombre: string; usuario: string; rol: "Administrador" | "Consulta" }
-export const accesosTelegramDemo: AccesoTelegram[] = [
-  { nombre: "Yarella Fernández", usuario: "@yarella_demo", rol: "Administrador" },
-  { nombre: "Químico farmacéutico", usuario: "@qf_demo", rol: "Consulta" },
-];
-
 export interface CotizacionGuardada {
   id: string; nombre: string; fecha: string;
   carritos: { proveedor: string; productos: number; subtotal: number | null }[];
