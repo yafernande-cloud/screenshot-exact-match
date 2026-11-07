@@ -168,6 +168,26 @@ describe("pantalla principal con sesión autorizada", () => {
     expect(cargarFotografiaMock).toHaveBeenCalledWith("/api/v1/attachments/a-1/content");
   });
 
+  it("agrupa texto y miniatura antes de los controles de la tarjeta", async () => {
+    listarFaltantesMock.mockResolvedValue([reporteConFoto]);
+
+    await renderizarPantalla();
+
+    const titulo = await screen.findByText("Tramadol clorhidrato paracetamol");
+    const miniatura = screen.getByRole("button", {
+      name: "Ver fotografía de Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido x 30",
+    });
+    const fila = titulo.closest("li");
+    // Texto y fotografía comparten el mismo contenedor: el espacio flexible queda después.
+    expect(miniatura.parentElement).toContainElement(titulo);
+    expect(miniatura.parentElement?.parentElement).toBe(fila);
+    // Los controles son un hermano posterior, al extremo derecho de la tarjeta.
+    const controles = screen
+      .getByRole("button", { name: /Aumentar cantidad de Tramadol/ })
+      .closest("div.flex-wrap");
+    expect(fila?.lastElementChild).toBe(controles);
+  });
+
   it("muestra un estado neutro en la miniatura si la fotografía no carga, sin afectar la tarjeta", async () => {
     cargarFotografiaMock.mockRejectedValue(new Error("sin foto"));
     listarFaltantesMock.mockResolvedValue([reporteConFoto]);
