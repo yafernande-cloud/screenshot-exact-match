@@ -25,6 +25,7 @@ vi.mock("@/lib/supabase", () => ({
 import { ApiError } from "@/lib/api";
 import {
   cancelarFaltante,
+  cargarFotografia,
   esConflictoDeVersion,
   fijarCantidad,
   listarFaltantes,
@@ -168,6 +169,68 @@ describe("comandos reales de la bandeja", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({
       reason: "Retirado desde la bandeja de faltantes",
     });
+  });
+});
+
+describe("fotografía original del reporte", () => {
+  it("la descarga con la misma identidad que el resto de la API y devuelve el binario", async () => {
+    const imagen = new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(imagen, { status: 200, headers: { "Content-Type": "image/jpeg" } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const blob = await cargarFotografia("/api/v1/attachments/a-1/content");
+
+    expect(blob.type).toBe("image/jpeg");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/attachments/a-1/content");
+    // Nunca como <img src> directo: el encabezado de identidad viaja en la solicitud.
+    const encabezados = init.headers as Record<string, string>;
+    expect(encabezados["Authorization"]).toBe("Bearer token-vigente");
+    expect(encabezados["Accept"]).toBe("image/*");
+  });
+
+  it("no sigue una URL absoluta ni otro origen", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(cargarFotografia("https://otro-sitio.example/foto.jpg")).rejects.toMatchObject({
+      code: "INVALID_PATH",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("informa cuando la fotografía ya no está disponible", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            error: {
+              code: "PHOTO_NOT_AVAILABLE",
+              message: "La fotografía no está disponible.",
+            },
+          },
+          404,
+        ),
+      ),
+    );
+
+    await expect(cargarFotografia("/api/v1/attachments/a-1/content")).rejects.toMatchObject({
+      status: 404,
+      message: "La fotografía no está disponible.",
+    });
+  });
+
+  it("no solicita nada cuando el reporte no tiene fotografía", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(cargarFotografia("")).rejects.toBeInstanceOf(ApiError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

@@ -14,6 +14,7 @@ import {
   Sparkles,
   Loader2,
   AlertCircle,
+  Image as ImageIcon,
 } from "lucide-react";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
@@ -30,11 +31,13 @@ import {
   aplicarCambioCantidad,
   etiquetaEstadoFaltante,
   fusionarFaltantes,
+  partesDelFaltante,
   siguienteCantidad,
   unidadDeAjuste,
 } from "@/lib/faltantes";
 import {
   cancelarFaltante,
+  cargarFotografia,
   esConflictoDeVersion,
   fijarCantidad,
   listarFaltantes,
@@ -84,6 +87,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -714,7 +724,10 @@ function FilaFaltante({
   onBuscar: () => void;
 }) {
   const [confirmar, setConfirmar] = useState(false);
+  const [verFoto, setVerFoto] = useState(false);
   const autor = faltante.reported_by_name?.trim() || "Sin identificar";
+  // Nombres largos: título y detalles del backend; si faltan, el nombre completo como respaldo.
+  const partes = partesDelFaltante(faltante);
   const solicitado = describirCantidad(
     faltante.requested_quantity ?? faltante.declared_quantity,
     faltante.requested_unit ?? faltante.declared_unit,
@@ -727,7 +740,7 @@ function FilaFaltante({
     <li className="flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="font-medium">{faltante.display_name}</p>
+          <p className="font-medium">{partes.titulo}</p>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
             {etiquetaEstadoFaltante(faltante.status)}
           </span>
@@ -737,9 +750,11 @@ function FilaFaltante({
             </span>
           )}
         </div>
+        {partes.detalles.length > 0 && (
+          <p className="mt-0.5 text-xs text-muted-foreground">{partes.detalles.join(" · ")}</p>
+        )}
         <p className="text-xs text-muted-foreground">
-          {faltante.branch_label ? `${faltante.branch_label} · ` : ""}Reportado por{" "}
-          <span className="text-foreground">{autor}</span> ·{" "}
+          Reportado por <span className="text-foreground">{autor}</span> ·{" "}
           {fechaDeReporte(faltante.reported_at ?? faltante.created_at)}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -775,6 +790,17 @@ function FilaFaltante({
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
+        {faltante.photo_url && (
+          <button
+            aria-label={`Ver fotografía de ${faltante.display_name}`}
+            onClick={() => setVerFoto(true)}
+            disabled={ocupado}
+            title="Ver fotografía original"
+            className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ImageIcon className="h-4 w-4" />
+          </button>
+        )}
         <button
           aria-label={`Eliminar reporte de ${faltante.display_name}`}
           onClick={() => setConfirmar(true)}
@@ -806,7 +832,91 @@ function FilaFaltante({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {faltante.photo_url && (
+        <VisorFotografia
+          abierto={verFoto}
+          photoUrl={faltante.photo_url}
+          descripcion={faltante.display_name}
+          onCerrar={() => setVerFoto(false)}
+        />
+      )}
     </li>
+  );
+}
+
+/**
+ * Vista ampliada de la fotografía original.
+ *
+ * La ruta es privada, así que se descarga con la misma identidad que el resto de la API y se
+ * muestra con una URL de objeto temporal, revocada al cerrar o desmontar para liberar memoria.
+ */
+function VisorFotografia({
+  abierto,
+  photoUrl,
+  descripcion,
+  onCerrar,
+}: {
+  abierto: boolean;
+  photoUrl: string;
+  descripcion: string;
+  onCerrar: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!abierto) return;
+    let cancelado = false;
+    let objectUrl: string | null = null;
+    setUrl(null);
+    setError(null);
+
+    cargarFotografia(photoUrl)
+      .then((blob) => {
+        if (cancelado) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch((causa) => {
+        if (!cancelado) setError(mensajeDeErrorFaltantes(causa));
+      });
+
+    return () => {
+      cancelado = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [abierto, photoUrl]);
+
+  return (
+    <Dialog open={abierto} onOpenChange={(siguiente) => !siguiente && onCerrar()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Fotografía original</DialogTitle>
+          <DialogDescription className="break-words">{descripcion}</DialogDescription>
+        </DialogHeader>
+        {error ? (
+          <p
+            role="alert"
+            className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> {error}
+          </p>
+        ) : url ? (
+          <img
+            src={url}
+            alt={`Fotografía del reporte: ${descripcion}`}
+            className="max-h-[70vh] w-full rounded-xl border object-contain"
+          />
+        ) : (
+          <p
+            role="status"
+            className="flex items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-sm text-muted-foreground"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Cargando fotografía…
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

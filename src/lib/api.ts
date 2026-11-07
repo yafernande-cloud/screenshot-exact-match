@@ -112,11 +112,11 @@ async function refreshedToken(): Promise<string | null> {
  * rechazando la identidad, cierra la sesión para que el proveedor de sesión y la protección de
  * rutas hagan su trabajo. Los errores se normalizan a `ApiError` con mensajes para la persona.
  */
-export async function apiRequest<T>(
+async function solicitudAutenticada(
   path: string,
-  init: RequestInit = {},
-  fallbackMessage = "No pudimos completar la solicitud. Inténtalo otra vez.",
-): Promise<T> {
+  init: RequestInit,
+  fallbackMessage: string,
+): Promise<Response> {
   const token = await accessToken();
   let response = await request(path, token, init);
   if (response.status === 401) {
@@ -135,5 +135,37 @@ export async function apiRequest<T>(
     const { code, message } = await errorBody(response, fallbackMessage);
     throw new ApiError(response.status, code, message);
   }
+  return response;
+}
+
+/** Solicitud JSON autenticada; el cuerpo se interpreta como JSON. */
+export async function apiRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  fallbackMessage = "No pudimos completar la solicitud. Inténtalo otra vez.",
+): Promise<T> {
+  const response = await solicitudAutenticada(path, init, fallbackMessage);
   return (await response.json()) as T;
+}
+
+/**
+ * Solicitud autenticada que devuelve el cuerpo binario (por ejemplo una fotografía).
+ *
+ * Usa exactamente el mismo token y el mismo reintento que `apiRequest`: el archivo privado nunca
+ * se pide como `<img src>` directo, porque el navegador no enviaría el encabezado de identidad.
+ */
+export async function apiRequestBlob(
+  path: string,
+  fallbackMessage = "No pudimos cargar el archivo. Inténtalo otra vez.",
+): Promise<Blob> {
+  // Solo rutas relativas del backend: nunca una URL absoluta u otro origen.
+  if (!path.startsWith("/")) {
+    throw new ApiError(0, "INVALID_PATH", fallbackMessage);
+  }
+  const response = await solicitudAutenticada(
+    path,
+    { headers: { Accept: "image/*" } },
+    fallbackMessage,
+  );
+  return await response.blob();
 }

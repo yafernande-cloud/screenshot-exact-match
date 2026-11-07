@@ -7,6 +7,7 @@ import {
   cantidadDeReferencia,
   etiquetaEstadoFaltante,
   fusionarFaltantes,
+  partesDelFaltante,
   pendientes,
   resolverSolicitud,
   siguienteCantidad,
@@ -130,6 +131,47 @@ describe("bandeja real de faltantes", () => {
     expect(resultado.version).toBe(4);
     expect(resultado.reported_by_name).toBe("Pato");
     expect(resultado.branch_label).toBe("Parque Lantaño");
+  });
+});
+
+describe("presentación de nombres extensos", () => {
+  it("usa el encabezado y los detalles del backend sin perder información", () => {
+    const partes = partesDelFaltante(
+      faltante({
+        display_name: "Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido x 30",
+        display_parts: {
+          name: "Tramadol clorhidrato paracetamol",
+          details: ["37.5 mg", "325 mg", "comprimido", "x 30"],
+        },
+      }),
+    );
+    expect(partes.titulo).toBe("Tramadol clorhidrato paracetamol");
+    expect(partes.detalles).toEqual(["37.5 mg", "325 mg", "comprimido", "x 30"]);
+    expect([partes.titulo, ...partes.detalles].join(" ")).toBe(
+      "Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido x 30",
+    );
+  });
+
+  it("recurre a display_name cuando el backend no entrega display_parts", () => {
+    expect(partesDelFaltante(faltante({ display_parts: null }))).toEqual({
+      titulo: "Omeprazol 20 mg",
+      detalles: [],
+    });
+    expect(partesDelFaltante(faltante())).toEqual({
+      titulo: "Omeprazol 20 mg",
+      detalles: [],
+    });
+  });
+
+  it("descarta detalles vacíos y cae al nombre completo si falta el encabezado", () => {
+    expect(
+      partesDelFaltante(faltante({ display_parts: { name: "  ", details: ["20 mg"] } })),
+    ).toEqual({ titulo: "Omeprazol 20 mg", detalles: [] });
+    expect(
+      partesDelFaltante(
+        faltante({ display_parts: { name: "Omeprazol", details: [" 20 mg ", ""] } }),
+      ).detalles,
+    ).toEqual(["20 mg"]);
   });
 });
 

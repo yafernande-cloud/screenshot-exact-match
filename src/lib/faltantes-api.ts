@@ -6,12 +6,25 @@
  * La identidad y los permisos los resuelve el backend; aquí no se decide nada de negocio.
  */
 
-import { apiRequest, ApiError } from "@/lib/api";
+import { apiRequest, apiRequestBlob, ApiError } from "@/lib/api";
+
+/** Nombre del producto separado para presentarlo en dos niveles (título y detalles). */
+export interface PartesNombre {
+  name: string;
+  details: string[];
+}
 
 /** Fila de `DemandItemOut` tal como la entrega el backend. */
 export interface Faltante {
   id: string;
   display_name: string;
+  /**
+   * Encabezado y detalles del nombre (`" ".join([name, ...details])` es `display_name`).
+   * Puede faltar en un backend anterior: entonces se usa `display_name` completo.
+   */
+  display_parts?: PartesNombre | null;
+  /** Ruta relativa de la fotografía original (privada); `null` si el aviso no tuvo foto. */
+  photo_url?: string | null;
   ingredient: string | null;
   status: string;
   version: number;
@@ -78,6 +91,7 @@ export interface ResultadoCancelacion {
 const LISTA_FALLBACK = "No pudimos cargar los faltantes. Inténtalo otra vez.";
 const CANTIDAD_FALLBACK = "No pudimos guardar la cantidad. Inténtalo otra vez.";
 const CANCELAR_FALLBACK = "No pudimos retirar el reporte. Inténtalo otra vez.";
+const FOTO_FALLBACK = "No pudimos cargar la fotografía. Inténtalo otra vez.";
 
 /** Tope de seguridad: la bandeja activa es pequeña; nunca se deja una página sin leer. */
 const MAX_PAGINAS = 40;
@@ -172,6 +186,21 @@ export function cancelarFaltante(
 /** La versión cambió entre la lectura y el guardado: hay que refrescar, no reintentar a ciegas. */
 export function esConflictoDeVersion(error: unknown): boolean {
   return error instanceof ApiError && error.code === "VERSION_CONFLICT";
+}
+
+/**
+ * Descarga la fotografía original del reporte con la misma identidad que el resto de la API.
+ *
+ * Devuelve un `Blob` para mostrarlo con una URL de objeto temporal: la ruta privada no sirve como
+ * `<img src>` porque el navegador no enviaría el encabezado de autenticación.
+ */
+export function cargarFotografia(photoUrl: string): Promise<Blob> {
+  if (!photoUrl) {
+    return Promise.reject(
+      new ApiError(404, "PHOTO_NOT_AVAILABLE", "La fotografía no está disponible."),
+    );
+  }
+  return apiRequestBlob(photoUrl, FOTO_FALLBACK);
 }
 
 export function esErrorDePermiso(error: unknown): boolean {

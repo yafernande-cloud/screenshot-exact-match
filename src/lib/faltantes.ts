@@ -27,9 +27,33 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
   fulfilled: "Cumplido",
 };
 
-/** Estado real que entrega el backend, presentado en español. */
+/**
+ * Estado real que entrega el backend, presentado en español.
+ */
 export function etiquetaEstadoFaltante(status: string): string {
   return ETIQUETAS_ESTADO[status] ?? status;
+}
+
+export interface PartesFaltante {
+  titulo: string;
+  detalles: string[];
+}
+
+/**
+ * Título y detalles para presentar nombres largos en dos niveles.
+ *
+ * Cuando el backend entrega `display_parts` se usa tal cual (limpio de vacíos); si falta —backend
+ * anterior— o viene sin encabezado, se muestra `display_name` completo para no perder información.
+ */
+export function partesDelFaltante(
+  faltante: Pick<Faltante, "display_name" | "display_parts">,
+): PartesFaltante {
+  const titulo = faltante.display_parts?.name?.trim();
+  if (!titulo) return { titulo: faltante.display_name, detalles: [] };
+  const detalles = (faltante.display_parts?.details ?? [])
+    .map((detalle) => detalle.trim())
+    .filter(Boolean);
+  return { titulo, detalles };
 }
 
 /** Unidades que acepta el comando de cantidad del backend (`QuantityUnit`). */
