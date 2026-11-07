@@ -14,7 +14,6 @@ import {
   Sparkles,
   Loader2,
   AlertCircle,
-  Image as ImageIcon,
 } from "lucide-react";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
@@ -738,29 +737,38 @@ function FilaFaltante({
 
   return (
     <li className="flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-medium">{partes.titulo}</p>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {etiquetaEstadoFaltante(faltante.status)}
-          </span>
-          {faltante.observation_count > 1 && (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {faltante.observation_count} avisos
-            </span>
-          )}
-        </div>
-        {partes.detalles.length > 0 && (
-          <p className="mt-0.5 text-xs text-muted-foreground">{partes.detalles.join(" · ")}</p>
+      <div className="flex min-w-0 flex-1 gap-3">
+        {faltante.photo_url && (
+          <MiniaturaFotografia
+            photoUrl={faltante.photo_url}
+            descripcion={faltante.display_name}
+            onAbrir={() => setVerFoto(true)}
+          />
         )}
-        <p className="text-xs text-muted-foreground">
-          Reportado por <span className="text-foreground">{autor}</span> ·{" "}
-          {fechaDeReporte(faltante.reported_at ?? faltante.created_at)}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Solicitado: {solicitado ?? "sin cantidad informada"}
-          {porDefecto ? " (1 por defecto)" : ""} · A cotizar: {objetivo ?? "sin definir"}
-        </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-medium">{partes.titulo}</p>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {etiquetaEstadoFaltante(faltante.status)}
+            </span>
+            {faltante.observation_count > 1 && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                {faltante.observation_count} avisos
+              </span>
+            )}
+          </div>
+          {partes.detalles.length > 0 && (
+            <p className="mt-0.5 text-xs text-muted-foreground">{partes.detalles.join(" · ")}</p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Reportado por <span className="text-foreground">{autor}</span> ·{" "}
+            {fechaDeReporte(faltante.reported_at ?? faltante.created_at)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Solicitado: {solicitado ?? "sin cantidad informada"}
+            {porDefecto ? " (1 por defecto)" : ""} · A cotizar: {objetivo ?? "sin definir"}
+          </p>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center rounded-full border">
@@ -790,17 +798,6 @@ function FilaFaltante({
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
-        {faltante.photo_url && (
-          <button
-            aria-label={`Ver fotografía de ${faltante.display_name}`}
-            onClick={() => setVerFoto(true)}
-            disabled={ocupado}
-            title="Ver fotografía original"
-            className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ImageIcon className="h-4 w-4" />
-          </button>
-        )}
         <button
           aria-label={`Eliminar reporte de ${faltante.display_name}`}
           onClick={() => setConfirmar(true)}
@@ -841,6 +838,79 @@ function FilaFaltante({
         />
       )}
     </li>
+  );
+}
+
+/**
+ * Miniatura real de la fotografía que envió el auxiliar.
+ *
+ * Usa la misma carga autenticada que el visor ampliado y libera la URL de objeto al desmontar.
+ * Si tarda muestra un indicador discreto; si falla deja un estado neutro dentro del mismo
+ * cuadrado, sin afectar el resto de la tarjeta.
+ */
+function MiniaturaFotografia({
+  photoUrl,
+  descripcion,
+  onAbrir,
+}: {
+  photoUrl: string;
+  descripcion: string;
+  onAbrir: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    let objectUrl: string | null = null;
+    setUrl(null);
+    setError(false);
+
+    cargarFotografia(photoUrl)
+      .then((blob) => {
+        if (cancelado) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelado) setError(true);
+      });
+
+    return () => {
+      cancelado = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [photoUrl]);
+
+  return (
+    <button
+      type="button"
+      onClick={onAbrir}
+      aria-label={`Ver fotografía de ${descripcion}`}
+      title="Ver fotografía original"
+      className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border bg-muted text-muted-foreground transition hover:border-brand-green focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+    >
+      {url ? (
+        <img
+          src={url}
+          alt={`Fotografía del reporte: ${descripcion}`}
+          className="h-full w-full object-cover"
+        />
+      ) : error ? (
+        <span
+          className="flex h-full w-full items-center justify-center"
+          title="Fotografía no disponible"
+        >
+          <AlertCircle className="h-4 w-4" aria-hidden />
+          <span className="sr-only">Fotografía no disponible</span>
+        </span>
+      ) : (
+        <span className="flex h-full w-full items-center justify-center" role="status">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          <span className="sr-only">Cargando fotografía</span>
+        </span>
+      )}
+    </button>
   );
 }
 

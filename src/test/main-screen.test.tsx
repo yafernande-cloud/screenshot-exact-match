@@ -15,6 +15,8 @@ import type { Faltante } from "@/lib/faltantes-api";
 /** La bandeja real consulta el backend al montar; cada prueba decide qué responde. */
 const listarFaltantesMock = vi.hoisted(() => vi.fn());
 const cargarFotografiaMock = vi.hoisted(() => vi.fn());
+const crearUrlMock = vi.hoisted(() => vi.fn(() => "blob:foto"));
+const revocarUrlMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/faltantes-api", () => ({
   listarFaltantes: listarFaltantesMock,
@@ -102,13 +104,19 @@ describe("pantalla principal con sesión autorizada", () => {
   beforeEach(() => {
     listarFaltantesMock.mockReset();
     listarFaltantesMock.mockResolvedValue([]);
+    cargarFotografiaMock.mockReset();
+    cargarFotografiaMock.mockResolvedValue(new Blob([new Uint8Array([1])], { type: "image/jpeg" }));
+    crearUrlMock.mockClear();
+    revocarUrlMock.mockClear();
+    // jsdom no implementa las URL de objeto; se doblan para las miniaturas y el visor.
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: crearUrlMock });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revocarUrlMock });
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    // El doble de las URL de objeto es solo de la prueba que lo define.
     const urlGlobal = URL as unknown as Record<string, unknown>;
     delete urlGlobal["createObjectURL"];
     delete urlGlobal["revokeObjectURL"];
@@ -147,21 +155,34 @@ describe("pantalla principal con sesión autorizada", () => {
     expect(
       screen.queryByText("Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido x 30"),
     ).toBeNull();
-    // Solo la fila con photo_url ofrece abrir la fotografía.
+    // Solo la fila con photo_url muestra la miniatura, y es la imagen real.
     const botonesFoto = screen.getAllByRole("button", { name: /Ver fotografía de/ });
     expect(botonesFoto).toHaveLength(1);
     expect(botonesFoto[0]).toHaveAccessibleName(
       "Ver fotografía de Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido x 30",
     );
+    const miniatura = await screen.findByRole("img", {
+      name: /Fotografía del reporte: Tramadol/,
+    });
+    expect(miniatura).toHaveAttribute("src", "blob:foto");
+    expect(cargarFotografiaMock).toHaveBeenCalledWith("/api/v1/attachments/a-1/content");
+  });
+
+  it("muestra un estado neutro en la miniatura si la fotografía no carga, sin afectar la tarjeta", async () => {
+    cargarFotografiaMock.mockRejectedValue(new Error("sin foto"));
+    listarFaltantesMock.mockResolvedValue([reporteConFoto]);
+
+    await renderizarPantalla();
+
+    expect(await screen.findByText("Tramadol clorhidrato paracetamol")).toBeInTheDocument();
+    expect(await screen.findByText("Fotografía no disponible")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Fotografía del reporte/ })).toBeNull();
+    // El resto de la tarjeta sigue funcionando.
+    expect(screen.getByText(/Solicitado: 2 cajas/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ver fotografía de Tramadol/ })).toBeInTheDocument();
   });
 
   it("abre la fotografía autenticada y libera la URL temporal al cerrar", async () => {
-    const crear = vi.fn(() => "blob:foto");
-    const revocar = vi.fn();
-    // jsdom no implementa las URL de objeto; se doblan solo para esta prueba.
-    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: crear });
-    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revocar });
-    cargarFotografiaMock.mockResolvedValue(new Blob([new Uint8Array([1])], { type: "image/jpeg" }));
     listarFaltantesMock.mockResolvedValue([reporteConFoto]);
 
     await renderizarPantalla();
@@ -171,11 +192,12 @@ describe("pantalla principal con sesión autorizada", () => {
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(cargarFotografiaMock).toHaveBeenCalledWith("/api/v1/attachments/a-1/content");
-    const imagen = await screen.findByRole("img", { name: /Fotografía del reporte/ });
-    expect(imagen).toHaveAttribute("src", "blob:foto");
+    const imagenes = await screen.findAllByRole("img", { name: /Fotografía del reporte/ });
+    expect(imagenes.some((imagen) => imagen.getAttribute("src") === "blob:foto")).toBe(true);
 
+    revocarUrlMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(revocar).toHaveBeenCalledWith("blob:foto"));
+    await waitFor(() => expect(revocarUrlMock).toHaveBeenCalledWith("blob:foto"));
   });
 
   it("muestra un error claro y nunca cae a reportes ficticios si falla la API", async () => {
