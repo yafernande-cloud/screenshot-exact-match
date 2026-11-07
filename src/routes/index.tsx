@@ -737,39 +737,37 @@ function FilaFaltante({
 
   return (
     <li className="flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center">
-      <div className="flex min-w-0 flex-1 gap-3">
-        {faltante.photo_url && (
-          <MiniaturaFotografia
-            photoUrl={faltante.photo_url}
-            descripcion={faltante.display_name}
-            onAbrir={() => setVerFoto(true)}
-          />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium">{partes.titulo}</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium">{partes.titulo}</p>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {etiquetaEstadoFaltante(faltante.status)}
+          </span>
+          {faltante.observation_count > 1 && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {etiquetaEstadoFaltante(faltante.status)}
+              {faltante.observation_count} avisos
             </span>
-            {faltante.observation_count > 1 && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                {faltante.observation_count} avisos
-              </span>
-            )}
-          </div>
-          {partes.detalles.length > 0 && (
-            <p className="mt-0.5 text-xs text-muted-foreground">{partes.detalles.join(" · ")}</p>
           )}
-          <p className="text-xs text-muted-foreground">
-            Reportado por <span className="text-foreground">{autor}</span> ·{" "}
-            {fechaDeReporte(faltante.reported_at ?? faltante.created_at)}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Solicitado: {solicitado ?? "sin cantidad informada"}
-            {porDefecto ? " (1 por defecto)" : ""} · A cotizar: {objetivo ?? "sin definir"}
-          </p>
         </div>
+        {partes.detalles.length > 0 && (
+          <p className="mt-0.5 text-xs text-muted-foreground">{partes.detalles.join(" · ")}</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Reportado por <span className="text-foreground">{autor}</span> ·{" "}
+          {fechaDeReporte(faltante.reported_at ?? faltante.created_at)}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Solicitado: {solicitado ?? "sin cantidad informada"}
+          {porDefecto ? " (1 por defecto)" : ""} · A cotizar: {objetivo ?? "sin definir"}
+        </p>
       </div>
+      {faltante.photo_url && (
+        <MiniaturaFotografia
+          photoUrl={faltante.photo_url}
+          descripcion={faltante.display_name}
+          onAbrir={() => setVerFoto(true)}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center rounded-full border">
           <button
