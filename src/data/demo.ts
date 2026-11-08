@@ -165,16 +165,6 @@ export const historialDemo: CotizacionHistorial[] = [
   { id: "COT-0008", fecha: "2026-10-09", proveedor: "Cosmética Total", productos: 2, total: 33600, estado: "Respondida" },
 ];
 
-export interface ProveedorAdmin { nombre: string; contacto: string; telefono: string; activo: boolean }
-export const proveedoresAdminDemo: ProveedorAdmin[] = Array.from(
-  new Set(productos.flatMap((p) => p.proveedores.map((o) => o.nombre))),
-).map((nombre, i) => ({
-  nombre,
-  contacto: `ventas@${nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]+/g, "")}.demo`,
-  telefono: `+56 9 0000 00${String(i + 10)}`,
-  activo: nombre !== "Laboratorio Sur",
-}));
-
 export interface CotizacionGuardada {
   id: string; nombre: string; fecha: string;
   carritos: { proveedor: string; productos: number; subtotal: number | null }[];
