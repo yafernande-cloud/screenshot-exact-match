@@ -26,6 +26,8 @@ export interface PersonaStaff {
   absence_label: string | null;
   absence_note: string | null;
   unavailable_since: string | null;
+  /** Baja lógica como auxiliar de Telegram; no afecta su acceso web ni sus roles. */
+  telegram_deleted_at?: string | null;
   /** Activa + disponible + con rol que permite reportar. */
   can_report: boolean;
   telegram_session: { active: boolean; expires_at: string | null };
@@ -37,6 +39,19 @@ export interface PersonaStaff {
 export interface CambioStaff {
   staff: PersonaStaff;
   sessions_revoked: number;
+}
+
+/** Respuesta de `POST /staff/{id}/delete-auxiliary`: baja lógica, sin borrar historial. */
+export interface ResultadoEliminarAuxiliar {
+  id: string;
+  display_name: string;
+  telegram_deleted_at: string;
+  /** La baja ya estaba registrada; no se repitió nada. */
+  already_deleted: boolean;
+  sessions_revoked: number;
+  account_links_deactivated: number;
+  /** La baja NO altera el acceso web ni los roles de la persona. */
+  web_access_preserved: boolean;
 }
 
 /** Fila de `AccessRequestOut`. */
@@ -185,14 +200,6 @@ export function crearAuxiliar(displayName: string): Promise<PersonaStaff> {
   );
 }
 
-export function renombrarPersona(id: string, displayName: string): Promise<PersonaStaff> {
-  return apiRequest<PersonaStaff>(
-    `/api/v1/staff/${id}`,
-    json("PATCH", { display_name: displayName }),
-    "No pudimos cambiar el nombre. Inténtalo otra vez.",
-  );
-}
-
 export function cambiarActividadPersona(id: string, active: boolean): Promise<CambioStaff> {
   return apiRequest<CambioStaff>(
     `/api/v1/staff/${id}/${active ? "activate" : "deactivate"}`,
@@ -212,6 +219,18 @@ export function cambiarDisponibilidadPersona(
     `/api/v1/staff/${id}/availability`,
     json("PUT", { available, reason: available ? null : reason, note: available ? null : note }),
     "No pudimos cambiar la disponibilidad. Inténtalo otra vez.",
+  );
+}
+
+/**
+ * Elimina a la persona como auxiliar de Telegram: baja lógica que cierra sus sesiones y sus
+ * vínculos por teléfono. Conserva su historial y su acceso web; no se puede deshacer.
+ */
+export function eliminarAuxiliar(id: string): Promise<ResultadoEliminarAuxiliar> {
+  return apiRequest<ResultadoEliminarAuxiliar>(
+    `/api/v1/staff/${id}/delete-auxiliary`,
+    { method: "POST" },
+    "No pudimos eliminar al auxiliar. Inténtalo otra vez.",
   );
 }
 

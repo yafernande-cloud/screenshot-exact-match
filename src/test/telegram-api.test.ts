@@ -10,6 +10,7 @@ import {
   crearAuxiliar,
   desasociarAuxiliar,
   editarCuenta,
+  eliminarAuxiliar,
   listarPersonal,
   listarSolicitudes,
 } from "@/lib/telegram-api";
@@ -37,6 +38,12 @@ describe("cliente de Telegram", () => {
     expect(llamada.mock.calls[0]?.[0]).toBe("/api/v1/staff");
     expect((llamada.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
     expect(cuerpo()).toEqual({ display_name: "Pato", roles: ["auxiliary"] });
+  });
+
+  it("deletes an auxiliary through the terminal soft-delete endpoint", async () => {
+    await eliminarAuxiliar("staff-1");
+    expect(llamada.mock.calls[0]?.[0]).toBe("/api/v1/staff/staff-1/delete-auxiliary");
+    expect((llamada.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
   });
 
   it("sends availability with its reason", async () => {

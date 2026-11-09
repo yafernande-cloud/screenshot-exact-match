@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarOff, CheckCircle2, Pencil, UserCheck, UserPlus, UserX } from "lucide-react";
+import { CalendarOff, CheckCircle2, Trash2, UserCheck, UserPlus, UserX } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import {
   cambiarActividadPersona,
   cambiarDisponibilidadPersona,
   crearAuxiliar,
-  renombrarPersona,
+  eliminarAuxiliar,
   type MotivoAusencia,
   type PersonaStaff,
 } from "@/lib/telegram-api";
@@ -45,7 +45,7 @@ const ROLES: Record<string, string> = {
   approver: "Aprobador",
 };
 
-type Dialogo = "renombrar" | "desactivar" | "ausencia";
+type Dialogo = "eliminar" | "desactivar" | "ausencia";
 
 function FilaAuxiliar({
   persona,
@@ -56,7 +56,6 @@ function FilaAuxiliar({
 }) {
   const [dialogo, setDialogo] = useState<Dialogo | null>(null);
   const [ocupado, setOcupado] = useState(false);
-  const [nombre, setNombre] = useState(persona.display_name);
   const [motivo, setMotivo] = useState<MotivoAusencia>("vacation");
   const [nota, setNota] = useState("");
 
@@ -74,28 +73,10 @@ function FilaAuxiliar({
     }
   }
 
-  function abrirRenombrar() {
-    setNombre(persona.display_name);
-    setDialogo("renombrar");
-  }
-
   function abrirAusencia() {
     setMotivo("vacation");
     setNota("");
     setDialogo("ausencia");
-  }
-
-  function guardarNombre() {
-    const limpio = nombre.trim();
-    if (!limpio) {
-      toast.error("Escribe el nombre.");
-      return;
-    }
-    if (limpio === persona.display_name) {
-      setDialogo(null);
-      return;
-    }
-    void ejecutar(() => renombrarPersona(persona.id, limpio), `Se cambió el nombre a «${limpio}».`);
   }
 
   function marcarNoDisponible() {
@@ -130,17 +111,6 @@ function FilaAuxiliar({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={abrirRenombrar}
-          disabled={ocupado}
-        >
-          <Pencil className="h-4 w-4" aria-hidden />
-          Cambiar nombre
-        </Button>
-
         {persona.member_active &&
           (persona.available ? (
             <Button
@@ -200,34 +170,49 @@ function FilaAuxiliar({
             Activar
           </Button>
         )}
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          onClick={() => setDialogo("eliminar")}
+          disabled={ocupado}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden />
+          Eliminar
+        </Button>
       </div>
 
       <Dialog open={dialogo !== null} onOpenChange={(abierto) => !abierto && setDialogo(null)}>
         <DialogContent>
-          {dialogo === "renombrar" && (
+          {dialogo === "eliminar" && (
             <>
               <DialogHeader>
-                <DialogTitle>Cambiar nombre</DialogTitle>
+                <DialogTitle>¿Eliminar a {persona.display_name}?</DialogTitle>
                 <DialogDescription>
-                  El nuevo nombre se usará en los reportes y en los teléfonos donde participe.
+                  Dejará de reportar faltantes por Telegram: se cierran sus sesiones y sus teléfonos
+                  habilitados. Sus reportes se conservan con el nombre que tenía y, si también es
+                  administradora, mantiene su acceso web. No se puede deshacer ni restaurar; si
+                  vuelve, crea una persona nueva.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-2">
-                <Label htmlFor={`nombre-${persona.id}`}>Nombre</Label>
-                <Input
-                  id={`nombre-${persona.id}`}
-                  value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
-                  maxLength={100}
-                  autoFocus
-                />
-              </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogo(null)}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={guardarNombre} disabled={ocupado}>
-                  Guardar nombre
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={ocupado}
+                  onClick={() =>
+                    void ejecutar(
+                      () => eliminarAuxiliar(persona.id),
+                      `${persona.display_name} fue eliminada como auxiliar. Su historial se conserva.`,
+                    )
+                  }
+                >
+                  Sí, eliminar
                 </Button>
               </DialogFooter>
             </>
@@ -364,7 +349,7 @@ export function AuxiliaresSection({
     <Tarjeta>
       <TituloSeccion
         titulo="Auxiliares"
-        descripcion="Personas que pueden reportar faltantes por Telegram. Desactivar no borra su historial."
+        descripcion="Personas que pueden reportar faltantes por Telegram. Desactivar o eliminar no borra su historial."
         acciones={<BotonActualizar onClick={() => void recargar()} cargando={cargando} />}
       />
 

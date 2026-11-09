@@ -64,6 +64,21 @@ describe("personal y auxiliares", () => {
     expect(auxiliaresSeleccionables(staff).map((p) => p.display_name)).toEqual(["Pato"]);
   });
 
+  it("leaves out people deleted as Telegram auxiliaries everywhere, and frees their name", () => {
+    const staff = [
+      persona({ id: "a", display_name: "Pato" }),
+      persona({
+        id: "b",
+        display_name: "Danny",
+        telegram_deleted_at: "2026-11-06T12:00:00Z",
+        can_report: false,
+      }),
+    ];
+    expect(personalOperativo(staff).map((p) => p.display_name)).toEqual(["Pato"]);
+    expect(auxiliaresSeleccionables(staff).map((p) => p.display_name)).toEqual(["Pato"]);
+    expect(personaConNombre(staff, "danny")).toBeUndefined();
+  });
+
   it("explains why a person cannot report", () => {
     expect(describirPersona(persona())).toBe("Disponible");
     expect(describirPersona(persona({ member_active: false }))).toBe("Desactivada");
@@ -134,6 +149,12 @@ describe("errores comprensibles", () => {
     expect(
       mensajeDeErrorTelegram(new ApiError(403, "FORBIDDEN", "Sin permiso"), "fallback"),
     ).toContain("No tienes permiso");
+    expect(
+      mensajeDeErrorTelegram(
+        new ApiError(409, "PERSON_DELETED", "Danny fue eliminada como auxiliar."),
+        "fallback",
+      ),
+    ).toContain("eliminada como auxiliar");
   });
 
   it("uses the backend message for unknown codes and the fallback for unknown errors", () => {

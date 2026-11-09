@@ -82,21 +82,28 @@ export function tieneRolQueReporta(roles: string[]): boolean {
   return roles.some((rol) => (ROLES_QUE_REPORTAN as readonly string[]).includes(rol));
 }
 
+/** Eliminada como auxiliar de Telegram: no se lista, no se ofrece ni se puede rehabilitar. */
+export function estaEliminada(persona: PersonaStaff): boolean {
+  return Boolean(persona.telegram_deleted_at);
+}
+
 /** Personal operativo, incluidas las personas desactivadas o no disponibles. */
 export function personalOperativo(staff: PersonaStaff[]): PersonaStaff[] {
-  return staff.filter((p) => tieneRolQueReporta(p.roles));
+  return staff.filter((p) => !estaEliminada(p) && tieneRolQueReporta(p.roles));
 }
 
 /** Auxiliares activos y disponibles: quienes el backend aceptará habilitar en un teléfono. */
 export function auxiliaresSeleccionables(staff: PersonaStaff[]): PersonaStaff[] {
-  return staff.filter((p) => p.member_active && p.can_report && tieneRolQueReporta(p.roles));
+  return staff.filter(
+    (p) => !estaEliminada(p) && p.member_active && p.can_report && tieneRolQueReporta(p.roles),
+  );
 }
 
 /** Busca una persona activa con el mismo nombre normalizado; sirve para avisar antes de duplicar. */
 export function personaConNombre(staff: PersonaStaff[], nombre: string): PersonaStaff | undefined {
   const buscado = normalizarNombre(nombre);
   if (!buscado) return undefined;
-  return staff.find((p) => normalizarNombre(p.display_name) === buscado);
+  return staff.find((p) => !estaEliminada(p) && normalizarNombre(p.display_name) === buscado);
 }
 
 export function etiquetaAusencia(reason: MotivoAusencia | null): string {
@@ -156,6 +163,8 @@ const MENSAJES: Record<string, string> = {
   PERSON_INACTIVE: "Esa persona está desactivada en la farmacia. Actívala primero en Auxiliares.",
   PERSON_CANNOT_REPORT:
     "Esa persona no puede reportar: está desactivada, no está disponible o no tiene un rol de auxiliar.",
+  PERSON_DELETED:
+    "Esa persona fue eliminada como auxiliar y no puede habilitarse de nuevo. Crea una persona nueva si corresponde.",
   AUXILIARY_ALREADY_ENABLED: "Esa persona ya está habilitada en este teléfono.",
   AUXILIARY_NOT_ENABLED: "Esa persona no está habilitada en este teléfono.",
   ACCOUNT_NOT_SHARED: "Este teléfono es personal y no usa auxiliares.",
