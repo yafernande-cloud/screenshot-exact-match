@@ -114,6 +114,33 @@ const MENSAJES_CRUZVERDE: Record<string, string> = {
     "La fuente autorizada de Cruz Verde no está configurada. No se muestran precios.",
 };
 
+/**
+ * Un rechazo de consulta no es una caída de conexión: Cruz Verde respondió y descartó la
+ * búsqueda, así que no hay precios publicados que mostrar.
+ */
+const MENSAJES_FALLO_CRUZVERDE: Record<string, string> = {
+  query_rejected:
+    "Cruz Verde no aceptó esta búsqueda. No se muestran precios para no usar datos incompletos.",
+};
+
+/** Orden de presentación: primero lo que coincide con lo pedido y al final las alternativas. */
+const ORDEN_RELACION: Record<string, number> = {
+  exact: 0,
+  unverified: 1,
+  partial: 2,
+  alternative: 3,
+};
+
+function ordenarPorRelacion(resultados: ChainResult[]): ChainResult[] {
+  return [...resultados].sort((a, b) => {
+    const aRelation = a.match["query_relation"];
+    const bRelation = b.match["query_relation"];
+    const aOrden = typeof aRelation === "string" ? (ORDEN_RELACION[aRelation] ?? 4) : 4;
+    const bOrden = typeof bRelation === "string" ? (ORDEN_RELACION[bRelation] ?? 4) : 4;
+    return aOrden - bOrden;
+  });
+}
+
 function esperar(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -229,6 +256,7 @@ function estadoFuenteCadena(
   nombre: string,
   mensajes: Record<string, string>,
   limite: number = Number.POSITIVE_INFINITY,
+  mensajesFallo: Record<string, string> = {},
 ): EstadoFuenteCadena {
   if (estado === "inicial") return { tipo: "inicial" };
   if (estado === "cargando") return { tipo: "cargando" };
@@ -247,7 +275,9 @@ function estadoFuenteCadena(
   if (fuente.state === "failed") {
     return {
       tipo: "error",
-      mensaje: `${nombre} no respondió. No se muestran precios para no usar datos incompletos.`,
+      mensaje:
+        mensajesFallo[fuente.reason ?? ""] ??
+        `${nombre} no respondió. No se muestran precios para no usar datos incompletos.`,
     };
   }
   if (fuente.results.length === 0) {
@@ -258,7 +288,7 @@ function estadoFuenteCadena(
   }
   return {
     tipo: "resultados",
-    resultados: fuente.results.slice(0, limite),
+    resultados: ordenarPorRelacion(fuente.results).slice(0, limite),
     observadoEn: fuente.observed_at,
     desactualizado: fuente.state === "stale",
   };
@@ -292,5 +322,13 @@ export function estadoFuenteCruzVerde(
   fuente: ChainSource | null,
   error: string | null,
 ): EstadoFuenteCruzVerde {
-  return estadoFuenteCadena(estado, fuente, error, "Cruz Verde", MENSAJES_CRUZVERDE, MAX_CRUZVERDE);
+  return estadoFuenteCadena(
+    estado,
+    fuente,
+    error,
+    "Cruz Verde",
+    MENSAJES_CRUZVERDE,
+    MAX_CRUZVERDE,
+    MENSAJES_FALLO_CRUZVERDE,
+  );
 }

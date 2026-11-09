@@ -86,6 +86,37 @@ describe("presentación de la tarjeta de Cruz Verde", () => {
     expect(screen.queryByText("MINTLAB")).not.toBeInTheDocument();
   });
 
+  it("distingue otra presentación y alternativa con distintivos propios", () => {
+    renderResultados([
+      producto({
+        chain_item_id: "30",
+        published_name: "Trazodona 100 mg X 30 Cpr",
+        match: { level: "not_evaluated", query_relation: "partial" },
+      }),
+      producto({
+        chain_item_id: "200",
+        published_name: "Trazodona 200 mg X 20 Comprimidos",
+        match: { level: "not_evaluated", query_relation: "alternative" },
+      }),
+    ]);
+
+    expect(screen.getByText("Otra presentación")).toBeInTheDocument();
+    expect(screen.getByText("Alternativa")).toBeInTheDocument();
+  });
+
+  it("no agrega distintivos cuando la publicación coincide o no se pudo verificar", () => {
+    renderResultados([
+      producto({ chain_item_id: "1", match: { level: "not_evaluated", query_relation: "exact" } }),
+      producto({
+        chain_item_id: "2",
+        match: { level: "not_evaluated", query_relation: "unverified" },
+      }),
+    ]);
+
+    expect(screen.queryByText("Otra presentación")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alternativa")).not.toBeInTheDocument();
+  });
+
   it("mantiene las publicaciones dentro de una región desplazable", () => {
     renderResultados([
       producto(),

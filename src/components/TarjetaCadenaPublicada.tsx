@@ -123,6 +123,29 @@ function disponibilidad(hasStock: boolean | null | undefined): string {
   return "no informada";
 }
 
+/**
+ * Distintivo de relación con la consulta. Solo Cruz Verde lo informa: «partial» es la misma
+ * dosis con otra presentación y «alternative» es otra concentración. Sin ese dato no se muestra
+ * nada, así las tarjetas de Ahumada y Salcobrand siguen igual.
+ */
+function RelacionConsulta({ resultado }: { resultado: ChainResult }) {
+  const relacion = resultado.match["query_relation"];
+  if (relacion !== "partial" && relacion !== "alternative") return null;
+  const texto = relacion === "partial" ? "Otra presentación" : "Alternativa";
+  const detalle =
+    relacion === "partial"
+      ? "Coincide con el producto pedido, pero la presentación publicada es distinta."
+      : "La publicación declara otra concentración; se muestra como alternativa.";
+  return (
+    <span
+      title={detalle}
+      className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+    >
+      {texto}
+    </span>
+  );
+}
+
 function Resultado({
   resultado,
   mostrarMarca,
@@ -149,12 +172,15 @@ function Resultado({
       )}
 
       <div className="min-w-0 flex-1">
-        <p
-          className="line-clamp-2 text-sm font-semibold leading-snug"
-          title={resultado.published_name}
-        >
-          {resultado.published_name}
-        </p>
+        <div className="flex flex-wrap items-start gap-1.5">
+          <p
+            className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-snug"
+            title={resultado.published_name}
+          >
+            {resultado.published_name}
+          </p>
+          <RelacionConsulta resultado={resultado} />
+        </div>
         {mostrarMarca && (
           <p
             className="mt-0.5 truncate text-[11px] text-muted-foreground"

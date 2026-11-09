@@ -103,6 +103,54 @@ describe("estado de la tarjeta de Cruz Verde", () => {
     expect(estado.tipo).toBe("error");
   });
 
+  it("un rechazo de consulta se informa distinto de una caída de conexión", () => {
+    const estado = estadoFuenteCruzVerde(
+      "listo",
+      fuente({ state: "failed", reason: "query_rejected", outcome: null, results: [] }),
+      null,
+    );
+    expect(estado.tipo).toBe("error");
+    if (estado.tipo === "error") {
+      expect(estado.mensaje).toMatch(/no aceptó esta búsqueda/i);
+      expect(estado.mensaje).not.toMatch(/no respondió/i);
+    }
+  });
+
+  it("ordena por relación con la consulta antes de recortar a 24", () => {
+    const resultados = Array.from({ length: 30 }, (_, i) =>
+      producto({
+        chain_item_id: String(i),
+        match: {
+          level: "not_evaluated",
+          query_relation: i === 29 ? "exact" : i === 0 ? "partial" : "alternative",
+        },
+      }),
+    );
+
+    const estado = estadoFuenteCruzVerde("listo", fuente({ results: resultados }), null);
+
+    expect(estado.tipo).toBe("resultados");
+    if (estado.tipo === "resultados") {
+      expect(estado.resultados).toHaveLength(24);
+      expect(estado.resultados[0]?.chain_item_id).toBe("29");
+      expect(estado.resultados[1]?.chain_item_id).toBe("0");
+      expect(estado.resultados[23]?.match["query_relation"]).toBe("alternative");
+    }
+  });
+
+  it("conserva el orden publicado cuando no hay relación informada", () => {
+    const resultados = ["a", "b", "c"].map((id) =>
+      producto({ chain_item_id: id, match: { level: "not_evaluated" } }),
+    );
+
+    const estado = estadoFuenteCruzVerde("listo", fuente({ results: resultados }), null);
+
+    expect(estado.tipo).toBe("resultados");
+    if (estado.tipo === "resultados") {
+      expect(estado.resultados.map((r) => r.chain_item_id)).toEqual(["a", "b", "c"]);
+    }
+  });
+
   it("sin coincidencias reales se informa vacío", () => {
     const estado = estadoFuenteCruzVerde(
       "listo",
