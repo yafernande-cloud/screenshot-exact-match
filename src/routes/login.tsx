@@ -262,34 +262,6 @@ function LoginPage() {
               </Alert>
             )}
 
-            <Button
-              type="button"
-              variant="outline"
-              className="h-12 w-full gap-3 border-border bg-white text-sm font-medium shadow-sm hover:bg-slate-50 disabled:opacity-60"
-              onClick={() => void start()}
-              disabled={pending || !configured}
-            >
-              {sending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  Conectando con Google…
-                </>
-              ) : (
-                <>
-                  <GoogleMark />
-                  Continuar con Google
-                </>
-              )}
-            </Button>
-
-            <div className="flex items-center gap-3 pt-1" aria-hidden>
-              <span className="h-px flex-1 bg-slate-200" />
-              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                o
-              </span>
-              <span className="h-px flex-1 bg-slate-200" />
-            </div>
-
             <form className="space-y-3" onSubmit={(event) => void startPassword(event)} noValidate>
               <div className="space-y-1.5">
                 <Label htmlFor="login-email">Correo electrónico</Label>
@@ -336,6 +308,34 @@ function LoginPage() {
                 )}
               </Button>
             </form>
+
+            <div className="flex items-center gap-3 pt-1" aria-hidden>
+              <span className="h-px flex-1 bg-slate-200" />
+              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                o
+              </span>
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 w-full gap-3 border-border bg-white text-sm font-medium shadow-sm hover:bg-slate-50 disabled:opacity-60"
+              onClick={() => void start()}
+              disabled={pending || !configured}
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Conectando con Google…
+                </>
+              ) : (
+                <>
+                  <GoogleMark />
+                  Continuar con Google
+                </>
+              )}
+            </Button>
 
             {notProvisioned && (
               <Button

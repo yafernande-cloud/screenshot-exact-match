@@ -135,6 +135,17 @@ describe("inicio de sesión con correo y contraseña", () => {
     expect(mocks.signInWithGoogle).not.toHaveBeenCalled();
   });
 
+  it("presenta el formulario y el botón «Ingresar» antes del acceso con Google", async () => {
+    await renderLogin();
+
+    const email = screen.getByLabelText("Correo electrónico");
+    const submit = screen.getByRole("button", { name: "Ingresar" });
+    const google = screen.getByRole("button", { name: /continuar con google/i });
+
+    expect(email.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(submit.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("mantiene el botón de Google intacto", async () => {
     await renderLogin();
 
