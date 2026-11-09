@@ -1,10 +1,13 @@
 /**
- * Cliente de proveedores y fuentes (backend FastAPI existente).
+ * Cliente de proveedores, fuentes, listas de precios y portal (backend FastAPI existente).
  *
- * Solo consume el contrato actual: E6 (`/api/v1/suppliers`) y E7 (`/api/v1/sources`). La identidad,
- * la organización y los permisos los resuelve el backend con el JWT de Supabase; aquí no se decide
- * nada de negocio. Las mutaciones de actualización viajan con `If-Match` para no pisar cambios de
- * otra sesión.
+ * Consume E6 (`/api/v1/suppliers`), E7 (`/api/v1/sources`), E8 (`/api/v1/imports`) y las piezas de
+ * A3 (`import-profile`, `import-preview`, `offers`). La identidad, la organización y los permisos los
+ * resuelve el backend con el JWT de Supabase; aquí no se decide nada de negocio. Las mutaciones de
+ * actualización viajan con `If-Match` para no pisar cambios de otra sesión.
+ *
+ * Las credenciales del portal nunca se leen desde la API: solo se envían al guardarlas y la
+ * contraseña no vuelve nunca. Guardar credenciales no significa que el portal esté conectado.
  */
 
 import { apiRequest, ApiError } from "@/lib/api";
@@ -13,6 +16,8 @@ export type EstadoProveedor = "active" | "inactive";
 export type ModoFuente = "api" | "manual_import" | "fixture" | "none";
 export type CapacidadFuente = "search" | "product_detail" | "price" | "stock" | "terms";
 export type EstadoFuente = "not_configured" | "ok" | "stale" | "failed";
+export type EstadoPortal = "not_configured" | "incomplete" | "credentials_saved";
+export type FormatoArchivo = "xlsx" | "xls" | "csv";
 
 /** Fila de `SupplierOut` (E6) tal como la entrega el backend. */
 export interface Proveedor {
@@ -25,6 +30,14 @@ export interface Proveedor {
   sources: string[];
   /** Notas internas del proveedor (`notes` al escribir). */
   internal_notes: string | null;
+  /** Portal web de compras; guardarlo no prueba que funcione. */
+  portal_url: string | null;
+  /** Hay usuario y contraseña guardados. La API nunca los devuelve. */
+  has_portal_credentials: boolean;
+  /** `credentials_saved` no significa conectado: todavía no existe un conector de portal. */
+  portal_status: EstadoPortal;
+  /** El proveedor tiene al menos una fuente de lista de precios. */
+  has_price_list: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -52,6 +65,10 @@ export interface NuevoProveedor {
   name: string;
   supplier_code?: string | null;
   notes?: string | null;
+  portal_url?: string | null | undefined;
+  /** Usuario y contraseña se envían juntos al crear; quedan cifrados en el backend. */
+  portal_username?: string | null | undefined;
+  portal_password?: string | null | undefined;
 }
 
 export interface CambiosProveedor {
@@ -59,6 +76,10 @@ export interface CambiosProveedor {
   supplier_code?: string | null;
   notes?: string | null;
   status?: EstadoProveedor;
+  portal_url?: string | null;
+  /** `null` en cualquiera de los dos borra la credencial completa. */
+  portal_username?: string | null;
+  portal_password?: string | null;
 }
 
 export interface NuevaFuente {
@@ -74,11 +95,113 @@ export interface CambiosFuente {
   enabled?: boolean;
 }
 
+/** Especificación de una columna dentro del perfil de importación. */
+export interface EspecificacionColumna {
+  header?: string;
+  aliases?: string[];
+  position?: number;
+}
+
+export interface PerfilImportacion {
+  source_id: string;
+  file_format: FormatoArchivo;
+  sheet: string | null;
+  header_row: number;
+  columns: Record<string, EspecificacionColumna>;
+  units: Record<string, string>;
+  options: Record<string, unknown>;
+  status: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RespuestaPerfil {
+  profile: PerfilImportacion | null;
+  /** 0 cuando la fuente todavía no tiene perfil; es el `If-Match` del primer guardado. */
+  version: number;
+}
+
+export interface FilaVistaPrevia {
+  row: number;
+  values: unknown[];
+}
+
+export interface VistaPreviaImportacion {
+  file_format: FormatoArchivo;
+  sheets: string[];
+  sheet: string | null;
+  header_row: number;
+  headers: (string | null)[];
+  sample_rows: FilaVistaPrevia[];
+  row_count: number;
+  suggested_columns: Record<string, EspecificacionColumna>;
+  suggested_options: {
+    decimal_separator: string | null;
+    currency: string | null;
+    price_basis: string | null;
+    default_sale_unit: string | null;
+  };
+}
+
+export interface DatosPerfil {
+  file_format: FormatoArchivo;
+  sheet: string | null;
+  header_row: number;
+  columns: Record<string, EspecificacionColumna>;
+  units: Record<string, string>;
+  options: Record<string, unknown>;
+}
+
+export interface ErrorDeFila {
+  row: number;
+  code: string;
+  message: string;
+}
+
+export interface ResultadoImportacion {
+  import_id: string | null;
+  status: "completed" | "completed_with_errors" | "failed";
+  rows_total: number;
+  rows_accepted: number;
+  rows_rejected: number;
+  errors: ErrorDeFila[];
+  observed_at: string | null;
+}
+
+/** Última observación de un SKU de una fuente del proveedor. */
+export interface OfertaImportada {
+  offer_id: string;
+  source_id: string;
+  source_name: string;
+  external_id: string;
+  external_name: string | null;
+  trade_item_id: string;
+  trade_item_name: string;
+  price_amount: string;
+  currency: string;
+  price_basis: string;
+  sale_unit: string;
+  sale_unit_text: string | null;
+  pack_units_per_commercial_unit: string | null;
+  pack_base_unit: string | null;
+  stock_status: string;
+  stock_quantity: string | null;
+  review_status: string;
+  observed_at: string;
+  imported_at: string;
+}
+
 const LISTA_FALLBACK = "No pudimos cargar los proveedores. Inténtalo otra vez.";
 const CREAR_FALLBACK = "No pudimos registrar el proveedor. Inténtalo otra vez.";
 const GUARDAR_FALLBACK = "No pudimos guardar los cambios. Inténtalo otra vez.";
 const FUENTES_FALLBACK = "No pudimos cargar las fuentes de datos. Inténtalo otra vez.";
 const CREAR_FUENTE_FALLBACK = "No pudimos crear la fuente de datos. Inténtalo otra vez.";
+const PERFIL_FALLBACK = "No pudimos cargar la configuración de la lista. Inténtalo otra vez.";
+const GUARDAR_PERFIL_FALLBACK = "No pudimos guardar el mapeo de columnas. Inténtalo otra vez.";
+const VISTA_PREVIA_FALLBACK = "No pudimos leer el archivo. Revisa que sea .xlsx, .xls o .csv.";
+const IMPORTAR_FALLBACK = "No pudimos importar la lista de precios. Inténtalo otra vez.";
+const OFERTAS_FALLBACK = "No pudimos cargar los precios importados. Inténtalo otra vez.";
 
 function textoLimpio(valor: string | null | undefined): string | null {
   const limpio = (valor ?? "").trim();
@@ -105,16 +228,21 @@ export async function listarProveedores(): Promise<Proveedor[]> {
 }
 
 export function crearProveedor(datos: NuevoProveedor): Promise<Proveedor> {
+  const cuerpo: Record<string, unknown> = {
+    name: datos.name.trim(),
+    supplier_code: textoLimpio(datos.supplier_code),
+    notes: textoLimpio(datos.notes),
+  };
+  if (datos.portal_url !== undefined) cuerpo["portal_url"] = textoLimpio(datos.portal_url);
+  if (datos.portal_username) cuerpo["portal_username"] = datos.portal_username;
+  if (datos.portal_password) cuerpo["portal_password"] = datos.portal_password;
+
   return apiRequest<Proveedor>(
     "/api/v1/suppliers",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: datos.name.trim(),
-        supplier_code: textoLimpio(datos.supplier_code),
-        notes: textoLimpio(datos.notes),
-      }),
+      body: JSON.stringify(cuerpo),
     },
     CREAR_FALLBACK,
   );
@@ -130,6 +258,10 @@ export function actualizarProveedor(
   if ("supplier_code" in cambios) cuerpo["supplier_code"] = textoLimpio(cambios.supplier_code);
   if ("notes" in cambios) cuerpo["notes"] = textoLimpio(cambios.notes);
   if ("status" in cambios) cuerpo["status"] = cambios.status;
+  if ("portal_url" in cambios) cuerpo["portal_url"] = textoLimpio(cambios.portal_url);
+  // La contraseña no se recorta: el backend la guarda tal como se escribió.
+  if ("portal_username" in cambios) cuerpo["portal_username"] = cambios.portal_username;
+  if ("portal_password" in cambios) cuerpo["portal_password"] = cambios.portal_password;
 
   return apiRequest<Proveedor>(
     `/api/v1/suppliers/${encodeURIComponent(proveedor.supplier_id)}`,
@@ -194,6 +326,101 @@ export function actualizarFuente(fuente: Fuente, cambios: CambiosFuente): Promis
   );
 }
 
+/** Perfil de importación de la fuente; `profile` es null cuando todavía no existe. */
+export function obtenerPerfilImportacion(sourceId: string): Promise<RespuestaPerfil> {
+  return apiRequest<RespuestaPerfil>(
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/import-profile`,
+    {},
+    PERFIL_FALLBACK,
+  );
+}
+
+/** Crea o actualiza el mapeo. `version` es 0 si la fuente aún no tiene perfil. */
+export function guardarPerfilImportacion(
+  sourceId: string,
+  datos: DatosPerfil,
+  version: number,
+): Promise<PerfilImportacion> {
+  return apiRequest<PerfilImportacion>(
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/import-profile`,
+    {
+      method: "PUT",
+      headers: cabecerasConVersion(version),
+      body: JSON.stringify(datos),
+    },
+    GUARDAR_PERFIL_FALLBACK,
+  );
+}
+
+/**
+ * Lee un archivo real y propone columnas. No escribe nada: es la vista previa antes de mapear y
+ * guardar. `hoja` y `filaEncabezado` solo repiten la lectura con otra hoja o cabecera.
+ */
+export function previsualizarImportacion(
+  sourceId: string,
+  archivo: File,
+  opciones: { hoja?: string | null; filaEncabezado?: number | undefined } = {},
+): Promise<VistaPreviaImportacion> {
+  const cuerpo = new FormData();
+  cuerpo.append("file", archivo, archivo.name);
+  if (opciones.hoja) cuerpo.append("sheet", opciones.hoja);
+  if (opciones.filaEncabezado !== undefined) {
+    cuerpo.append("header_row", String(opciones.filaEncabezado));
+  }
+  return apiRequest<VistaPreviaImportacion>(
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/import-preview`,
+    { method: "POST", body: cuerpo },
+    VISTA_PREVIA_FALLBACK,
+  );
+}
+
+/** Clave de idempotencia nueva por archivo; E8 exige entre 8 y 128 caracteres. */
+export function nuevaClaveIdempotencia(): string {
+  const cripto = globalThis.crypto;
+  if (cripto && typeof cripto.randomUUID === "function") return cripto.randomUUID();
+  return `import-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
+ * Importa la planilla con el perfil ya guardado.
+ *
+ * `idempotencyKey` debe conservarse mientras se reintenta el mismo archivo: el backend devuelve el
+ * resultado original y nunca duplica ofertas. El mismo archivo (mismo hash) tampoco se reprocesa.
+ */
+export function importarListaDePrecios(datos: {
+  supplierId: string;
+  sourceId: string;
+  archivo: File;
+  idempotencyKey: string;
+}): Promise<ResultadoImportacion> {
+  const cuerpo = new FormData();
+  cuerpo.append("file", datos.archivo, datos.archivo.name);
+  cuerpo.append("supplier_id", datos.supplierId);
+  cuerpo.append("source_id", datos.sourceId);
+  return apiRequest<ResultadoImportacion>(
+    "/api/v1/imports",
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": datos.idempotencyKey },
+      body: cuerpo,
+    },
+    IMPORTAR_FALLBACK,
+  );
+}
+
+/** Últimos precios importados por SKU de todas las fuentes del proveedor. */
+export async function listarOfertasProveedor(
+  supplierId: string,
+  limite = 200,
+): Promise<OfertaImportada[]> {
+  const data = await apiRequest<{ offers: OfertaImportada[] }>(
+    `/api/v1/suppliers/${encodeURIComponent(supplierId)}/offers?limit=${limite}`,
+    {},
+    OFERTAS_FALLBACK,
+  );
+  return data.offers;
+}
+
 /** La versión cambió entre la lectura y el guardado: hay que refrescar, no reintentar a ciegas. */
 export function esConflictoDeVersion(error: unknown): boolean {
   return error instanceof ApiError && error.code === "VERSION_CONFLICT";
@@ -219,7 +446,7 @@ export function etiquetaCapacidad(capacidad: string): string {
 export function etiquetaModo(modo: string): string {
   switch (modo) {
     case "manual_import":
-      return "Archivo de precios (Excel o CSV)";
+      return "Lista de precios (Excel o CSV)";
     case "api":
       return "Conexión directa";
     case "fixture":
@@ -242,6 +469,130 @@ export function etiquetaEstadoFuente(estado: string): string {
   }
 }
 
+/**
+ * Estado del portal. Nunca se traduce a «conectado»: guardar usuario y contraseña no abre sesión
+ * porque no hay conector de portal todavía.
+ */
+export function etiquetaEstadoPortal(estado: string): string {
+  switch (estado) {
+    case "credentials_saved":
+      return "Credenciales guardadas · sin conectar";
+    case "incomplete":
+      return "Datos del portal incompletos";
+    default:
+      return "Portal sin configurar";
+  }
+}
+
+export function etiquetaFormato(formato: string): string {
+  switch (formato) {
+    case "xlsx":
+      return "Excel (.xlsx)";
+    case "xls":
+      return "Excel antiguo (.xls)";
+    case "csv":
+      return "Texto separado por comas (.csv)";
+    default:
+      return formato;
+  }
+}
+
+export function etiquetaEstadoImportacion(estado: string): string {
+  switch (estado) {
+    case "completed":
+      return "Importación completa";
+    case "completed_with_errors":
+      return "Importación con filas rechazadas";
+    default:
+      return "No se pudo importar";
+  }
+}
+
+/** Papeles de columna que admite el perfil, con el nombre que ve la persona. */
+export const PAPELES_COLUMNA: ReadonlyArray<{
+  value: string;
+  label: string;
+  obligatorio: boolean;
+  ayuda: string;
+}> = [
+  {
+    value: "sku",
+    label: "Código del producto",
+    obligatorio: true,
+    ayuda: "El código del proveedor",
+  },
+  {
+    value: "name",
+    label: "Nombre o descripción",
+    obligatorio: false,
+    ayuda: "Nombre del producto en la lista",
+  },
+  { value: "price", label: "Precio", obligatorio: true, ayuda: "Precio del proveedor" },
+  {
+    value: "sale_unit",
+    label: "Unidad de venta",
+    obligatorio: true,
+    ayuda: "Caja, paquete, unidad o botella",
+  },
+  { value: "currency", label: "Moneda", obligatorio: false, ayuda: "Código de la moneda por fila" },
+  {
+    value: "basis",
+    label: "Base del precio",
+    obligatorio: false,
+    ayuda: "Por unidad comercial o por unidad base",
+  },
+  {
+    value: "pack",
+    label: "Unidades por caja o paquete",
+    obligatorio: false,
+    ayuda: "Contenido del envase",
+  },
+  { value: "minimum", label: "Compra mínima", obligatorio: false, ayuda: "Mínimo por pedido" },
+  {
+    value: "multiple",
+    label: "Múltiplo de compra",
+    obligatorio: false,
+    ayuda: "Múltiplos por pedido",
+  },
+  { value: "stock", label: "Stock", obligatorio: false, ayuda: "Disponibilidad informada" },
+  {
+    value: "observed_at",
+    label: "Fecha del precio",
+    obligatorio: false,
+    ayuda: "Fecha en que el proveedor observó el precio",
+  },
+  {
+    value: "conditions",
+    label: "Condiciones",
+    obligatorio: false,
+    ayuda: "Texto de condiciones comerciales",
+  },
+];
+
+/** Unidades del vocabulario cerrado (D-102), con su nombre para la persona. */
+export const UNIDADES_VENTA: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "box", label: "Caja" },
+  { value: "package", label: "Paquete" },
+  { value: "unit", label: "Unidad" },
+  { value: "bottle", label: "Botella" },
+];
+
+export function etiquetaUnidad(unidad: string | null | undefined): string {
+  if (!unidad) return "Sin unidad";
+  return UNIDADES_VENTA.find((u) => u.value === unidad)?.label ?? unidad;
+}
+
+export function etiquetaBasePrecio(base: string): string {
+  switch (base) {
+    case "per_commercial_unit":
+      return "por unidad de venta";
+    case "per_base_unit":
+      return "por unidad base";
+    default:
+      return base;
+  }
+}
+
 /** Mensaje para la persona; nunca expone detalles internos. */
 export function mensajeDeErrorProveedores(
   error: unknown,
@@ -257,6 +608,12 @@ export function mensajeDeErrorProveedores(
     }
     if (error.code === "VERSION_CONFLICT") {
       return "Otro cambio se guardó primero. Actualizamos la lista; revisa los datos antes de volver a guardar.";
+    }
+    if (error.code === "SUPPLIER_CREDENTIALS_KEY_MISSING") {
+      return "El servidor no tiene configurada la clave de cifrado, así que no se guardó ninguna contraseña. Avisa a quien administra el sistema.";
+    }
+    if (error.code === "SUPPLIER_CREDENTIALS_KEY_INVALID") {
+      return "La clave de cifrado del servidor no es válida; no se guardó la contraseña. Avisa a quien administra el sistema.";
     }
     return error.message || fallback;
   }
