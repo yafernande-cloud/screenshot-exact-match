@@ -56,6 +56,22 @@ export function partesDelFaltante(
   return { titulo, detalles };
 }
 
+/**
+ * Consulta que se envía a las cadenas al pulsar «Buscar».
+ *
+ * Prioriza `search_query` del backend (nombre comercial corto, p. ej. «Predual»). Si el backend
+ * es anterior y no lo entrega, usa el encabezado del nombre y, como último recurso, el nombre
+ * completo. Nunca construye una descripción distinta a la que el backend ya calculó.
+ */
+export function consultaDeBusqueda(
+  faltante: Pick<Faltante, "display_name" | "display_parts" | "search_query">,
+): string {
+  const consulta = faltante.search_query?.trim();
+  if (consulta) return consulta;
+  const encabezado = faltante.display_parts?.name?.trim();
+  return encabezado || faltante.display_name.trim();
+}
+
 /** Unidades que acepta el comando de cantidad del backend (`QuantityUnit`). */
 export const UNIDADES_CANTIDAD = ["box", "package", "unit", "bottle"] as const;
 export type UnidadCantidad = (typeof UNIDADES_CANTIDAD)[number];

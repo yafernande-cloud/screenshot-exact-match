@@ -5,6 +5,7 @@ import { solicitudesDemo } from "@/data/demo";
 import {
   aplicarCambioCantidad,
   cantidadDeReferencia,
+  consultaDeBusqueda,
   etiquetaEstadoFaltante,
   fusionarFaltantes,
   partesDelFaltante,
@@ -27,6 +28,7 @@ describe("bandeja sin datos ficticios", () => {
       );
     }
     expect(dashboard).toContain("listarFaltantes");
+    expect(dashboard).toContain("consultaDeBusqueda(f)");
   });
 });
 
@@ -172,6 +174,34 @@ describe("presentación de nombres extensos", () => {
         faltante({ display_parts: { name: "Omeprazol", details: [" 20 mg ", ""] } }),
       ).detalles,
     ).toEqual(["20 mg"]);
+  });
+});
+
+describe("consulta enviada a las cadenas", () => {
+  it("usa el nombre comercial corto que entrega el backend", () => {
+    const f = faltante({
+      display_name: "Predual comprimido x 10",
+      display_parts: { name: "Predual", details: ["comprimido", "x 10"] },
+      search_query: "Predual",
+    });
+    expect(consultaDeBusqueda(f)).toBe("Predual");
+  });
+
+  it("cae al encabezado del nombre si el backend anterior no trae search_query", () => {
+    const f = faltante({
+      display_name: "Predual comprimido x 10",
+      display_parts: { name: "Predual", details: ["comprimido", "x 10"] },
+    });
+    expect(consultaDeBusqueda(f)).toBe("Predual");
+  });
+
+  it("cae al nombre completo solo cuando no hay encabezado", () => {
+    expect(consultaDeBusqueda(faltante({ display_parts: null }))).toBe("Omeprazol 20 mg");
+  });
+
+  it("ignora un search_query vacío y no inventa una consulta", () => {
+    const f = faltante({ search_query: "   " });
+    expect(consultaDeBusqueda(f)).toBe("Omeprazol 20 mg");
   });
 });
 

@@ -28,6 +28,7 @@ import {
 } from "@/lib/cotizacion";
 import {
   aplicarCambioCantidad,
+  consultaDeBusqueda,
   etiquetaEstadoFaltante,
   fusionarFaltantes,
   partesDelFaltante,
@@ -595,8 +596,11 @@ function Index() {
                   onAjustar={(d) => void ajustarCantidadReal(f, d)}
                   onEliminar={() => void retirarFaltante(f)}
                   onBuscar={() => {
-                    setFaltanteBuscado({ id: f.id, nombre: f.display_name });
-                    void ejecutarBusqueda(f.display_name);
+                    // Nombre comercial corto si el backend lo identificó («Predual»); nunca la
+                    // descripción farmacológica larga cuando existe uno.
+                    const consulta = consultaDeBusqueda(f);
+                    setFaltanteBuscado({ id: f.id, nombre: consulta });
+                    void ejecutarBusqueda(consulta);
                     document
                       .getElementById("grandes-farmacias")
                       ?.scrollIntoView({ behavior: "smooth" });

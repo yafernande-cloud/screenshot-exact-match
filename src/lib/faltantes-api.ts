@@ -25,6 +25,11 @@ export interface Faltante {
   display_parts?: PartesNombre | null;
   /** Ruta relativa de la fotografía original (privada); `null` si el aviso no tuvo foto. */
   photo_url?: string | null;
+  /**
+   * Consulta corta que propone el backend para las cadenas (nombre comercial si existe).
+   * Puede faltar en un backend anterior: el frontend cae a `display_parts.name` o `display_name`.
+   */
+  search_query?: string | null;
   ingredient: string | null;
   status: string;
   version: number;
