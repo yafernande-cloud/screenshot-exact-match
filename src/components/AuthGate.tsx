@@ -18,7 +18,7 @@ export function SessionLoadingScreen() {
   );
 }
 
-/** Cuenta autenticada en Google pero sin acceso al cotizador (403) o backend inaccesible. */
+/** Cuenta autenticada en Supabase pero sin acceso al cotizador (403) o backend inaccesible. */
 export function AccessBlockedScreen() {
   const { status, error, retry, signOut } = useSession();
   const notProvisioned = status === "not_provisioned";
@@ -28,7 +28,7 @@ export function AccessBlockedScreen() {
   const detail =
     error?.message ??
     (notProvisioned
-      ? "Tu cuenta de Google todavía no está habilitada en este cotizador."
+      ? "Tu cuenta todavía no está habilitada en este cotizador."
       : "Inténtalo de nuevo en unos segundos.");
 
   return (

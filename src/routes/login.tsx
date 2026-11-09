@@ -1,10 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2, Pill, ShieldCheck } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { oauthErrorFromLocation } from "@/lib/auth";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { messageForPasswordError, oauthErrorFromLocation } from "@/lib/auth";
 import { useSession } from "@/lib/session";
 import { supabaseIsConfigured } from "@/lib/supabase";
 
@@ -87,9 +89,12 @@ function openLoginInNewTab(): boolean {
 }
 
 function LoginPage() {
-  const { status, error, signInWithGoogle, signOut, retry } = useSession();
+  const { status, error, signInWithGoogle, signInWithPassword, signOut, retry } = useSession();
   const navigate = useNavigate();
   const [sending, setSending] = useState(false);
+  const [passwordSending, setPasswordSending] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [manualError, setManualError] = useState<string | null>(null);
   const autoStarted = useRef(false);
@@ -127,7 +132,7 @@ function LoginPage() {
     });
   }, [configured, status, signInWithGoogle]);
 
-  const pending = sending || status === "loading";
+  const pending = sending || passwordSending || status === "loading";
   const notProvisioned = status === "not_provisioned";
   // Un fallo del backend solo se muestra si la autenticación está configurada: si faltan las
   // variables, la pantalla informa una sola vez que el inicio de sesión no está disponible.
@@ -153,6 +158,38 @@ function LoginPage() {
     } catch (e) {
       setSending(false);
       setManualError(startErrorMessage(e));
+    }
+  };
+
+  /**
+   * Correo + contraseña: Supabase valida las credenciales y el proveedor de sesión verifica el
+   * acceso contra el backend, igual que con Google. Dentro de la vista previa de Lovable no hace
+   * falta abrir otra pestaña: no hay redirección a un tercero.
+   */
+  const startPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (passwordSending) return;
+
+    setManualError(null);
+    setOauthError(null);
+
+    const cleanEmail = email.trim();
+    if (cleanEmail === "" || password === "") {
+      setManualError("Ingresa tu correo electrónico y tu contraseña.");
+      return;
+    }
+    if (!cleanEmail.includes("@")) {
+      setManualError("Escribe un correo electrónico válido.");
+      return;
+    }
+
+    setPasswordSending(true);
+    try {
+      await signInWithPassword(cleanEmail, password);
+    } catch (e) {
+      setManualError(messageForPasswordError(e));
+    } finally {
+      setPasswordSending(false);
     }
   };
 
@@ -202,8 +239,7 @@ function LoginPage() {
               <Alert variant="destructive">
                 <AlertTitle>Acceso no habilitado</AlertTitle>
                 <AlertDescription>
-                  {error?.message ??
-                    "Tu cuenta de Google todavía no está habilitada en este cotizador."}
+                  {error?.message ?? "Tu cuenta todavía no está habilitada en este cotizador."}
                   <span className="mt-1 block">Si el problema persiste, contacta a YF.</span>
                 </AlertDescription>
               </Alert>
@@ -246,6 +282,61 @@ function LoginPage() {
               )}
             </Button>
 
+            <div className="flex items-center gap-3 pt-1" aria-hidden>
+              <span className="h-px flex-1 bg-slate-200" />
+              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                o
+              </span>
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            <form className="space-y-3" onSubmit={(event) => void startPassword(event)} noValidate>
+              <div className="space-y-1.5">
+                <Label htmlFor="login-email">Correo electrónico</Label>
+                <Input
+                  id="login-email"
+                  name="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="username"
+                  placeholder="nombre@correo.cl"
+                  className="h-11 bg-white"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  disabled={pending || !configured}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="login-password">Contraseña</Label>
+                <Input
+                  id="login-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  className="h-11 bg-white"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={pending || !configured}
+                  required
+                />
+              </div>
+              <Button
+                type="submit"
+                className="h-12 w-full gap-2 bg-brand-green text-sm font-medium text-primary-foreground shadow-sm hover:bg-brand-green/90 disabled:opacity-60"
+                disabled={pending || !configured}
+              >
+                {passwordSending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Ingresando…
+                  </>
+                ) : (
+                  "Ingresar"
+                )}
+              </Button>
+            </form>
+
             {notProvisioned && (
               <Button
                 type="button"
@@ -267,8 +358,8 @@ function LoginPage() {
           <div className="mt-8 flex items-start gap-2 border-t border-slate-100 pt-4 text-xs text-muted-foreground">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-green" aria-hidden />
             <p>
-              Solo cuentas habilitadas pueden ingresar al cotizador. Al continuar, Google compartirá
-              tu nombre y correo con este sistema.
+              Solo cuentas habilitadas pueden ingresar al cotizador. Si usas Google, compartirá tu
+              nombre y correo con este sistema.
             </p>
           </div>
         </div>

@@ -38,7 +38,7 @@ const NOT_CONFIGURED: SessionError = {
 
 const NOT_PROVISIONED: SessionError = {
   code: "USER_NOT_PROVISIONED",
-  message: "Tu cuenta de Google todavía no está habilitada en este cotizador.",
+  message: "Tu cuenta todavía no está habilitada en este cotizador.",
 };
 
 function toSessionError(error: unknown): SessionError {
@@ -62,6 +62,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     error: null,
   });
   const mounted = useRef(true);
+  /**
+   * Token ya validado contra el backend. Evita repetir `GET /api/v1/me` cuando el evento
+   * `SIGNED_IN` llega después de que `signInWithPassword` ya verificó esa misma sesión.
+   */
+  const verifiedToken = useRef<string | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -71,6 +76,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signedOut = useCallback(() => {
+    verifiedToken.current = null;
     if (!mounted.current) return;
     setState({ status: "signed_out", profile: null, error: null });
   }, []);
@@ -78,6 +84,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   /** Valida el token contra el backend; refresca una vez si expiró. */
   const verify = useCallback(
     async (session: Session, allowRefresh = true) => {
+      verifiedToken.current = session.access_token;
       setState((prev) => ({ ...prev, status: "loading" }));
       try {
         const profile = await fetchMe(session.access_token);
@@ -152,7 +159,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (fallback) clearTimeout(fallback);
         // Diferido: supabase-js no permite llamar a sus métodos dentro de este callback.
         setTimeout(() => {
-          if (!cancelled) void verify(session);
+          if (cancelled) return;
+          if (verifiedToken.current === session.access_token) return;
+          void verify(session);
         }, 0);
       } else if (event === "SIGNED_OUT") {
         signedOut();
@@ -177,6 +186,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
     if (error) throw new Error(error.message);
   }, []);
+
+  const signInWithPassword = useCallback(
+    async (email: string, password: string) => {
+      if (!supabaseIsConfigured()) throw new Error(NOT_CONFIGURED.message);
+      const { data, error } = await getSupabase().auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) throw error;
+      // El evento `SIGNED_IN` llegará después; la marca en `verifiedToken` evita duplicar la
+      // validación contra el backend.
+      if (data.session) await verify(data.session);
+    },
+    [verify],
+  );
 
   const signOut = useCallback(async () => {
     try {
@@ -206,10 +230,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       profile: state.profile,
       error: state.error,
       signInWithGoogle,
+      signInWithPassword,
       signOut,
       retry,
     }),
-    [state, signInWithGoogle, signOut, retry],
+    [state, signInWithGoogle, signInWithPassword, signOut, retry],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -47,6 +47,67 @@ export function gateFor(status: AuthStatus, pathname: string): Gate {
   return "blocked";
 }
 
+/**
+ * Forma mínima de un error de Supabase Auth. No se depende del tipo concreto del SDK para que
+ * esta decisión siga siendo pura y comprobable sin red.
+ */
+export interface PasswordAuthErrorLike {
+  code?: unknown;
+  status?: unknown;
+  message?: unknown;
+  name?: unknown;
+}
+
+function asText(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+/**
+ * Mensaje para un fallo de correo + contraseña.
+ *
+ * No distingue si el correo existe (`invalid_credentials` y `user_not_found` reciben el mismo
+ * mensaje) para no revelar qué cuentas están dadas de alta. Los casos que la persona sí puede
+ * resolver —contraseña incorrecta, correo sin confirmar, demasiados intentos, sin conexión— se
+ * informan por separado.
+ */
+export function messageForPasswordError(error: unknown): string {
+  const candidate: PasswordAuthErrorLike =
+    typeof error === "object" && error !== null ? (error as PasswordAuthErrorLike) : {};
+  const code = asText(candidate.code);
+  const message = asText(candidate.message);
+  const name = asText(candidate.name);
+  const status = typeof candidate.status === "number" ? candidate.status : null;
+
+  if (code === "email_not_confirmed" || message.includes("email not confirmed")) {
+    return "Tu correo todavía no está confirmado. Contacta a YF para completar el acceso.";
+  }
+  if (code === "invalid_email" || code === "email_address_invalid") {
+    return "Escribe un correo electrónico válido.";
+  }
+  if (
+    code === "invalid_credentials" ||
+    code === "user_not_found" ||
+    message.includes("invalid login credentials")
+  ) {
+    return "Correo o contraseña incorrectos. Revísalos e inténtalo otra vez.";
+  }
+  if (
+    code === "too_many_requests" ||
+    code === "over_request_rate_limit" ||
+    code === "over_email_send_rate_limit" ||
+    status === 429
+  ) {
+    return "Demasiados intentos seguidos. Espera un minuto y vuelve a intentarlo.";
+  }
+  if (status === 0 || name === "authretryablefetcherror" || message.includes("fetch")) {
+    return "No pudimos conectar con el servicio de inicio de sesión. Revisa tu conexión e inténtalo otra vez.";
+  }
+  if (status !== null && status >= 500) {
+    return "El servicio de inicio de sesión tuvo un problema. Espera un momento y reinténtalo.";
+  }
+  return "No pudimos iniciar sesión. Inténtalo otra vez.";
+}
+
 /** Mensaje comprensible para errores que Supabase devuelve en la URL al volver de Google. */
 export function messageForOAuthError(code: string, description?: string | null): string {
   if (code === "access_denied") {

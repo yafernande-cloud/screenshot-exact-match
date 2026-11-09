@@ -8,6 +8,7 @@ import {
   gateFor,
   isProtectedPath,
   messageForOAuthError,
+  messageForPasswordError,
   normalizePath,
   oauthErrorFromLocation,
   type AuthStatus,
@@ -59,6 +60,49 @@ describe("protección de rutas", () => {
     ["loading", "/login", "loading"],
   ])("estado %s en %s → %s", (status, path, expected) => {
     expect(gateFor(status, path)).toBe(expected);
+  });
+});
+
+describe("errores de correo + contraseña", () => {
+  it("no revela si el correo existe: credenciales inválidas y usuario inexistente dicen lo mismo", () => {
+    const credenciales = messageForPasswordError({ code: "invalid_credentials", status: 400 });
+    const inexistente = messageForPasswordError({ code: "user_not_found", status: 400 });
+    expect(credenciales).toContain("Correo o contraseña incorrectos");
+    expect(inexistente).toBe(credenciales);
+  });
+
+  it("reconoce el mensaje del SDK cuando no viene un código estable", () => {
+    expect(
+      messageForPasswordError({ message: "Invalid login credentials", status: 400 }),
+    ).toContain("Correo o contraseña incorrectos");
+  });
+
+  it("explica que el correo no está confirmado", () => {
+    expect(messageForPasswordError({ code: "email_not_confirmed", status: 400 })).toContain(
+      "todavía no está confirmado",
+    );
+  });
+
+  it("pide esperar cuando hay demasiados intentos", () => {
+    expect(messageForPasswordError({ code: "over_request_rate_limit", status: 429 })).toContain(
+      "Demasiados intentos",
+    );
+    expect(messageForPasswordError({ status: 429 })).toContain("Demasiados intentos");
+  });
+
+  it("distingue un problema de conexión de un error del servicio", () => {
+    expect(messageForPasswordError({ name: "AuthRetryableFetchError", status: 0 })).toContain(
+      "No pudimos conectar",
+    );
+    expect(messageForPasswordError({ status: 503, message: "Service unavailable" })).toContain(
+      "tuvo un problema",
+    );
+  });
+
+  it("usa un mensaje genérico para lo desconocido, incluso sin objeto de error", () => {
+    const generico = "No pudimos iniciar sesión. Inténtalo otra vez.";
+    expect(messageForPasswordError(undefined)).toBe(generico);
+    expect(messageForPasswordError({ code: "otro" })).toBe(generico);
   });
 });
 

@@ -28,6 +28,8 @@ export interface SessionContextValue {
   profile: MeProfile | null;
   error: SessionError | null;
   signInWithGoogle: () => Promise<void>;
+  /** Inicia sesión con correo + contraseña de Supabase y valida el acceso contra el backend. */
+  signInWithPassword: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   retry: () => Promise<void>;
 }
