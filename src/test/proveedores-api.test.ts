@@ -29,14 +29,19 @@ import {
   crearFuente,
   crearProveedor,
   esConflictoDeVersion,
+  esFuenteApi,
+  esFuenteDeArchivo,
+  etiquetaTipoFuente,
   guardarPerfilImportacion,
   importarListaDePrecios,
   listarFuentes,
   listarOfertasProveedor,
   listarProveedores,
   mensajeDeErrorProveedores,
+  obtenerEstadoConexionFuente,
   obtenerPerfilImportacion,
   previsualizarImportacion,
+  proveedorUsaPortal,
   type Fuente,
   type Proveedor,
 } from "@/lib/proveedores-api";
@@ -437,6 +442,54 @@ describe("errores reales de la API", () => {
   it("usa el mensaje de respaldo ante un error desconocido", () => {
     expect(mensajeDeErrorProveedores(new Error("boom"), "No pudimos guardar.")).toBe(
       "No pudimos guardar.",
+    );
+  });
+});
+
+describe("presentación de fuentes", () => {
+  it("lee el estado de conexión de una fuente API sin probarla ni guardarla", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        profile: {
+          source_id: "src-api",
+          configured: true,
+          state: "connected",
+          reason: null,
+          enabled: true,
+          mechanism: "algolia",
+          last_success_at: "2026-11-10T03:03:29Z",
+        },
+        version: 2,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const estado = await obtenerEstadoConexionFuente("src-api");
+
+    expect(estado.state).toBe("connected");
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/sources/src-api/connector-profile");
+  });
+
+  it("distingue una fuente API de una lista de archivos", () => {
+    expect(esFuenteApi(fuente({ mode: "api" }))).toBe(true);
+    expect(esFuenteDeArchivo(fuente({ mode: "api" }))).toBe(false);
+    expect(esFuenteDeArchivo(fuente())).toBe(true);
+    expect(esFuenteApi(fuente())).toBe(false);
+    expect(etiquetaTipoFuente("api")).toBe("Consulta en vivo");
+    expect(etiquetaTipoFuente("manual_import")).toBe("Lista de precios");
+  });
+
+  it("solo considera que el proveedor usa portal cuando tiene algo configurado", () => {
+    expect(proveedorUsaPortal(proveedor())).toBe(false);
+    expect(proveedorUsaPortal(proveedor({ portal_url: "https://compras.andes.cl" }))).toBe(true);
+    expect(
+      proveedorUsaPortal(
+        proveedor({ has_portal_credentials: true, portal_status: "credentials_saved" }),
+      ),
+    ).toBe(true);
+    expect(proveedorUsaPortal(proveedor({ portal_url: null, portal_status: "incomplete" }))).toBe(
+      true,
     );
   });
 });

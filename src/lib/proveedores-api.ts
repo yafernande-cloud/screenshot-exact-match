@@ -61,6 +61,22 @@ export interface Fuente {
   updated_at: string;
 }
 
+/**
+ * Estado derivado del conector de una fuente API (E4).
+ *
+ * Es de solo lectura: leerlo no prueba la conexión ni guarda nada. Una fuente sin perfil
+ * responde `configured: false`, y el estado nunca se completa en el frontend.
+ */
+export interface EstadoConexionFuente {
+  source_id: string;
+  configured: boolean;
+  state: "not_configured" | "connected" | "error" | "requires_intervention";
+  reason: string | null;
+  enabled: boolean;
+  mechanism: string | null;
+  last_success_at: string | null;
+}
+
 export interface NuevoProveedor {
   name: string;
   supplier_code?: string | null;
@@ -285,6 +301,22 @@ export async function listarFuentes(): Promise<Fuente[]> {
 }
 
 /**
+ * Estado real de la conexión de una fuente API, tal como lo deriva el backend.
+ *
+ * Se consulta solo para fuentes en modo `api`; una fuente de archivo responde
+ * `source_mode_not_api` porque no tiene conector que probar. Un fallo de lectura se informa como
+ * error: nunca se supone «conectado».
+ */
+export async function obtenerEstadoConexionFuente(sourceId: string): Promise<EstadoConexionFuente> {
+  const data = await apiRequest<{ profile: EstadoConexionFuente }>(
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/connector-profile`,
+    {},
+    "No pudimos leer el estado de la conexión.",
+  );
+  return data.profile;
+}
+
+/**
  * Crea una fuente de archivo para un proveedor (`manual_import`).
  *
  * El modo queda fijo: esta pantalla administra listas de precios recibidas como archivo, no
@@ -440,6 +472,45 @@ export const CAPACIDADES_FUENTE: ReadonlyArray<{
 
 export function etiquetaCapacidad(capacidad: string): string {
   return CAPACIDADES_FUENTE.find((c) => c.value === capacidad)?.label ?? capacidad;
+}
+
+/** La fuente se alimenta con archivos Excel/CSV y sí tiene importador. */
+export function esFuenteDeArchivo(fuente: Fuente): boolean {
+  return fuente.mode === "manual_import";
+}
+
+/** La fuente se consulta en vivo contra el proveedor; no recibe archivos. */
+export function esFuenteApi(fuente: Fuente): boolean {
+  return fuente.mode === "api";
+}
+
+/**
+ * El proveedor tiene portal de compras configurado.
+ *
+ * Guardar usuario y contraseña no conecta el portal, pero sí prueba que esa modalidad existe y
+ * que su sección corresponde mostrarse. Sin dirección, sin credenciales y con estado
+ * `not_configured` el proveedor no usa portal y su sección no aplica.
+ */
+export function proveedorUsaPortal(proveedor: Proveedor): boolean {
+  return (
+    Boolean(proveedor.portal_url) ||
+    proveedor.has_portal_credentials ||
+    proveedor.portal_status !== "not_configured"
+  );
+}
+
+/** Nombre corto del tipo de fuente para la tarjeta del proveedor. */
+export function etiquetaTipoFuente(modo: string): string {
+  switch (modo) {
+    case "api":
+      return "Consulta en vivo";
+    case "manual_import":
+      return "Lista de precios";
+    case "fixture":
+      return "Datos de prueba";
+    default:
+      return "Sin origen definido";
+  }
 }
 
 /** Nombres comprensibles: la persona administra fuentes, no `source.mode`. */

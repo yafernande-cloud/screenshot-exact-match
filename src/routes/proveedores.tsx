@@ -1,7 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, FileSpreadsheet, Globe, Pencil, Plus, RefreshCw, Truck } from "lucide-react";
+import {
+  AlertCircle,
+  FileSpreadsheet,
+  Globe,
+  Layers,
+  Pencil,
+  Plus,
+  Radio,
+  RefreshCw,
+  Truck,
+} from "lucide-react";
 
 import { MenuPrincipal, EncabezadoPagina } from "@/components/MenuPrincipal";
 import { ImportadorLista } from "@/components/proveedores/ImportadorLista";
@@ -12,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { mensajeMotivo } from "@/lib/proveedores-en-vivo";
 import {
   CAPACIDADES_FUENTE,
   actualizarFuente,
@@ -19,17 +30,22 @@ import {
   crearFuente,
   crearProveedor,
   esConflictoDeVersion,
+  esFuenteApi,
+  esFuenteDeArchivo,
   etiquetaBasePrecio,
   etiquetaCapacidad,
   etiquetaEstadoFuente,
   etiquetaEstadoPortal,
-  etiquetaModo,
+  etiquetaTipoFuente,
   etiquetaUnidad,
   listarFuentes,
   listarOfertasProveedor,
   listarProveedores,
   mensajeDeErrorProveedores,
+  obtenerEstadoConexionFuente,
+  proveedorUsaPortal,
   type CapacidadFuente,
+  type EstadoConexionFuente,
   type Fuente,
   type OfertaImportada,
   type Proveedor,
@@ -54,12 +70,37 @@ export const Route = createFileRoute("/proveedores")({
 
 type Modalidad = "portal" | "lista" | "ambas";
 
+/** Estado de la lectura del perfil de conector de una fuente API. */
+type EstadoConexionCargado = { perfil: EstadoConexionFuente | null; error: string | null };
+
+const ETIQUETA_ESTADO_CONEXION: Record<EstadoConexionFuente["state"], string> = {
+  connected: "Conectado",
+  not_configured: "Sin conexión",
+  error: "Error de conexión",
+  requires_intervention: "Requiere revisión",
+};
+
+/** Mismos colores de estado que la pantalla de proveedores en vivo. */
+const ESTILO_ESTADO_CONEXION: Record<EstadoConexionFuente["state"], string> = {
+  connected: "border-brand-green/40 text-brand-green",
+  not_configured: "border-muted-foreground/30 text-muted-foreground",
+  error: "border-destructive/40 text-destructive",
+  requires_intervention: "border-amber-500/50 text-amber-700",
+};
+
 function porNombre<T extends { name: string }>(filas: T[]): T[] {
   return [...filas].sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
 function fechaCorta(iso: string): string {
   return new Date(iso).toLocaleDateString("es-CL");
+}
+
+/** Fecha y hora de la última respuesta registrada, no una comprobación en este momento. */
+function fechaHoraCorta(iso: string): string {
+  const fecha = new Date(iso);
+  if (Number.isNaN(fecha.getTime())) return iso;
+  return fecha.toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" });
 }
 
 function precioLegible(monto: string, moneda: string): string {
@@ -85,8 +126,41 @@ function urlValida(valor: string): boolean {
 function Proveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [fuentes, setFuentes] = useState<Fuente[]>([]);
+  const [conexiones, setConexiones] = useState<Record<string, EstadoConexionCargado>>({});
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+
+  /**
+   * Lee el estado real de las fuentes API. Un fallo en una fuente no oculta las demás ni rompe la
+   * pantalla: esa fuente queda con su propio aviso, sin suponer que está conectada.
+   */
+  const cargarConexiones = useCallback(async (todas: Fuente[]) => {
+    const api = todas.filter(esFuenteApi);
+    if (api.length === 0) {
+      setConexiones({});
+      return;
+    }
+    const entradas = await Promise.all(
+      api.map(async (fuente) => {
+        try {
+          const perfil = await obtenerEstadoConexionFuente(fuente.source_id);
+          return [fuente.source_id, { perfil, error: null }] as const;
+        } catch (error) {
+          return [
+            fuente.source_id,
+            {
+              perfil: null,
+              error: mensajeDeErrorProveedores(
+                error,
+                "No pudimos leer el estado de la conexión. Inténtalo otra vez.",
+              ),
+            },
+          ] as const;
+        }
+      }),
+    );
+    setConexiones(Object.fromEntries(entradas));
+  }, []);
 
   const cargar = useCallback(async () => {
     setErrorCarga(null);
@@ -97,6 +171,9 @@ function Proveedores() {
       ]);
       setProveedores(porNombre(proveedoresApi));
       setFuentes(porNombre(fuentesApi));
+      // La lista se muestra de inmediato; cada fuente API informa su conexión al llegar.
+      setCargando(false);
+      await cargarConexiones(fuentesApi);
     } catch (error) {
       setErrorCarga(
         mensajeDeErrorProveedores(error, "No pudimos cargar los proveedores. Inténtalo otra vez."),
@@ -104,7 +181,7 @@ function Proveedores() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [cargarConexiones]);
 
   useEffect(() => {
     void cargar();
@@ -223,6 +300,7 @@ function Proveedores() {
                   key={proveedor.supplier_id}
                   proveedor={proveedor}
                   fuentes={fuentes.filter((f) => f.supplier_id === proveedor.supplier_id)}
+                  conexiones={conexiones}
                   onProveedorGuardado={guardarProveedor}
                   onFuenteGuardada={guardarFuente}
                   onRecargar={recargar}
@@ -513,12 +591,14 @@ function FormularioNuevoProveedor({
 function TarjetaProveedor({
   proveedor,
   fuentes,
+  conexiones,
   onProveedorGuardado,
   onFuenteGuardada,
   onRecargar,
 }: {
   proveedor: Proveedor;
   fuentes: Fuente[];
+  conexiones: Record<string, EstadoConexionCargado>;
   onProveedorGuardado: (proveedor: Proveedor) => void;
   onFuenteGuardada: (fuente: Fuente) => void;
   onRecargar: () => Promise<void>;
@@ -530,6 +610,11 @@ function TarjetaProveedor({
   const [codigo, setCodigo] = useState(proveedor.supplier_code ?? "");
   const [notas, setNotas] = useState(proveedor.internal_notes ?? "");
   const [refrescoOfertas, setRefrescoOfertas] = useState(0);
+  const [portalAbierto, setPortalAbierto] = useState(false);
+  const usaPortal = proveedorUsaPortal(proveedor);
+  const mostrarPortal = usaPortal || portalAbierto;
+  const hayFuenteApi = fuentes.some(esFuenteApi);
+  const hayFuenteArchivo = fuentes.some(esFuenteDeArchivo);
 
   const avisar = (error: unknown, fallback: string) => {
     toast.error(mensajeDeErrorProveedores(error, fallback));
@@ -606,13 +691,19 @@ function TarjetaProveedor({
                 Código {proveedor.supplier_code}
               </span>
             )}
-            {proveedor.portal_url && (
+            {usaPortal && (
               <Badge variant="outline" className="gap-1">
                 <Globe className="h-3 w-3" />
                 Portal
               </Badge>
             )}
-            {fuentes.length > 0 && (
+            {hayFuenteApi && (
+              <Badge variant="outline" className="gap-1">
+                <Radio className="h-3 w-3" />
+                Consulta en vivo
+              </Badge>
+            )}
+            {hayFuenteArchivo && (
               <Badge variant="outline" className="gap-1">
                 <FileSpreadsheet className="h-3 w-3" />
                 Lista de precios
@@ -625,7 +716,7 @@ function TarjetaProveedor({
             </p>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <Switch
               checked={activo}
@@ -637,6 +728,12 @@ function TarjetaProveedor({
             />
             {activo ? "Activo" : "Inactivo"}
           </label>
+          {!mostrarPortal && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setPortalAbierto(true)}>
+              <Globe className="h-4 w-4" />
+              Agregar portal
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -706,34 +803,43 @@ function TarjetaProveedor({
         </form>
       )}
 
-      <SeccionPortal
-        proveedor={proveedor}
-        onGuardado={onProveedorGuardado}
-        onRecargar={onRecargar}
-      />
+      {mostrarPortal && (
+        <SeccionPortal
+          proveedor={proveedor}
+          inicialmenteEditando={!usaPortal}
+          onCerrar={usaPortal ? undefined : () => setPortalAbierto(false)}
+          onGuardado={onProveedorGuardado}
+          onRecargar={onRecargar}
+        />
+      )}
 
-      <SeccionListaPrecios
+      <SeccionFuentes
         proveedor={proveedor}
         fuentes={fuentes}
+        conexiones={conexiones}
         onFuenteGuardada={onFuenteGuardada}
         onRecargar={alImportar}
       />
 
-      <PreciosImportados proveedor={proveedor} refresco={refrescoOfertas} />
+      {hayFuenteArchivo && <PreciosImportados proveedor={proveedor} refresco={refrescoOfertas} />}
     </li>
   );
 }
 
 function SeccionPortal({
   proveedor,
+  inicialmenteEditando = false,
+  onCerrar,
   onGuardado,
   onRecargar,
 }: {
   proveedor: Proveedor;
+  inicialmenteEditando?: boolean;
+  onCerrar?: (() => void) | undefined;
   onGuardado: (proveedor: Proveedor) => void;
   onRecargar: () => Promise<void>;
 }) {
-  const [editando, setEditando] = useState(false);
+  const [editando, setEditando] = useState(inicialmenteEditando);
   const [url, setUrl] = useState(proveedor.portal_url ?? "");
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
@@ -813,19 +919,25 @@ function SeccionPortal({
     <div className="mt-4 rounded-2xl border bg-muted/30 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Globe className="h-4 w-4 text-brand-green" />
-        <p className="text-sm font-medium">Portal web</p>
+        <p className="text-sm font-medium">Portal de compras</p>
         <Badge variant={proveedor.portal_status === "credentials_saved" ? "secondary" : "outline"}>
           {etiquetaEstadoPortal(proveedor.portal_status)}
         </Badge>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto"
-          onClick={() => (editando ? setEditando(false) : abrir())}
-        >
-          {editando ? "Cerrar" : proveedor.portal_url ? "Cambiar datos" : "Configurar portal"}
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {onCerrar && !editando && (
+            <Button type="button" variant="ghost" size="sm" onClick={onCerrar}>
+              Ocultar
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => (editando ? setEditando(false) : abrir())}
+          >
+            {editando ? "Cerrar" : proveedor.portal_url ? "Cambiar datos" : "Configurar portal"}
+          </Button>
+        </div>
       </div>
 
       {!editando && (
@@ -953,14 +1065,16 @@ function SeccionPortal({
   );
 }
 
-function SeccionListaPrecios({
+function SeccionFuentes({
   proveedor,
   fuentes,
+  conexiones,
   onFuenteGuardada,
   onRecargar,
 }: {
   proveedor: Proveedor;
   fuentes: Fuente[];
+  conexiones: Record<string, EstadoConexionCargado>;
   onFuenteGuardada: (fuente: Fuente) => void;
   onRecargar: () => Promise<void>;
 }) {
@@ -985,14 +1099,21 @@ function SeccionListaPrecios({
     }
   };
 
+  // Las de consulta en vivo primero: no dependen de un archivo, y así se leen antes que las listas.
+  const ordenadas = [
+    ...fuentes.filter(esFuenteApi),
+    ...fuentes.filter(esFuenteDeArchivo),
+    ...fuentes.filter((f) => !esFuenteApi(f) && !esFuenteDeArchivo(f)),
+  ];
+
   return (
     <div className="mt-4 rounded-2xl border bg-muted/30 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <FileSpreadsheet className="h-4 w-4 text-brand-green" />
-        <p className="text-sm font-medium">Lista de precios</p>
+        <Layers className="h-4 w-4 text-brand-green" />
+        <p className="text-sm font-medium">Fuentes de precios</p>
         <span className="text-xs text-muted-foreground">
           {fuentes.length === 0
-            ? "Sin lista cargada"
+            ? "Sin fuentes todavía"
             : `${fuentes.length} ${fuentes.length === 1 ? "fuente" : "fuentes"}`}
         </span>
         <Button
@@ -1010,7 +1131,7 @@ function SeccionListaPrecios({
       {fuentes.length === 0 ? (
         <div className="mt-2 space-y-2">
           <p className="text-sm text-muted-foreground">
-            Sin una fuente no se puede cargar la lista de precios de este proveedor.
+            Este proveedor todavía no tiene una fuente de precios.
           </p>
           <Button
             type="button"
@@ -1024,11 +1145,12 @@ function SeccionListaPrecios({
         </div>
       ) : (
         <ul className="mt-3 space-y-2">
-          {fuentes.map((fuente) => (
+          {ordenadas.map((fuente) => (
             <FuenteItem
               key={fuente.source_id}
               proveedorId={proveedor.supplier_id}
               fuente={fuente}
+              conexion={conexiones[fuente.source_id]}
               onGuardada={onFuenteGuardada}
               onRecargar={onRecargar}
             />
@@ -1137,11 +1259,13 @@ function FormularioNuevaFuente({
 function FuenteItem({
   proveedorId,
   fuente,
+  conexion,
   onGuardada,
   onRecargar,
 }: {
   proveedorId: string;
   fuente: Fuente;
+  conexion: EstadoConexionCargado | undefined;
   onGuardada: (fuente: Fuente) => void;
   onRecargar: () => Promise<void>;
 }) {
@@ -1151,6 +1275,9 @@ function FuenteItem({
   const [nombre, setNombre] = useState(fuente.name);
   const [capacidades, setCapacidades] = useState<CapacidadFuente[]>(fuente.capabilities);
   const idBase = `fuente-${fuente.source_id}`;
+  const esApi = esFuenteApi(fuente);
+  const deArchivo = esFuenteDeArchivo(fuente);
+  const perfil = conexion?.perfil ?? null;
 
   const avisar = (error: unknown, fallback: string) => {
     toast.error(mensajeDeErrorProveedores(error, fallback));
@@ -1210,22 +1337,55 @@ function FuenteItem({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium">{fuente.name}</p>
-            <Badge variant="outline">{etiquetaModo(fuente.mode)}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {etiquetaEstadoFuente(fuente.status)}
-            </span>
+            <Badge variant="outline" className="gap-1">
+              {esApi && <Radio className="h-3 w-3" />}
+              {deArchivo && <FileSpreadsheet className="h-3 w-3" />}
+              {etiquetaTipoFuente(fuente.mode)}
+            </Badge>
+            {esApi && perfil && (
+              <span
+                className={`rounded-full border px-2 py-0.5 text-xs ${ESTILO_ESTADO_CONEXION[perfil.state]}`}
+              >
+                {ETIQUETA_ESTADO_CONEXION[perfil.state]}
+              </span>
+            )}
+            {deArchivo && (
+              <span className="text-xs text-muted-foreground">
+                {etiquetaEstadoFuente(fuente.status)}
+              </span>
+            )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {fuente.capabilities.length === 0
               ? "Sin información declarada"
               : fuente.capabilities.map((c) => etiquetaCapacidad(c)).join(" · ")}
           </p>
-          {fuente.last_success_at && (
+          {esApi && (
+            <>
+              {!conexion && (
+                <p role="status" className="mt-1 text-xs text-muted-foreground">
+                  Leyendo el estado de la conexión…
+                </p>
+              )}
+              {conexion?.error && <p className="mt-1 text-xs text-destructive">{conexion.error}</p>}
+              {perfil && (perfil.reason || perfil.state !== "connected") && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {mensajeMotivo(perfil.reason, perfil.state)}
+                </p>
+              )}
+              {perfil?.last_success_at && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Última conexión exitosa registrada: {fechaHoraCorta(perfil.last_success_at)}
+                </p>
+              )}
+            </>
+          )}
+          {!esApi && fuente.last_success_at && (
             <p className="mt-1 text-xs text-muted-foreground">
               Última carga: {fechaCorta(fuente.last_success_at)}
             </p>
           )}
-          {fuente.last_error && (
+          {!esApi && fuente.last_error && (
             <p className="mt-1 text-xs text-destructive">{fuente.last_error}</p>
           )}
         </div>
@@ -1241,15 +1401,17 @@ function FuenteItem({
             />
             {fuente.enabled ? "Activa" : "Desactivada"}
           </label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setImportando((valor) => !valor)}
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            {importando ? "Cerrar carga" : "Cargar lista"}
-          </Button>
+          {deArchivo && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setImportando((valor) => !valor)}
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              {importando ? "Cerrar carga" : "Cargar lista"}
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -1300,7 +1462,7 @@ function FuenteItem({
         </form>
       )}
 
-      {importando && (
+      {deArchivo && importando && (
         <ImportadorLista proveedorId={proveedorId} fuente={fuente} onImportado={onRecargar} />
       )}
     </li>

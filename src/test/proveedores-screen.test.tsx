@@ -6,7 +6,12 @@ import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import { routeTree } from "@/routeTree.gen";
 import { ApiError } from "@/lib/api";
-import type { Fuente, Proveedor, VistaPreviaImportacion } from "@/lib/proveedores-api";
+import type {
+  EstadoConexionFuente,
+  Fuente,
+  Proveedor,
+  VistaPreviaImportacion,
+} from "@/lib/proveedores-api";
 
 vi.mock("@/lib/session", () => ({
   SessionProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -38,6 +43,7 @@ vi.mock("@/lib/proveedores-api", async (importOriginal) => {
     actualizarProveedor: vi.fn(),
     crearFuente: vi.fn(),
     actualizarFuente: vi.fn(),
+    obtenerEstadoConexionFuente: vi.fn(),
     obtenerPerfilImportacion: vi.fn(),
     guardarPerfilImportacion: vi.fn(),
     previsualizarImportacion: vi.fn(),
@@ -59,6 +65,7 @@ import {
   listarOfertasProveedor,
   listarProveedores,
   nuevaClaveIdempotencia,
+  obtenerEstadoConexionFuente,
   obtenerPerfilImportacion,
   previsualizarImportacion,
 } from "@/lib/proveedores-api";
@@ -69,6 +76,7 @@ const crearProveedorMock = crearProveedor as unknown as Mock;
 const actualizarProveedorMock = actualizarProveedor as unknown as Mock;
 const crearFuenteMock = crearFuente as unknown as Mock;
 const actualizarFuenteMock = actualizarFuente as unknown as Mock;
+const obtenerEstadoConexionMock = obtenerEstadoConexionFuente as unknown as Mock;
 const obtenerPerfilMock = obtenerPerfilImportacion as unknown as Mock;
 const guardarPerfilMock = guardarPerfilImportacion as unknown as Mock;
 const previsualizarMock = previsualizarImportacion as unknown as Mock;
@@ -130,6 +138,19 @@ function fuente(overrides: Partial<Fuente> = {}): Fuente {
   };
 }
 
+function perfilConector(overrides: Partial<EstadoConexionFuente> = {}): EstadoConexionFuente {
+  return {
+    source_id: "src-api",
+    configured: true,
+    state: "connected",
+    reason: null,
+    enabled: true,
+    mechanism: "algolia",
+    last_success_at: "2026-11-10T03:03:29Z",
+    ...overrides,
+  };
+}
+
 function vistaPrevia(overrides: Partial<VistaPreviaImportacion> = {}): VistaPreviaImportacion {
   return {
     file_format: "csv",
@@ -181,6 +202,8 @@ beforeEach(() => {
   actualizarProveedorMock.mockReset();
   crearFuenteMock.mockReset();
   actualizarFuenteMock.mockReset();
+  obtenerEstadoConexionMock.mockReset();
+  obtenerEstadoConexionMock.mockResolvedValue(perfilConector());
   obtenerPerfilMock.mockReset();
   obtenerPerfilMock.mockResolvedValue({ profile: null, version: 0 });
   guardarPerfilMock.mockReset();
@@ -701,7 +724,8 @@ describe("pantalla de proveedores", () => {
   });
 
   it("muestra los precios importados y aclara que no son precios de farmacias", async () => {
-    listarProveedoresMock.mockResolvedValue([proveedor()]);
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
     listarOfertasMock.mockResolvedValue([
       {
         offer_id: "of-1",
@@ -769,5 +793,101 @@ describe("pantalla de proveedores", () => {
     expect(toastError).toHaveBeenCalledWith(
       "Otro cambio se guardó primero. Actualizamos la lista; revisa los datos antes de volver a guardar.",
     );
+  });
+
+  it("muestra una fuente API como consulta en vivo, con su estado real y sin importador", async () => {
+    listarProveedoresMock.mockResolvedValue([
+      proveedor({ name: "Proveedor FarmaLoop", sources: ["src-api"] }),
+    ]);
+    listarFuentesMock.mockResolvedValue([
+      fuente({
+        source_id: "src-api",
+        name: "Farmaloop API",
+        mode: "api",
+        capabilities: ["search", "price"],
+      }),
+    ]);
+    obtenerEstadoConexionMock.mockResolvedValue(perfilConector({ source_id: "src-api" }));
+
+    await renderizarProveedores();
+
+    expect(await screen.findByText("Farmaloop API")).toBeInTheDocument();
+    expect(await screen.findByText("Conectado")).toBeInTheDocument();
+    expect(screen.getAllByText("Consulta en vivo").length).toBeGreaterThan(0);
+    // «Conectado» se explica con la última respuesta registrada, no como una comprobación actual.
+    expect(screen.getByText(/Última conexión exitosa registrada:/)).toBeInTheDocument();
+    expect(screen.queryByText(/La conexión está disponible\./)).toBeNull();
+    // Una fuente API no se alimenta con archivos: no ofrece importar ni finge un estado de carga.
+    expect(screen.queryByRole("button", { name: "Cargar lista" })).toBeNull();
+    expect(screen.queryByText("Sin cargas todavía")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ver precios" })).toBeNull();
+    expect(obtenerEstadoConexionMock).toHaveBeenCalledWith("src-api");
+  });
+
+  it("no presenta como conectada una fuente API cuyo estado real es un error", async () => {
+    listarProveedoresMock.mockResolvedValue([
+      proveedor({ name: "Proveedor FarmaLoop", sources: ["src-api"] }),
+    ]);
+    listarFuentesMock.mockResolvedValue([
+      fuente({ source_id: "src-api", name: "Farmaloop API", mode: "api" }),
+    ]);
+    obtenerEstadoConexionMock.mockResolvedValue(
+      perfilConector({
+        source_id: "src-api",
+        state: "error",
+        reason: "network_error",
+        last_success_at: null,
+      }),
+    );
+
+    await renderizarProveedores();
+
+    expect(await screen.findByText("Error de conexión")).toBeInTheDocument();
+    expect(screen.getByText("No pudimos comunicarnos con el proveedor.")).toBeInTheDocument();
+    expect(screen.queryByText("Conectado")).toBeNull();
+  });
+
+  it("no muestra la sección del portal cuando el proveedor no usa portal", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    expect(screen.queryByText("Portal de compras")).toBeNull();
+    expect(screen.queryByText("Portal sin configurar")).toBeNull();
+
+    // La modalidad se puede agregar después, sin dejar una sección vacía siempre visible.
+    fireEvent.click(screen.getByRole("button", { name: "Agregar portal" }));
+    expect(await screen.findByLabelText("Dirección del portal")).toBeInTheDocument();
+  });
+
+  it("muestra el portal y la consulta en vivo por separado cuando conviven", async () => {
+    listarProveedoresMock.mockResolvedValue([
+      proveedor({
+        name: "Proveedor FarmaLoop",
+        sources: ["src-api"],
+        portal_url: "https://compras.farmaloop.cl",
+        has_portal_credentials: true,
+        portal_status: "credentials_saved",
+      }),
+    ]);
+    listarFuentesMock.mockResolvedValue([
+      fuente({
+        source_id: "src-api",
+        name: "Farmaloop API",
+        mode: "api",
+        capabilities: ["search"],
+      }),
+    ]);
+
+    await renderizarProveedores();
+
+    expect(await screen.findByText("Portal de compras")).toBeInTheDocument();
+    expect(screen.getByText("Credenciales guardadas · sin conectar")).toBeInTheDocument();
+    expect(await screen.findByText("Conectado")).toBeInTheDocument();
+    expect(screen.getAllByText("Consulta en vivo").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Portal sin configurar")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cargar lista" })).toBeNull();
   });
 });
