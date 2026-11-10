@@ -249,8 +249,15 @@ export interface RevisionImportacion {
   rows_truncated: boolean;
   problems: ProblemaAgrupado[];
   unrecognised_units: UnidadNoReconocida[];
-  profile_source: "saved" | "request";
+  profile_source: "saved" | "request" | "detected";
   profile_version: number;
+  /**
+   * Mapeo efectivo que produjo esta revisión. Guardarlo antes de importar garantiza que E8 lea la
+   * misma hoja, la misma cabecera y las mismas columnas que se acaban de revisar.
+   */
+  profile: DatosPerfil | null;
+  /** Roles obligatorios que el archivo no permite resolver (solo en el flujo automático). */
+  missing_columns: string[];
   file_hash: string;
 }
 
@@ -477,16 +484,24 @@ export function previsualizarImportacion(
 }
 
 /**
- * Revisa la planilla con el mapeo que la persona está viendo, **sin guardar ni importar nada**.
+ * Revisa la planilla, **sin guardar ni importar nada**.
  *
- * Es el paso «Revisar productos»: devuelve las filas interpretadas, los rechazos agrupados y las
- * unidades que el mapeo no traduce para corregir la interpretación antes de confirmar.
+ * Sin `datos` y con `auto: true` el backend detecta la hoja, la cabecera y las columnas, y reutiliza
+ * el mapeo guardado solo si calza **por nombre**. Devuelve además el `profile` efectivo (para
+ * guardarlo antes de importar) y los `missing_columns` que el archivo no trae.
+ *
+ * Con `datos` se revisa ese mapeo explícito; así la pantalla reintenta con las respuestas que dio
+ * la persona (moneda, base, unidad) sin inventar nada.
  */
 export function revisarImportacion(
   sourceId: string,
   archivo: File,
-  datos: DatosPerfil,
-  opciones: { hoja?: string | null; filaEncabezado?: number | undefined } = {},
+  datos?: DatosPerfil | null,
+  opciones: {
+    auto?: boolean;
+    hoja?: string | null;
+    filaEncabezado?: number | undefined;
+  } = {},
 ): Promise<RevisionImportacion> {
   const cuerpo = new FormData();
   cuerpo.append("file", archivo, archivo.name);
@@ -494,17 +509,20 @@ export function revisarImportacion(
   if (opciones.filaEncabezado !== undefined) {
     cuerpo.append("header_row", String(opciones.filaEncabezado));
   }
-  cuerpo.append(
-    "profile",
-    JSON.stringify({
-      file_format: datos.file_format,
-      sheet: datos.sheet,
-      header_row: datos.header_row,
-      columns: datos.columns,
-      units: datos.units,
-      options: datos.options,
-    }),
-  );
+  if (opciones.auto) cuerpo.append("auto", "true");
+  if (datos) {
+    cuerpo.append(
+      "profile",
+      JSON.stringify({
+        file_format: datos.file_format,
+        sheet: datos.sheet,
+        header_row: datos.header_row,
+        columns: datos.columns,
+        units: datos.units,
+        options: datos.options,
+      }),
+    );
+  }
   return apiRequest<RevisionImportacion>(
     `/api/v1/sources/${encodeURIComponent(sourceId)}/import-check`,
     { method: "POST", body: cuerpo },

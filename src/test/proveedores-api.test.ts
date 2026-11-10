@@ -357,6 +357,53 @@ describe("listas de precios importadas", () => {
     expect(revision.rows_total).toBe(1);
   });
 
+  it("solicita la revisión automática sin perfil cuando se usa un solo botón", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        file_format: "xlsx",
+        sheets: ["Portada", "Precios"],
+        sheet: "Precios",
+        header_row: 2,
+        headers: ["Código", "Precio", "Unidad"],
+        rows_total: 1,
+        rows_accepted: 1,
+        rows_rejected: 0,
+        rows_needs_review: 0,
+        rows: [],
+        rows_truncated: false,
+        problems: [],
+        unrecognised_units: [],
+        profile_source: "detected",
+        profile_version: 0,
+        profile: {
+          file_format: "xlsx",
+          sheet: "Precios",
+          header_row: 2,
+          columns: { sku: { header: "Código", position: 1 } },
+          units: {},
+          options: { decimal_separator: "." },
+        },
+        missing_columns: [],
+        file_hash: "b".repeat(64),
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const revision = await revisarImportacion("src-1", archivo(), undefined, { auto: true });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/sources/src-1/import-check");
+    const cuerpo = init.body as FormData;
+    expect(cuerpo.get("auto")).toBe("true");
+    // Sin mapeo: el backend detecta hoja y columnas y devuelve el perfil efectivo.
+    expect(cuerpo.get("profile")).toBeNull();
+    expect(cuerpo.get("sheet")).toBeNull();
+    expect(cuerpo.get("header_row")).toBeNull();
+    expect(revision.profile_source).toBe("detected");
+    expect(revision.profile?.sheet).toBe("Precios");
+    expect(revision.missing_columns).toEqual([]);
+  });
+
   it("obtiene el perfil y guarda con If-Match 0 cuando todavía no existe", async () => {
     const fetchMock = vi
       .fn()
