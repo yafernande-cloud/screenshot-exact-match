@@ -189,7 +189,6 @@ async function renderizarProveedores() {
     history: createMemoryHistory({ initialEntries: ["/proveedores"] }),
   });
   await router.load();
-
   render(<RouterProvider router={router} />);
 }
 
@@ -218,19 +217,30 @@ beforeEach(() => {
 });
 
 describe("pantalla de proveedores", () => {
-  it("muestra los proveedores y fuentes reales, sin datos de demostración", async () => {
+  it("muestra una tarjeta por proveedor con lo esencial, sin datos de demostración", async () => {
     listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
     listarFuentesMock.mockResolvedValue([fuente()]);
 
     await renderizarProveedores();
 
     expect(await screen.findByText("Distribuidora Andes")).toBeInTheDocument();
-    expect(screen.getByText("Lista de precios Andes")).toBeInTheDocument();
     expect(screen.getByText("1 activos de 1")).toBeInTheDocument();
+    expect(screen.getByText("Lista de precios Excel")).toBeInTheDocument();
+    expect(screen.getByText("Estado de carga:")).toBeInTheDocument();
+    expect(screen.getByText("Sin archivo cargado")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cargar Excel" })).toBeInTheDocument();
+    // Los detalles de cada fuente viven en la configuración, no en la tarjeta.
+    expect(screen.queryByText("Lista de precios Andes")).toBeNull();
+    expect(screen.queryByText("Fuentes de precios")).toBeNull();
+    expect(screen.queryByText("Productos y precios importados")).toBeNull();
     expect(screen.queryByText(/\(demo\)/)).toBeNull();
     expect(screen.queryByText(/No se guardan|no se guardan/)).toBeNull();
     expect(screen.queryByText("Laboratorio Sur")).toBeNull();
     expect(screen.queryByText("Proveedor X")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(await screen.findByText("Lista de precios Andes")).toBeInTheDocument();
+    expect(screen.getByText("Fuentes de precios")).toBeInTheDocument();
   });
 
   it("muestra una lista vacía cuando la organización todavía no tiene proveedores", async () => {
@@ -283,10 +293,15 @@ describe("pantalla de proveedores", () => {
       }),
     );
     expect(await screen.findByText("Droguería Pacífico")).toBeInTheDocument();
+    expect(screen.getByText("Lista de precios Excel")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cargar Excel" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
     expect(await screen.findByText("Lista de precios · Droguería Pacífico")).toBeInTheDocument();
     expect(toastSuccess).toHaveBeenCalledWith(
       "Droguería Pacífico quedó registrado. Carga su lista de precios en la tarjeta del proveedor.",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar configuración" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("crea un proveedor solo con portal y envía las credenciales sin mostrarlas después", async () => {
@@ -330,7 +345,8 @@ describe("pantalla de proveedores", () => {
       }),
     );
     expect(crearFuenteMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("Credenciales guardadas · sin conectar")).toBeInTheDocument();
+    expect(await screen.findByText("Portal de compras")).toBeInTheDocument();
+    expect(screen.getByText(/Credenciales guardadas · sin conectar/)).toBeInTheDocument();
     // La contraseña no queda en pantalla ni se puede leer desde la tarjeta.
     expect(screen.queryByDisplayValue("secreta")).toBeNull();
     expect(screen.queryByText(/^Conectado$/)).toBeNull();
@@ -389,8 +405,13 @@ describe("pantalla de proveedores", () => {
         capabilities: ["product_detail", "price"],
       }),
     );
+    expect(
+      await screen.findByText("Lista de precios Excel · Portal de compras"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Credenciales guardadas · sin conectar/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
     expect(await screen.findByText("Lista de precios · Droguería Pacífico")).toBeInTheDocument();
-    expect(screen.getByText("Credenciales guardadas · sin conectar")).toBeInTheDocument();
+    expect(screen.getAllByText(/Credenciales guardadas · sin conectar/).length).toBeGreaterThan(0);
   });
 
   it("edita nombre, código y notas con la versión leída", async () => {
@@ -442,7 +463,8 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    const interruptor = screen.getByRole("switch", {
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    const interruptor = await screen.findByRole("switch", {
       name: "Activar o desactivar Distribuidora Andes",
     });
     expect(interruptor).toHaveAttribute("data-state", "checked");
@@ -471,8 +493,10 @@ describe("pantalla de proveedores", () => {
 
     await renderizarProveedores();
 
-    expect(await screen.findByText("Credenciales guardadas · sin conectar")).toBeInTheDocument();
-    expect(screen.getByText("https://compras.andes.cl")).toBeInTheDocument();
+    expect(await screen.findByText(/Credenciales guardadas · sin conectar/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    expect(await screen.findByText("https://compras.andes.cl")).toBeInTheDocument();
     expect(screen.getByText(/Guardar credenciales no conecta el portal/)).toBeInTheDocument();
     expect(screen.queryByText(/^Conectado$/)).toBeNull();
   });
@@ -493,7 +517,8 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cambiar datos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cambiar datos" }));
     fireEvent.change(screen.getByLabelText("Usuario del portal"), {
       target: { value: "compras" },
     });
@@ -513,7 +538,7 @@ describe("pantalla de proveedores", () => {
       ),
     );
     await waitFor(() => expect(screen.queryByDisplayValue("secreta")).toBeNull());
-    expect(await screen.findByText("Credenciales guardadas · sin conectar")).toBeInTheDocument();
+    expect(screen.getAllByText(/Credenciales guardadas · sin conectar/).length).toBeGreaterThan(0);
   });
 
   it("agrega una lista de precios a un proveedor que todavía no tiene fuente", async () => {
@@ -525,7 +550,8 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Agregar lista de precios" }));
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Agregar lista de precios" }));
 
     await waitFor(() =>
       expect(crearFuenteMock).toHaveBeenCalledWith({
@@ -547,7 +573,8 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Agregar fuente" }));
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Agregar fuente" }));
     fireEvent.change(screen.getByLabelText("Nombre de la fuente"), {
       target: { value: "Lista de precios 2026" },
     });
@@ -571,10 +598,11 @@ describe("pantalla de proveedores", () => {
     actualizarFuenteMock.mockResolvedValue(fuente({ enabled: false, version: 2 }));
 
     await renderizarProveedores();
-    await screen.findByText("Lista de precios Andes");
+    await screen.findByText("Distribuidora Andes");
 
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
     fireEvent.click(
-      screen.getByRole("switch", { name: "Activar o desactivar Lista de precios Andes" }),
+      await screen.findByRole("switch", { name: "Activar o desactivar Lista de precios Andes" }),
     );
 
     await waitFor(() =>
@@ -628,7 +656,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar lista" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
     const entrada = await screen.findByLabelText("Archivo de la lista de precios");
     const archivo = archivoCsv();
     fireEvent.change(entrada, { target: { files: [archivo] } });
@@ -709,7 +737,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar lista" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
     const entrada = await screen.findByLabelText("Archivo de la lista de precios");
     fireEvent.change(entrada, {
       target: { files: [new File(["roto"], "lista.xlsx", { type: "application/vnd.ms-excel" })] },
@@ -753,7 +781,8 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Ver precios" }));
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ver precios" }));
 
     expect(await screen.findByText("Paracetamol 500 mg")).toBeInTheDocument();
     expect(screen.getByText("SKU-1")).toBeInTheDocument();
@@ -785,8 +814,9 @@ describe("pantalla de proveedores", () => {
     await screen.findByText("Distribuidora Andes");
     expect(listarProveedoresMock).toHaveBeenCalledTimes(1);
 
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
     fireEvent.click(
-      screen.getByRole("switch", { name: "Activar o desactivar Distribuidora Andes" }),
+      await screen.findByRole("switch", { name: "Activar o desactivar Distribuidora Andes" }),
     );
 
     await waitFor(() => expect(listarProveedoresMock).toHaveBeenCalledTimes(2));
@@ -811,16 +841,22 @@ describe("pantalla de proveedores", () => {
 
     await renderizarProveedores();
 
+    expect(await screen.findByText("Proveedor FarmaLoop")).toBeInTheDocument();
+    expect(screen.getByText("Consulta en vivo")).toBeInTheDocument();
+    expect(await screen.findByText("Estado de conexión:")).toBeInTheDocument();
+    expect(screen.getByText("Conectado")).toBeInTheDocument();
+    // La tarjeta no expone el nombre técnico de la fuente ni ofrece un importador.
+    expect(screen.queryByText("Farmaloop API")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cargar Excel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ver precios" })).toBeNull();
+    // La configuración conserva el detalle y la última respuesta registrada, sin fingir una
+    // comprobación actual.
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
     expect(await screen.findByText("Farmaloop API")).toBeInTheDocument();
-    expect(await screen.findByText("Conectado")).toBeInTheDocument();
-    expect(screen.getAllByText("Consulta en vivo").length).toBeGreaterThan(0);
-    // «Conectado» se explica con la última respuesta registrada, no como una comprobación actual.
     expect(screen.getByText(/Última conexión exitosa registrada:/)).toBeInTheDocument();
     expect(screen.queryByText(/La conexión está disponible\./)).toBeNull();
-    // Una fuente API no se alimenta con archivos: no ofrece importar ni finge un estado de carga.
     expect(screen.queryByRole("button", { name: "Cargar lista" })).toBeNull();
     expect(screen.queryByText("Sin cargas todavía")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Ver precios" })).toBeNull();
     expect(obtenerEstadoConexionMock).toHaveBeenCalledWith("src-api");
   });
 
@@ -842,9 +878,13 @@ describe("pantalla de proveedores", () => {
 
     await renderizarProveedores();
 
-    expect(await screen.findByText("Error de conexión")).toBeInTheDocument();
-    expect(screen.getByText("No pudimos comunicarnos con el proveedor.")).toBeInTheDocument();
+    expect(await screen.findByText("Estado de conexión:")).toBeInTheDocument();
+    expect(screen.getByText("Error de conexión")).toBeInTheDocument();
     expect(screen.queryByText("Conectado")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(
+      await screen.findByText("No pudimos comunicarnos con el proveedor."),
+    ).toBeInTheDocument();
   });
 
   it("no muestra la sección del portal cuando el proveedor no usa portal", async () => {
@@ -857,8 +897,10 @@ describe("pantalla de proveedores", () => {
     expect(screen.queryByText("Portal de compras")).toBeNull();
     expect(screen.queryByText("Portal sin configurar")).toBeNull();
 
-    // La modalidad se puede agregar después, sin dejar una sección vacía siempre visible.
-    fireEvent.click(screen.getByRole("button", { name: "Agregar portal" }));
+    // La modalidad se puede agregar desde la configuración, sin dejar una sección vacía
+    // siempre visible en la tarjeta.
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Agregar portal" }));
     expect(await screen.findByLabelText("Dirección del portal")).toBeInTheDocument();
   });
 
@@ -883,11 +925,15 @@ describe("pantalla de proveedores", () => {
 
     await renderizarProveedores();
 
-    expect(await screen.findByText("Portal de compras")).toBeInTheDocument();
-    expect(screen.getByText("Credenciales guardadas · sin conectar")).toBeInTheDocument();
-    expect(await screen.findByText("Conectado")).toBeInTheDocument();
-    expect(screen.getAllByText("Consulta en vivo").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Consulta en vivo · Portal de compras")).toBeInTheDocument();
+    expect(screen.getByText(/Credenciales guardadas · sin conectar/)).toBeInTheDocument();
+    expect(await screen.findByText("Estado de conexión:")).toBeInTheDocument();
+    expect(screen.getByText("Conectado")).toBeInTheDocument();
     expect(screen.queryByText("Portal sin configurar")).toBeNull();
     expect(screen.queryByRole("button", { name: "Cargar lista" })).toBeNull();
+    // La configuración reúne el portal y la conexión en vivo por separado.
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(await screen.findByText("https://compras.farmaloop.cl")).toBeInTheDocument();
+    expect(screen.getByText("Farmaloop API")).toBeInTheDocument();
   });
 });

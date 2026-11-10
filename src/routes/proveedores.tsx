@@ -11,6 +11,7 @@ import {
   Radio,
   RefreshCw,
   Truck,
+  X,
 } from "lucide-react";
 
 import { MenuPrincipal, EncabezadoPagina } from "@/components/MenuPrincipal";
@@ -294,7 +295,7 @@ function Proveedores() {
               Todavía no hay proveedores registrados. Agrega el primero para empezar.
             </p>
           ) : (
-            <ul className="divide-y">
+            <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {proveedores.map((proveedor) => (
                 <TarjetaProveedor
                   key={proveedor.supplier_id}
@@ -588,6 +589,49 @@ function FormularioNuevoProveedor({
   );
 }
 
+/** Modalidad en palabras de la persona que compra: sin `source.mode` ni nombres técnicos. */
+function resumenModalidad({
+  tieneLista,
+  tieneConexion,
+  usaPortal,
+}: {
+  tieneLista: boolean;
+  tieneConexion: boolean;
+  usaPortal: boolean;
+}): string {
+  const partes: string[] = [];
+  if (tieneLista) partes.push("Lista de precios Excel");
+  if (tieneConexion) partes.push("Consulta en vivo");
+  if (usaPortal) partes.push("Portal de compras");
+  return partes.length > 0 ? partes.join(" · ") : "Sin fuentes de precios configuradas";
+}
+
+/** Estado de carga de la lista de precios, solo con datos reales. */
+function resumenLista(fuentesArchivo: Fuente[]): string | null {
+  if (fuentesArchivo.length === 0) return null;
+  const cargas = fuentesArchivo
+    .map((fuente) => fuente.last_success_at)
+    .filter((iso): iso is string => Boolean(iso))
+    .sort()
+    .reverse();
+  return cargas[0] ? `Última lista cargada: ${fechaCorta(cargas[0])}` : "Sin archivo cargado";
+}
+
+/** Estado de conexión de las fuentes en vivo, tal como lo informa cada perfil. */
+function resumenConexion(
+  fuentesApi: Fuente[],
+  conexiones: Record<string, EstadoConexionCargado>,
+): string | null {
+  if (fuentesApi.length === 0) return null;
+  const estados = fuentesApi.map((fuente) => {
+    const dato = conexiones[fuente.source_id];
+    if (!dato) return "Leyendo el estado de la conexión…";
+    if (dato.error) return "Estado de conexión no disponible";
+    return ETIQUETA_ESTADO_CONEXION[dato.perfil?.state ?? "not_configured"];
+  });
+  return [...new Set(estados)].join(" · ");
+}
+
 function TarjetaProveedor({
   proveedor,
   fuentes,
@@ -605,27 +649,59 @@ function TarjetaProveedor({
 }) {
   const activo = proveedor.status === "active";
   const [ocupado, setOcupado] = useState(false);
-  const [editando, setEditando] = useState(false);
+  const [panelAbierto, setPanelAbierto] = useState(false);
+  const [fuenteParaImportar, setFuenteParaImportar] = useState<string | null>(null);
   const [nombre, setNombre] = useState(proveedor.name);
   const [codigo, setCodigo] = useState(proveedor.supplier_code ?? "");
   const [notas, setNotas] = useState(proveedor.internal_notes ?? "");
   const [refrescoOfertas, setRefrescoOfertas] = useState(0);
   const [portalAbierto, setPortalAbierto] = useState(false);
   const usaPortal = proveedorUsaPortal(proveedor);
+  const cerrarPanel = useCallback(() => {
+    setPanelAbierto(false);
+    setFuenteParaImportar(null);
+  }, []);
+  // El panel de configuración se cierra con Escape, además del botón explícito.
+  useEffect(() => {
+    if (!panelAbierto) return;
+    const alPresionar = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cerrarPanel();
+    };
+    document.addEventListener("keydown", alPresionar);
+    return () => document.removeEventListener("keydown", alPresionar);
+  }, [panelAbierto, cerrarPanel]);
   const mostrarPortal = usaPortal || portalAbierto;
-  const hayFuenteApi = fuentes.some(esFuenteApi);
-  const hayFuenteArchivo = fuentes.some(esFuenteDeArchivo);
+  const fuentesApi = fuentes.filter(esFuenteApi);
+  const fuentesArchivo = fuentes.filter(esFuenteDeArchivo);
+  const modalidad = resumenModalidad({
+    tieneLista: fuentesArchivo.length > 0,
+    tieneConexion: fuentesApi.length > 0,
+    usaPortal,
+  });
+  const estadoLista = resumenLista(fuentesArchivo);
+  const estadoConexion = resumenConexion(fuentesApi, conexiones);
+  const idPanel = `panel-proveedor-${proveedor.supplier_id}`;
 
   const avisar = (error: unknown, fallback: string) => {
     toast.error(mensajeDeErrorProveedores(error, fallback));
     if (esConflictoDeVersion(error)) void onRecargar();
   };
 
-  const abrirEdicion = () => {
+  const abrirPanel = () => {
     setNombre(proveedor.name);
     setCodigo(proveedor.supplier_code ?? "");
     setNotas(proveedor.internal_notes ?? "");
-    setEditando(true);
+    setFuenteParaImportar(null);
+    setPanelAbierto(true);
+  };
+
+  /** Cargar Excel abre la misma configuración con el importador ya desplegado. */
+  const abrirImportador = () => {
+    setNombre(proveedor.name);
+    setCodigo(proveedor.supplier_code ?? "");
+    setNotas(proveedor.internal_notes ?? "");
+    setFuenteParaImportar(fuentesArchivo[0]?.source_id ?? null);
+    setPanelAbierto(true);
   };
 
   const alternarActivo = async (valor: boolean) => {
@@ -663,7 +739,6 @@ function TarjetaProveedor({
         notes: notas,
       });
       onProveedorGuardado(actualizado);
-      setEditando(false);
       toast.success("Cambios guardados.");
     } catch (error) {
       avisar(error, "No pudimos guardar los cambios. Inténtalo otra vez.");
@@ -678,150 +753,198 @@ function TarjetaProveedor({
   };
 
   return (
-    <li className="py-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <li className="flex flex-col rounded-2xl border bg-background p-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium">{proveedor.name}</p>
-            <Badge variant={activo ? "secondary" : "outline"}>
-              {activo ? "Activo" : "Inactivo"}
-            </Badge>
-            {proveedor.supplier_code && (
-              <span className="text-xs text-muted-foreground">
-                Código {proveedor.supplier_code}
-              </span>
-            )}
-            {usaPortal && (
-              <Badge variant="outline" className="gap-1">
-                <Globe className="h-3 w-3" />
-                Portal
-              </Badge>
-            )}
-            {hayFuenteApi && (
-              <Badge variant="outline" className="gap-1">
-                <Radio className="h-3 w-3" />
-                Consulta en vivo
-              </Badge>
-            )}
-            {hayFuenteArchivo && (
-              <Badge variant="outline" className="gap-1">
-                <FileSpreadsheet className="h-3 w-3" />
-                Lista de precios
-              </Badge>
-            )}
-          </div>
-          {proveedor.internal_notes && (
-            <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">
-              {proveedor.internal_notes}
-            </p>
-          )}
+          <p className="font-medium">{proveedor.name}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{modalidad}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Switch
-              checked={activo}
-              disabled={ocupado}
-              onCheckedChange={(valor) => {
-                if (typeof valor === "boolean") void alternarActivo(valor);
-              }}
-              aria-label={`Activar o desactivar ${proveedor.name}`}
-            />
-            {activo ? "Activo" : "Inactivo"}
-          </label>
-          {!mostrarPortal && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setPortalAbierto(true)}>
-              <Globe className="h-4 w-4" />
-              Agregar portal
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => (editando ? setEditando(false) : abrirEdicion())}
-          >
-            <Pencil className="h-4 w-4" />
-            {editando ? "Cerrar edición" : "Editar"}
-          </Button>
-        </div>
+        <Badge variant={activo ? "secondary" : "outline"}>{activo ? "Activo" : "Inactivo"}</Badge>
       </div>
 
-      {editando && (
-        <form
-          onSubmit={guardarEdicion}
-          className="mt-4 grid gap-3 rounded-2xl border bg-muted/30 p-4 md:grid-cols-2"
+      <div className="mt-3 space-y-1 text-sm">
+        {estadoLista && (
+          <p>
+            <span className="text-muted-foreground">Estado de carga: </span>
+            {estadoLista}
+          </p>
+        )}
+        {estadoConexion && (
+          <p>
+            <span className="text-muted-foreground">Estado de conexión: </span>
+            {estadoConexion}
+          </p>
+        )}
+        {usaPortal && (
+          <p>
+            <span className="text-muted-foreground">Portal de compras: </span>
+            {etiquetaEstadoPortal(proveedor.portal_status)}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {fuentesArchivo.length > 0 && (
+          <Button type="button" size="sm" onClick={abrirImportador}>
+            <FileSpreadsheet className="h-4 w-4" />
+            Cargar Excel
+          </Button>
+        )}
+        <Button type="button" variant="outline" size="sm" onClick={abrirPanel}>
+          <Pencil className="h-4 w-4" />
+          Editar
+        </Button>
+      </div>
+
+      {panelAbierto && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4 sm:p-6"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) cerrarPanel();
+          }}
         >
-          <div className="md:col-span-2">
-            <Label htmlFor={`proveedor-nombre-${proveedor.supplier_id}`}>Nombre</Label>
-            <Input
-              id={`proveedor-nombre-${proveedor.supplier_id}`}
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              className="mt-1"
-              maxLength={200}
-              required
-            />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={idPanel}
+            className="mx-auto my-2 w-full max-w-2xl rounded-2xl border bg-background p-4 shadow-lg sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id={idPanel} className="text-lg font-semibold">
+                  Configuración de {proveedor.name}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Datos generales, fuentes de precios y portal. Los cambios se guardan contra el
+                  servidor y se reflejan en la tarjeta.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar configuración"
+                onClick={cerrarPanel}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="mt-4 space-y-4">
+              <form
+                onSubmit={guardarEdicion}
+                className="grid gap-3 rounded-2xl border p-4 md:grid-cols-2"
+              >
+                <div className="md:col-span-2">
+                  <Label htmlFor={`proveedor-nombre-${proveedor.supplier_id}`}>Nombre</Label>
+                  <Input
+                    id={`proveedor-nombre-${proveedor.supplier_id}`}
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    className="mt-1"
+                    maxLength={200}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor={`proveedor-codigo-${proveedor.supplier_id}`}>
+                    Código interno del proveedor (opcional)
+                  </Label>
+                  <Input
+                    id={`proveedor-codigo-${proveedor.supplier_id}`}
+                    value={codigo}
+                    onChange={(e) => setCodigo(e.target.value)}
+                    className="mt-1"
+                    maxLength={60}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor={`proveedor-notas-${proveedor.supplier_id}`}>
+                    Notas del proveedor (opcional)
+                  </Label>
+                  <Input
+                    id={`proveedor-notas-${proveedor.supplier_id}`}
+                    value={notas}
+                    onChange={(e) => setNotas(e.target.value)}
+                    className="mt-1"
+                    maxLength={2000}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 md:col-span-2">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Switch
+                      checked={activo}
+                      disabled={ocupado}
+                      onCheckedChange={(valor) => {
+                        if (typeof valor === "boolean") void alternarActivo(valor);
+                      }}
+                      aria-label={`Activar o desactivar ${proveedor.name}`}
+                    />
+                    {activo ? "Proveedor activo" : "Proveedor inactivo"}
+                  </label>
+                  <div className="flex gap-2">
+                    <Button type="submit" size="sm" disabled={ocupado}>
+                      {ocupado ? "Guardando…" : "Guardar cambios"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={cerrarPanel}
+                      disabled={ocupado}
+                    >
+                      Cerrar
+                    </Button>
+                  </div>
+                </div>
+              </form>
+
+              <SeccionFuentes
+                proveedor={proveedor}
+                fuentes={fuentes}
+                conexiones={conexiones}
+                onFuenteGuardada={onFuenteGuardada}
+                onRecargar={alImportar}
+                importarFuenteId={fuenteParaImportar}
+              />
+
+              {mostrarPortal ? (
+                <SeccionPortal
+                  proveedor={proveedor}
+                  inicialmenteEditando={!usaPortal && portalAbierto}
+                  onCerrar={portalAbierto && !usaPortal ? () => setPortalAbierto(false) : undefined}
+                  onGuardado={onProveedorGuardado}
+                  onRecargar={onRecargar}
+                />
+              ) : (
+                <div className="rounded-2xl border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Portal de compras</p>
+                      <p className="text-xs text-muted-foreground">
+                        Guarda la dirección y las credenciales cuando corresponda. No conecta el
+                        portal.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPortalAbierto(true)}
+                    >
+                      <Globe className="h-4 w-4" />
+                      Agregar portal
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {fuentesArchivo.length > 0 && (
+                <PreciosImportados proveedor={proveedor} refresco={refrescoOfertas} />
+              )}
+            </div>
           </div>
-          <div>
-            <Label htmlFor={`proveedor-codigo-${proveedor.supplier_id}`}>
-              Código interno del proveedor (opcional)
-            </Label>
-            <Input
-              id={`proveedor-codigo-${proveedor.supplier_id}`}
-              value={codigo}
-              onChange={(e) => setCodigo(e.target.value)}
-              className="mt-1"
-              maxLength={60}
-            />
-          </div>
-          <div>
-            <Label htmlFor={`proveedor-notas-${proveedor.supplier_id}`}>
-              Notas del proveedor (opcional)
-            </Label>
-            <Input
-              id={`proveedor-notas-${proveedor.supplier_id}`}
-              value={notas}
-              onChange={(e) => setNotas(e.target.value)}
-              className="mt-1"
-              maxLength={2000}
-            />
-          </div>
-          <div className="flex gap-2 md:col-span-2">
-            <Button type="submit" size="sm" disabled={ocupado}>
-              {ocupado ? "Guardando…" : "Guardar cambios"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => setEditando(false)}
-              disabled={ocupado}
-            >
-              Cancelar
-            </Button>
-          </div>
-        </form>
+        </div>
       )}
-
-      {mostrarPortal && (
-        <SeccionPortal
-          proveedor={proveedor}
-          inicialmenteEditando={!usaPortal}
-          onCerrar={usaPortal ? undefined : () => setPortalAbierto(false)}
-          onGuardado={onProveedorGuardado}
-          onRecargar={onRecargar}
-        />
-      )}
-
-      <SeccionFuentes
-        proveedor={proveedor}
-        fuentes={fuentes}
-        conexiones={conexiones}
-        onFuenteGuardada={onFuenteGuardada}
-        onRecargar={alImportar}
-      />
-
-      {hayFuenteArchivo && <PreciosImportados proveedor={proveedor} refresco={refrescoOfertas} />}
     </li>
   );
 }
@@ -1071,12 +1194,15 @@ function SeccionFuentes({
   conexiones,
   onFuenteGuardada,
   onRecargar,
+  importarFuenteId,
 }: {
   proveedor: Proveedor;
   fuentes: Fuente[];
   conexiones: Record<string, EstadoConexionCargado>;
   onFuenteGuardada: (fuente: Fuente) => void;
   onRecargar: () => Promise<void>;
+  /** Fuente cuyo importador se despliega al abrir la configuración desde «Cargar Excel». */
+  importarFuenteId?: string | null;
 }) {
   const [agregandoFuente, setAgregandoFuente] = useState(false);
   const [creando, setCreando] = useState(false);
@@ -1153,6 +1279,7 @@ function SeccionFuentes({
               conexion={conexiones[fuente.source_id]}
               onGuardada={onFuenteGuardada}
               onRecargar={onRecargar}
+              inicialmenteImportando={fuente.source_id === importarFuenteId}
             />
           ))}
         </ul>
@@ -1262,15 +1389,17 @@ function FuenteItem({
   conexion,
   onGuardada,
   onRecargar,
+  inicialmenteImportando = false,
 }: {
   proveedorId: string;
   fuente: Fuente;
   conexion: EstadoConexionCargado | undefined;
   onGuardada: (fuente: Fuente) => void;
   onRecargar: () => Promise<void>;
+  inicialmenteImportando?: boolean;
 }) {
   const [editando, setEditando] = useState(false);
-  const [importando, setImportando] = useState(false);
+  const [importando, setImportando] = useState(inicialmenteImportando);
   const [ocupado, setOcupado] = useState(false);
   const [nombre, setNombre] = useState(fuente.name);
   const [capacidades, setCapacidades] = useState<CapacidadFuente[]>(fuente.capabilities);
