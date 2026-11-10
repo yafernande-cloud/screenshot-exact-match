@@ -230,6 +230,20 @@ export interface UnidadNoReconocida {
   sample_rows: number[];
 }
 
+/** Base de precio que la lista usa pero que el mapeo todavía no confirma para este proveedor. */
+export interface BaseNoReconocida {
+  text: string;
+  count: number;
+  sample_rows: number[];
+}
+
+/** Columna reconocida que se omitió a propósito, con su motivo en lenguaje claro. */
+export interface ColumnaIgnorada {
+  header: string | null;
+  role: string;
+  reason: string;
+}
+
 /**
  * Revisión previa de una planilla: lo que la importación haría, sin escribir nada.
  * No es el sobre E8; el endpoint es independiente y reutiliza la clasificación en seco.
@@ -249,6 +263,8 @@ export interface RevisionImportacion {
   rows_truncated: boolean;
   problems: ProblemaAgrupado[];
   unrecognised_units: UnidadNoReconocida[];
+  /** Bases de precio ambiguas («unit»): se confirman por proveedor, nunca en general. */
+  unrecognised_bases: BaseNoReconocida[];
   profile_source: "saved" | "request" | "detected";
   profile_version: number;
   /**
@@ -258,6 +274,8 @@ export interface RevisionImportacion {
   profile: DatosPerfil | null;
   /** Roles obligatorios que el archivo no permite resolver (solo en el flujo automático). */
   missing_columns: string[];
+  /** Columnas opcionales omitidas a propósito (por ejemplo «pack» sin unidad base). */
+  ignored_columns: ColumnaIgnorada[];
   file_hash: string;
 }
 

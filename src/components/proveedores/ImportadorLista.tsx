@@ -50,10 +50,12 @@ type Respuestas = {
   price_basis: string;
   default_sale_unit: string;
   unidades: Record<string, string>;
+  /** Valor publicado en la lista → base de precio confirmada para ESTE proveedor. */
+  bases: Record<string, string>;
   crearFaltantes: boolean;
 };
 
-type Pregunta = "moneda" | "base" | "unidad_defecto" | "unidades" | "crear";
+type Pregunta = "moneda" | "base" | "bases" | "unidad_defecto" | "unidades" | "crear";
 
 const ETIQUETA_ORIGEN: Record<string, string> = {
   saved: "Mapeo guardado del proveedor",
@@ -66,6 +68,15 @@ function textoDeOpcion(opciones: Record<string, unknown>, clave: string): string
   return typeof valor === "string" ? valor : "";
 }
 
+function mapaDeTextos(valor: unknown): Record<string, string> {
+  if (!valor || typeof valor !== "object" || Array.isArray(valor)) return {};
+  return Object.fromEntries(
+    Object.entries(valor as Record<string, unknown>).filter(
+      (entrada): entrada is [string, string] => typeof entrada[1] === "string",
+    ),
+  );
+}
+
 function respuestasIniciales(revision: RevisionImportacion): Respuestas {
   const perfil = revision.profile;
   const opciones = perfil?.options ?? {};
@@ -74,6 +85,7 @@ function respuestasIniciales(revision: RevisionImportacion): Respuestas {
     price_basis: textoDeOpcion(opciones, "price_basis"),
     default_sale_unit: textoDeOpcion(opciones, "default_sale_unit"),
     unidades: { ...(perfil?.units ?? {}) },
+    bases: mapaDeTextos(opciones["basis_values"]),
     crearFaltantes: opciones["create_missing_items"] === true,
   };
 }
@@ -101,6 +113,9 @@ function preguntasPendientes(revision: RevisionImportacion, respuestas: Respuest
   if (!columnas["basis"] && !respuestas.price_basis && codigos.has("INVALID_BASIS")) {
     pendientes.push("base");
   }
+  if (revision.unrecognised_bases.some((base) => !respuestas.bases[base.text])) {
+    pendientes.push("bases");
+  }
   if (revision.unrecognised_units.some((unidad) => !respuestas.unidades[unidad.text])) {
     pendientes.push("unidades");
   }
@@ -124,6 +139,12 @@ function datosConRespuestas(
     ),
   );
 
+  const bases = Object.fromEntries(
+    Object.entries({ ...mapaDeTextos(perfil.options["basis_values"]), ...respuestas.bases }).filter(
+      ([texto, base]) => texto.trim() !== "" && base !== "",
+    ),
+  );
+
   const opciones: Record<string, unknown> = {
     ...perfil.options,
     create_missing_items: respuestas.crearFaltantes,
@@ -133,6 +154,7 @@ function datosConRespuestas(
   if (respuestas.default_sale_unit) {
     opciones["default_sale_unit"] = respuestas.default_sale_unit;
   }
+  if (Object.keys(bases).length > 0) opciones["basis_values"] = bases;
 
   return {
     file_format: perfil.file_format,
@@ -488,7 +510,7 @@ export function ImportadorLista({
           {pendientes.includes("unidad_defecto") && (
             <div>
               <Label htmlFor={`${idBase}-unidad-defecto`} className="text-sm">
-                ¿Cómo se vende cada producto de esta lista?
+                La lista no indica cómo se vende cada producto. ¿Cuál corresponde a todos?
               </Label>
               <select
                 id={`${idBase}-unidad-defecto`}
@@ -529,7 +551,7 @@ export function ImportadorLista({
           {pendientes.includes("base") && (
             <div>
               <Label htmlFor={`${idBase}-base`} className="text-sm">
-                ¿El precio es por unidad de venta o por unidad base?
+                ¿El precio es por el envase que se vende o por cada unidad suelta que contiene?
               </Label>
               <select
                 id={`${idBase}-base`}
@@ -540,11 +562,44 @@ export function ImportadorLista({
                 className="mt-1 flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
               >
                 <option value="">Elige una opción</option>
-                <option value="per_commercial_unit">
-                  {etiquetaBasePrecio("per_commercial_unit")}
-                </option>
-                <option value="per_base_unit">{etiquetaBasePrecio("per_base_unit")}</option>
+                <option value="per_commercial_unit">Por el envase que se vende</option>
+                <option value="per_base_unit">Por cada unidad suelta que contiene</option>
               </select>
+            </div>
+          )}
+
+          {pendientes.includes("bases") && (
+            <div className="space-y-2">
+              <p className="text-sm">
+                La lista indica cómo se aplica el precio. ¿Qué significa para este proveedor?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Se guarda solo para este proveedor; no se aplica a otros.
+              </p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {revision.unrecognised_bases.map((base) => (
+                  <div key={base.text} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-sm" title={base.text}>
+                      «{base.text}» · {base.count} {base.count === 1 ? "fila" : "filas"}
+                    </span>
+                    <select
+                      aria-label={`Significado de la base de precio ${base.text}`}
+                      value={respuestas.bases[base.text] ?? ""}
+                      onChange={(evento) =>
+                        setRespuestas({
+                          ...respuestas,
+                          bases: { ...respuestas.bases, [base.text]: evento.target.value },
+                        })
+                      }
+                      className="flex h-9 min-w-[210px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                    >
+                      <option value="">Elige una opción</option>
+                      <option value="per_commercial_unit">Por el envase que se vende</option>
+                      <option value="per_base_unit">Por cada unidad suelta que contiene</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -775,6 +830,31 @@ export function ImportadorLista({
                   : "Ninguna."}
               </p>
             </div>
+
+            <div>
+              <p className="font-medium text-foreground">Bases de precio confirmadas</p>
+              <p className="mt-1">
+                {mapeo && Object.keys(mapaDeTextos(mapeo.options["basis_values"])).length > 0
+                  ? Object.entries(mapaDeTextos(mapeo.options["basis_values"]))
+                      .map(([texto, base]) => `«${texto}» → ${etiquetaBasePrecio(base as string)}`)
+                      .join(" · ")
+                  : "Ninguna."}
+              </p>
+            </div>
+
+            {revision.ignored_columns.length > 0 && (
+              <div>
+                <p className="font-medium text-foreground">Columnas omitidas a propósito</p>
+                <ul className="mt-1 space-y-1">
+                  {revision.ignored_columns.map((columna) => (
+                    <li key={`${columna.role}-${columna.header ?? ""}`}>
+                      {PAPEL_ETIQUETA[columna.role] ?? columna.role}
+                      {columna.header ? ` («${columna.header}»)` : ""}: {columna.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {revision.problems.length > 0 && (
               <div>

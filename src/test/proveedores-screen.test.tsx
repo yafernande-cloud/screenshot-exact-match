@@ -192,6 +192,7 @@ function revision(overrides: Partial<RevisionImportacion> = {}): RevisionImporta
     rows_truncated: false,
     problems: [],
     unrecognised_units: [],
+    unrecognised_bases: [],
     profile_source: "request",
     profile_version: 0,
     profile: {
@@ -213,6 +214,7 @@ function revision(overrides: Partial<RevisionImportacion> = {}): RevisionImporta
       },
     },
     missing_columns: [],
+    ignored_columns: [],
     file_hash: "a".repeat(64),
     ...overrides,
   };
@@ -850,6 +852,153 @@ describe("pantalla de proveedores", () => {
       ),
     );
     expect(await screen.findByText("Carga exitosa")).toBeInTheDocument();
+  });
+
+  it("confirma la base ambigua para ese proveedor y no pregunta una unidad global", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+    const sinBase = revision({
+      profile: {
+        file_format: "csv",
+        sheet: null,
+        header_row: 1,
+        columns: {
+          sku: { header: "Código", position: 1 },
+          name: { header: "Producto", position: 2 },
+          price: { header: "Precio", position: 3 },
+          sale_unit: { header: "Unidad", position: 4 },
+          basis: { header: "Base", position: 5 },
+        },
+        units: { caja: "box" },
+        options: { decimal_separator: ".", create_missing_items: false },
+      },
+      rows_accepted: 0,
+      rows_rejected: 1,
+      unrecognised_bases: [{ text: "unit", count: 1, sample_rows: [2] }],
+      rows: [
+        {
+          row: 2,
+          status: "rejected",
+          sku: "SKU-1",
+          name: "Paracetamol",
+          price: "1990.00",
+          currency: null,
+          price_basis: null,
+          sale_unit: "box",
+          sale_unit_text: "caja",
+          pack_units: null,
+          stock: null,
+          observed_at: "2026-11-10T10:00:00Z",
+          warnings: [],
+          problem: {
+            code: "INVALID_BASIS",
+            message: "La lista indica «unit» como base del precio.",
+            fields: ["basis"],
+            values: { basis: "unit" },
+          },
+        },
+      ],
+      problems: [
+        {
+          code: "INVALID_BASIS",
+          message: "La lista indica «unit» como base del precio.",
+          fields: ["basis"],
+          count: 1,
+          sample_rows: [2],
+        },
+      ],
+    });
+    revisarMock.mockResolvedValueOnce(sinBase).mockResolvedValueOnce(revision());
+    guardarPerfilMock.mockResolvedValue(perfilGuardado());
+    importarMock.mockResolvedValue({
+      import_id: "imp-1",
+      status: "completed",
+      rows_total: 1,
+      rows_accepted: 1,
+      rows_rejected: 0,
+      errors: [],
+      observed_at: "2026-11-08T10:00:00Z",
+    });
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
+      target: { files: [archivoCsv()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cargar lista de precios" }));
+
+    expect(
+      await screen.findByText(
+        "La lista indica cómo se aplica el precio. ¿Qué significa para este proveedor?",
+      ),
+    ).toBeInTheDocument();
+    // La columna de unidad existe: no se pide una unidad global para todo el archivo.
+    expect(screen.queryByText(/La lista no indica cómo se vende cada producto/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Significado de la base de precio unit"), {
+      target: { value: "per_commercial_unit" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+    await waitFor(() =>
+      expect(revisarMock).toHaveBeenNthCalledWith(
+        2,
+        "src-1",
+        expect.any(File),
+        expect.objectContaining({
+          units: { caja: "box" },
+          options: expect.objectContaining({
+            basis_values: { unit: "per_commercial_unit" },
+          }),
+        }),
+        { auto: true, hoja: null, filaEncabezado: 1 },
+      ),
+    );
+    expect(await screen.findByText("Carga exitosa")).toBeInTheDocument();
+  });
+
+  it("omite el contenido por envase sin unidad base y lo explica solo en los detalles", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+    revisarMock.mockResolvedValue(
+      revision({
+        ignored_columns: [
+          {
+            header: "pack",
+            role: "pack",
+            reason:
+              "El archivo trae el contenido por envase, pero no indica en qué unidad se mide ese contenido. Se omitió para no inventar esa unidad.",
+          },
+        ],
+      }),
+    );
+    guardarPerfilMock.mockResolvedValue(perfilGuardado());
+    importarMock.mockResolvedValue({
+      import_id: "imp-1",
+      status: "completed",
+      rows_total: 1,
+      rows_accepted: 1,
+      rows_rejected: 0,
+      errors: [],
+      observed_at: "2026-11-08T10:00:00Z",
+    });
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
+      target: { files: [archivoCsv()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cargar lista de precios" }));
+
+    expect(await screen.findByText("Carga exitosa")).toBeInTheDocument();
+    expect(screen.queryByText(/Necesitamos un dato para continuar/)).toBeNull();
+
+    fireEvent.click(screen.getByText("Detalles técnicos (para diagnóstico)"));
+    expect(screen.getByText(/no indica en qué unidad se mide ese contenido/)).toBeInTheDocument();
   });
 
   it("se detiene si el archivo no trae la columna del código y no inventa el mapeo", async () => {
