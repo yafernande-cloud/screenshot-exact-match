@@ -147,6 +147,8 @@ export interface VistaPreviaImportacion {
   file_format: FormatoArchivo;
   sheets: string[];
   sheet: string | null;
+  /** Hoja que el backend propone porque parece la lista de productos. */
+  suggested_sheet: string | null;
   header_row: number;
   headers: (string | null)[];
   sample_rows: FilaVistaPrevia[];
@@ -185,6 +187,73 @@ export interface ResultadoImportacion {
   observed_at: string | null;
 }
 
+/** Problema de una fila según el motor de importación (D-110). */
+export interface ProblemaDeFila {
+  code: string;
+  message: string;
+  fields: string[];
+  /** Solo las celdas culpables, nunca la fila completa (D-104). */
+  values: Record<string, unknown>;
+}
+
+/** Fila ya interpretada: lo que se importaría, sin importarla todavía. */
+export interface FilaRevisada {
+  row: number;
+  status: "ready" | "review" | "rejected";
+  sku: string | null;
+  name: string | null;
+  price: string | null;
+  currency: string | null;
+  price_basis: string | null;
+  sale_unit: string | null;
+  sale_unit_text: string | null;
+  pack_units: string | null;
+  stock: string | null;
+  observed_at: string | null;
+  warnings: string[];
+  problem: ProblemaDeFila | null;
+}
+
+/** Rechazos agrupados por causa, contando todas las filas del archivo. */
+export interface ProblemaAgrupado {
+  code: string;
+  message: string;
+  fields: string[];
+  count: number;
+  sample_rows: number[];
+}
+
+/** Texto de unidad que el mapeo todavía no traduce (D-102). */
+export interface UnidadNoReconocida {
+  text: string;
+  count: number;
+  sample_rows: number[];
+}
+
+/**
+ * Revisión previa de una planilla: lo que la importación haría, sin escribir nada.
+ * No es el sobre E8; el endpoint es independiente y reutiliza la clasificación en seco.
+ */
+export interface RevisionImportacion {
+  file_format: FormatoArchivo;
+  sheets: string[];
+  sheet: string | null;
+  header_row: number;
+  headers: (string | null)[];
+  rows_total: number;
+  rows_accepted: number;
+  rows_rejected: number;
+  /** Aceptadas que además necesitan revisión (condiciones comerciales en texto, D-110). */
+  rows_needs_review: number;
+  rows: FilaRevisada[];
+  rows_truncated: boolean;
+  problems: ProblemaAgrupado[];
+  unrecognised_units: UnidadNoReconocida[];
+  profile_source: "saved" | "request";
+  profile_version: number;
+  file_hash: string;
+}
+
 /** Última observación de un SKU de una fuente del proveedor. */
 export interface OfertaImportada {
   offer_id: string;
@@ -216,6 +285,7 @@ const CREAR_FUENTE_FALLBACK = "No pudimos crear la fuente de datos. Inténtalo o
 const PERFIL_FALLBACK = "No pudimos cargar la configuración de la lista. Inténtalo otra vez.";
 const GUARDAR_PERFIL_FALLBACK = "No pudimos guardar el mapeo de columnas. Inténtalo otra vez.";
 const VISTA_PREVIA_FALLBACK = "No pudimos leer el archivo. Revisa que sea .xlsx, .xls o .csv.";
+const REVISAR_FALLBACK = "No pudimos revisar la planilla. Inténtalo otra vez.";
 const IMPORTAR_FALLBACK = "No pudimos importar la lista de precios. Inténtalo otra vez.";
 const OFERTAS_FALLBACK = "No pudimos cargar los precios importados. Inténtalo otra vez.";
 
@@ -403,6 +473,42 @@ export function previsualizarImportacion(
     `/api/v1/sources/${encodeURIComponent(sourceId)}/import-preview`,
     { method: "POST", body: cuerpo },
     VISTA_PREVIA_FALLBACK,
+  );
+}
+
+/**
+ * Revisa la planilla con el mapeo que la persona está viendo, **sin guardar ni importar nada**.
+ *
+ * Es el paso «Revisar productos»: devuelve las filas interpretadas, los rechazos agrupados y las
+ * unidades que el mapeo no traduce para corregir la interpretación antes de confirmar.
+ */
+export function revisarImportacion(
+  sourceId: string,
+  archivo: File,
+  datos: DatosPerfil,
+  opciones: { hoja?: string | null; filaEncabezado?: number | undefined } = {},
+): Promise<RevisionImportacion> {
+  const cuerpo = new FormData();
+  cuerpo.append("file", archivo, archivo.name);
+  if (opciones.hoja) cuerpo.append("sheet", opciones.hoja);
+  if (opciones.filaEncabezado !== undefined) {
+    cuerpo.append("header_row", String(opciones.filaEncabezado));
+  }
+  cuerpo.append(
+    "profile",
+    JSON.stringify({
+      file_format: datos.file_format,
+      sheet: datos.sheet,
+      header_row: datos.header_row,
+      columns: datos.columns,
+      units: datos.units,
+      options: datos.options,
+    }),
+  );
+  return apiRequest<RevisionImportacion>(
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/import-check`,
+    { method: "POST", body: cuerpo },
+    REVISAR_FALLBACK,
   );
 }
 

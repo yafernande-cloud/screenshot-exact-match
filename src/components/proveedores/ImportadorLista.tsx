@@ -22,10 +22,12 @@ import {
   nuevaClaveIdempotencia,
   obtenerPerfilImportacion,
   previsualizarImportacion,
+  revisarImportacion,
   type DatosPerfil,
   type Fuente,
   type PerfilImportacion,
   type ResultadoImportacion,
+  type RevisionImportacion,
   type VistaPreviaImportacion,
 } from "@/lib/proveedores-api";
 
@@ -38,6 +40,8 @@ type Opciones = {
   pack_base_unit: string;
   create_missing_items: boolean;
 };
+
+type Paso = 1 | 2 | 3;
 
 const OPCIONES_VACIAS: Opciones = {
   currency: "",
@@ -86,25 +90,31 @@ function normalizarCabecera(valor: string | null | undefined): string {
   return (valor ?? "").trim().toLocaleLowerCase("es");
 }
 
+/**
+ * Aplica el mapeo guardado **por nombre de columna**. Si el archivo ya no trae alguna de esas
+ * columnas, se informa en vez de aplicar posiciones viejas a un archivo distinto.
+ */
 function columnasDesdePerfil(
   perfil: PerfilImportacion | null,
   cabeceras: (string | null)[],
-): Record<string, string> {
-  if (!perfil) return {};
-  const resultado: Record<string, string> = {};
+): { columnas: Record<string, string>; incompatibles: string[] } {
+  if (!perfil) return { columnas: {}, incompatibles: [] };
+  const columnas: Record<string, string> = {};
+  const incompatibles: string[] = [];
   for (const [papel, especificacion] of Object.entries(perfil.columns ?? {})) {
-    if (typeof especificacion.position === "number") {
-      resultado[papel] = String(especificacion.position);
-      continue;
-    }
     if (especificacion.header) {
       const indice = cabeceras.findIndex(
         (cabecera) => normalizarCabecera(cabecera) === normalizarCabecera(especificacion.header),
       );
-      if (indice >= 0) resultado[papel] = String(indice + 1);
+      if (indice >= 0) columnas[papel] = String(indice + 1);
+      else incompatibles.push(especificacion.header);
+      continue;
+    }
+    if (typeof especificacion.position === "number") {
+      columnas[papel] = String(especificacion.position);
     }
   }
-  return resultado;
+  return { columnas, incompatibles };
 }
 
 function columnasSugeridas(vista: VistaPreviaImportacion): Record<string, string> {
@@ -131,6 +141,37 @@ function textoDeCelda(valor: unknown): string {
   return "";
 }
 
+function etiquetaEstadoFila(estado: string): string {
+  switch (estado) {
+    case "ready":
+      return "Listo";
+    case "review":
+      return "Revisar condiciones";
+    default:
+      return "Con problema";
+  }
+}
+
+function tituloDeProblema(codigo: string): string {
+  switch (codigo) {
+    case "UNKNOWN_UNIT":
+      return "Unidad sin traducir";
+    case "UNMAPPED_PRODUCT":
+      return "Producto sin vínculo en el catálogo";
+    case "INVALID_PRICE":
+    case "MISSING_REQUIRED_FIELD":
+      return "Datos incompletos o inválidos";
+    case "INVALID_CURRENCY":
+      return "Falta la moneda";
+    case "INVALID_BASIS":
+      return "Falta la base del precio";
+    case "INVALID_QUANTITY":
+      return "Cantidad inválida";
+    default:
+      return "Problema en la fila";
+  }
+}
+
 export function ImportadorLista({
   proveedorId,
   fuente,
@@ -148,12 +189,18 @@ export function ImportadorLista({
   const [analizando, setAnalizando] = useState(false);
   const [vista, setVista] = useState<VistaPreviaImportacion | null>(null);
   const [errorVista, setErrorVista] = useState<string | null>(null);
+  const [avisoCompatibilidad, setAvisoCompatibilidad] = useState<string | null>(null);
   const [hoja, setHoja] = useState<string | null>(null);
   const [filaEncabezado, setFilaEncabezado] = useState(1);
   const [columnas, setColumnas] = useState<Record<string, string>>({});
   const [opciones, setOpciones] = useState<Opciones>({ ...OPCIONES_VACIAS });
   const [opcionesExtra, setOpcionesExtra] = useState<Record<string, unknown>>({});
   const [unidades, setUnidades] = useState<Record<string, string>>({});
+  const [paso, setPaso] = useState<Paso>(1);
+  const [revision, setRevision] = useState<RevisionImportacion | null>(null);
+  const [datosRevisados, setDatosRevisados] = useState<DatosPerfil | null>(null);
+  const [revisando, setRevisando] = useState(false);
+  const [errorRevision, setErrorRevision] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [resultado, setResultado] = useState<ResultadoImportacion | null>(null);
   const idBase = `importar-${fuente.source_id}`;
@@ -192,10 +239,27 @@ export function ImportadorLista({
       setVista(nueva);
       setHoja(nueva.sheet);
       setFilaEncabezado(nueva.header_row);
+      setRevision(null);
+      setDatosRevisados(null);
+      setErrorRevision(null);
+      setPaso(1);
+
       const mismoFormato = perfilVigente?.file_format === nueva.file_format;
-      setColumnas(
-        mismoFormato ? columnasDesdePerfil(perfilVigente, nueva.headers) : columnasSugeridas(nueva),
-      );
+      const desdePerfil = mismoFormato ? columnasDesdePerfil(perfilVigente, nueva.headers) : null;
+      if (desdePerfil && desdePerfil.incompatibles.length > 0) {
+        // El archivo cambió: se parte de las columnas sugeridas en vez de aplicar posiciones
+        // viejas, y se avisa para que la persona confirme el mapeo.
+        setColumnas(columnasSugeridas(nueva));
+        setAvisoCompatibilidad(
+          `El archivo cambió de columnas: el mapeo guardado esperaba ${desdePerfil.incompatibles
+            .map((nombre) => `«${nombre}»`)
+            .join(", ")}. Revisa el mapeo antes de continuar.`,
+        );
+      } else {
+        setColumnas(desdePerfil ? desdePerfil.columnas : columnasSugeridas(nueva));
+        setAvisoCompatibilidad(null);
+      }
+
       if (reiniciarOpciones) {
         if (mismoFormato && perfilVigente) {
           setOpciones(opcionesDePerfil(perfilVigente));
@@ -250,7 +314,12 @@ export function ImportadorLista({
     setArchivo(elegido);
     setResultado(null);
     setVista(null);
+    setRevision(null);
+    setDatosRevisados(null);
     setErrorVista(null);
+    setErrorRevision(null);
+    setAvisoCompatibilidad(null);
+    setPaso(1);
     if (!elegido) return;
     setClaveIdempotencia(nuevaClaveIdempotencia());
     void analizar(elegido, null, undefined, perfil, true);
@@ -294,52 +363,69 @@ export function ImportadorLista({
     return [...vistos].sort((a, b) => a.localeCompare(b, "es"));
   })();
 
-  const construirDatos = (): DatosPerfil | null => {
+  /**
+   * Arma el mapeo que está en pantalla.
+   *
+   * `requiereObligatorios` es `false` al revisar: así la revisión puede mostrar que falta la
+   * moneda o la base en vez de bloquear. Al confirmar sí se exigen, porque no se inventan.
+   */
+  const construirDatos = (
+    requiereObligatorios: boolean,
+  ): { datos: DatosPerfil | null; problema: string | null } => {
     if (!archivo || !vista) {
-      toast.error("Primero elige el archivo de la lista de precios.");
-      return null;
+      return { datos: null, problema: "Primero elige el archivo de la lista de precios." };
     }
     if (!columnas["sku"]) {
-      toast.error("Asigna la columna del código del producto.");
-      return null;
+      return { datos: null, problema: "Asigna la columna del código del producto." };
     }
     if (!columnas["price"]) {
-      toast.error("Asigna la columna del precio.");
-      return null;
+      return { datos: null, problema: "Asigna la columna del precio." };
     }
     if (!columnas["sale_unit"] && !opciones.default_sale_unit) {
-      toast.error(
-        "Asigna la columna de la unidad de venta o elige una unidad por defecto para las filas que no la traen.",
-      );
-      return null;
+      return {
+        datos: null,
+        problema:
+          "Asigna la columna de la unidad de venta o elige una unidad por defecto para las filas que no la traen.",
+      };
     }
-    if (!columnas["currency"] && !/^[A-Za-z]{3}$/.test(opciones.currency.trim())) {
-      toast.error(
-        "Indica la moneda de la lista con su código de 3 letras (por ejemplo CLP), o asigna una columna de moneda.",
-      );
-      return null;
-    }
-    if (!columnas["basis"] && !opciones.price_basis) {
-      toast.error("Indica si el precio es por unidad de venta o por unidad base.");
-      return null;
-    }
-    if (columnas["pack"] && !opciones.pack_base_unit) {
-      toast.error("Asigna el contenido por envase e indica su unidad base.");
-      return null;
+    if (requiereObligatorios) {
+      if (!columnas["currency"] && !/^[A-Za-z]{3}$/.test(opciones.currency.trim())) {
+        return {
+          datos: null,
+          problema:
+            "Indica la moneda de la lista con su código de 3 letras (por ejemplo CLP), o asigna una columna de moneda.",
+        };
+      }
+      if (!columnas["basis"] && !opciones.price_basis) {
+        return {
+          datos: null,
+          problema: "Indica si el precio es por unidad de venta o por unidad base.",
+        };
+      }
+      if (columnas["pack"] && !opciones.pack_base_unit) {
+        return { datos: null, problema: "Asigna el contenido por envase e indica su unidad base." };
+      }
     }
     if (
       opciones.thousands_separator &&
       opciones.thousands_separator === opciones.decimal_separator
     ) {
-      toast.error("El separador de miles y el decimal no pueden ser el mismo carácter.");
-      return null;
+      return {
+        datos: null,
+        problema: "El separador de miles y el decimal no pueden ser el mismo carácter.",
+      };
     }
 
-    const columnasLimpias: Record<string, { position: number }> = {};
+    // Se guarda el nombre de la columna junto con su posición: la próxima lista se lee por nombre
+    // y no por posición, para no aplicar un mapeo viejo a un archivo con otro orden.
+    const columnasLimpias: Record<string, { header?: string; position: number }> = {};
     for (const [papel, posicion] of Object.entries(columnas)) {
       const numero = Number(posicion);
       if (Number.isInteger(numero) && numero >= 1) {
-        columnasLimpias[papel] = { position: numero };
+        const cabecera = vista.headers[numero - 1];
+        columnasLimpias[papel] = cabecera
+          ? { header: cabecera, position: numero }
+          : { position: numero };
       }
     }
 
@@ -365,25 +451,56 @@ export function ImportadorLista({
     if (columnas["pack"]) opcionesLimpias["pack_base_unit"] = opciones.pack_base_unit;
 
     return {
-      file_format: vista.file_format,
-      sheet: vista.file_format === "csv" ? null : hoja,
-      header_row: filaEncabezado,
-      columns: columnasLimpias,
-      units: unidadesLimpias,
-      options: opcionesLimpias,
+      datos: {
+        file_format: vista.file_format,
+        sheet: vista.file_format === "csv" ? null : hoja,
+        header_row: filaEncabezado,
+        columns: columnasLimpias,
+        units: unidadesLimpias,
+        options: opcionesLimpias,
+      },
+      problema: null,
     };
   };
 
-  const guardar = async (): Promise<PerfilImportacion | null> => {
-    const datos = construirDatos();
-    if (!datos) return null;
-    setOcupado(true);
+  const datosActuales = archivo && vista ? construirDatos(false).datos : null;
+  const revisionDesactualizada =
+    revision !== null &&
+    datosActuales !== null &&
+    JSON.stringify(datosActuales) !== JSON.stringify(datosRevisados);
+
+  const revisar = async () => {
+    const { datos, problema } = construirDatos(false);
+    if (!datos) {
+      toast.error(problema ?? "Revisa el mapeo antes de continuar.");
+      return;
+    }
+    setRevisando(true);
+    setErrorRevision(null);
+    try {
+      const nueva = await revisarImportacion(fuente.source_id, archivo!, datos, {
+        hoja,
+        filaEncabezado,
+      });
+      setRevision(nueva);
+      setDatosRevisados(datos);
+      setPaso(2);
+    } catch (error) {
+      setErrorRevision(
+        mensajeDeErrorProveedores(error, "No pudimos revisar la planilla. Inténtalo otra vez."),
+      );
+    } finally {
+      setRevisando(false);
+    }
+  };
+
+  const guardarMapeo = async (datos: DatosPerfil): Promise<boolean> => {
     try {
       const guardado = await guardarPerfilImportacion(fuente.source_id, datos, versionPerfil);
       setPerfil(guardado);
       setVersionPerfil(guardado.version);
-      toast.success("El mapeo de columnas quedó guardado.");
-      return guardado;
+      setDatosRevisados(datos);
+      return true;
     } catch (error) {
       toast.error(mensajeDeErrorProveedores(error, "No pudimos guardar el mapeo de columnas."));
       if (esConflictoDeVersion(error)) {
@@ -395,23 +512,39 @@ export function ImportadorLista({
           // El mensaje del conflicto ya invita a revisar y volver a intentar.
         }
       }
-      return null;
-    } finally {
-      setOcupado(false);
+      return false;
     }
   };
 
-  const importar = async () => {
+  const confirmarImportacion = async () => {
     if (!archivo) {
       toast.error("Primero elige el archivo de la lista de precios.");
       return;
     }
-    // Se guarda el mapeo que está en pantalla antes de importar: así el archivo se lee con las
-    // columnas que la persona acaba de revisar y no con un perfil viejo.
-    const guardado = await guardar();
-    if (!guardado) return;
+    if (!revision) {
+      toast.error("Primero revisa la planilla.");
+      return;
+    }
+    if (revisionDesactualizada) {
+      toast.error("La revisión quedó desactualizada. Actualízala antes de importar.");
+      setPaso(2);
+      return;
+    }
+    if (revision.rows_accepted === 0) {
+      toast.error("La revisión no dejó filas para importar. Corrige el archivo o el mapeo.");
+      return;
+    }
+    const { datos, problema } = construirDatos(true);
+    if (!datos) {
+      toast.error(problema ?? "Falta información obligatoria para importar.");
+      return;
+    }
+
     setOcupado(true);
     try {
+      // Se guarda el mapeo revisado antes de importar: el archivo debe leerse con las columnas
+      // que la persona acaba de ver, no con un perfil anterior.
+      if (!(await guardarMapeo(datos))) return;
       const salida = await importarListaDePrecios({
         supplierId: proveedorId,
         sourceId: fuente.source_id,
@@ -436,6 +569,19 @@ export function ImportadorLista({
     }
   };
 
+  const reiniciar = () => {
+    setArchivo(null);
+    setVista(null);
+    setRevision(null);
+    setDatosRevisados(null);
+    setResultado(null);
+    setErrorVista(null);
+    setErrorRevision(null);
+    setAvisoCompatibilidad(null);
+    setClaveIdempotencia("");
+    setPaso(1);
+  };
+
   if (cargandoPerfil) {
     return (
       <p role="status" className="mt-3 text-sm text-muted-foreground">
@@ -443,6 +589,18 @@ export function ImportadorLista({
       </p>
     );
   }
+
+  const listos = revision ? revision.rows_accepted - revision.rows_needs_review : 0;
+  const faltanMoneda =
+    revision !== null &&
+    !columnas["currency"] &&
+    revision.problems.some((p) => p.code === "INVALID_CURRENCY");
+  const faltanBase =
+    revision !== null &&
+    !columnas["basis"] &&
+    revision.problems.some((p) => p.code === "INVALID_BASIS");
+  const unidadSinTraducir = revision?.unrecognised_units ?? [];
+  const productosSinVinculo = revision?.problems.find((p) => p.code === "UNMAPPED_PRODUCT");
 
   return (
     <div className="mt-3 space-y-4 rounded-2xl border bg-background p-4">
@@ -453,341 +611,715 @@ export function ImportadorLista({
           {perfil ? `Mapeo guardado (versión ${perfil.version})` : "Sin mapeo guardado"}
         </Badge>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Se aceptan archivos .xlsx, .xls y .csv. La vista previa no guarda nada: primero se leen las
-        columnas y luego se importa.
-      </p>
 
-      <div>
-        <Label htmlFor={`${idBase}-archivo`}>Archivo de la lista de precios</Label>
-        <Input
-          id={`${idBase}-archivo`}
-          type="file"
-          accept=".xlsx,.xls,.csv"
-          onChange={elegirArchivo}
-          className="mt-1 cursor-pointer"
-        />
-      </div>
+      <ol
+        className="flex flex-wrap items-center gap-2 text-xs"
+        aria-label="Pasos de la importación"
+      >
+        {[
+          { numero: 1 as Paso, texto: "Seleccionar archivo" },
+          { numero: 2 as Paso, texto: "Revisar productos" },
+          { numero: 3 as Paso, texto: "Confirmar importación" },
+        ].map((item) => (
+          <li
+            key={item.numero}
+            aria-current={paso === item.numero ? "step" : undefined}
+            className={
+              paso === item.numero
+                ? "rounded-full bg-brand-green/10 px-3 py-1 font-medium text-foreground"
+                : "rounded-full px-3 py-1 text-muted-foreground"
+            }
+          >
+            {item.numero}. {item.texto}
+          </li>
+        ))}
+      </ol>
 
-      {analizando && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Leyendo el archivo…
-        </p>
-      )}
-
-      {errorVista && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>No pudimos leer el archivo</AlertTitle>
-          <AlertDescription>{errorVista}</AlertDescription>
-        </Alert>
-      )}
-
-      {vista && (
+      {paso === 1 && (
         <>
-          <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-muted/30 p-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Formato detectado</p>
-              <p className="text-sm font-medium">{etiquetaFormato(vista.file_format)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Filas con datos</p>
-              <p className="text-sm font-medium">{vista.row_count}</p>
-            </div>
-            {vista.sheets.length > 1 && (
-              <div className="min-w-[180px]">
-                <Label htmlFor={`${idBase}-hoja`} className="text-xs">
-                  Hoja
-                </Label>
-                <select
-                  id={`${idBase}-hoja`}
-                  value={hoja ?? vista.sheets[0] ?? ""}
-                  onChange={(evento) => cambiarHoja(evento.target.value)}
-                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                >
-                  {vista.sheets.map((nombre) => (
-                    <option key={nombre} value={nombre}>
-                      {nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div>
-              <Label htmlFor={`${idBase}-fila`} className="text-xs">
-                Fila de encabezado
-              </Label>
-              <div className="mt-1 flex items-center gap-2">
-                <Input
-                  id={`${idBase}-fila`}
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={filaEncabezado}
-                  onChange={(evento) => setFilaEncabezado(Number(evento.target.value) || 1)}
-                  className="w-24"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={releerConEncabezado}
-                  disabled={analizando}
-                >
-                  Volver a leer
-                </Button>
-              </div>
-            </div>
+          <p className="text-xs text-muted-foreground">
+            Se aceptan archivos .xlsx, .xls y .csv. Primero se lee el archivo y se muestra lo que se
+            entendió; nada se importa hasta que lo confirmes.
+          </p>
+
+          <div>
+            <Label htmlFor={`${idBase}-archivo`}>Archivo de la lista de precios</Label>
+            <Input
+              id={`${idBase}-archivo`}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={elegirArchivo}
+              className="mt-1 cursor-pointer"
+            />
           </div>
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Columnas de la lista</p>
-            <p className="text-xs text-muted-foreground">
-              Asigna qué columna cumple cada papel. No se inventan datos: lo que no esté en el
-              archivo se declara acá o se deja sin mapear.
+          {analizando && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Leyendo el archivo…
             </p>
-            <div className="grid gap-3 md:grid-cols-2">
-              {PAPELES_COLUMNA.map((papel) => {
-                const obligatorio =
-                  papel.obligatorio && !(papel.value === "sale_unit" && opciones.default_sale_unit);
-                const id = `${idBase}-rol-${papel.value}`;
-                return (
-                  <div key={papel.value}>
-                    <Label htmlFor={id} className="text-sm">
-                      {papel.label}
-                      {obligatorio ? " (obligatorio)" : " (opcional)"}
+          )}
+
+          {errorVista && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>No pudimos leer el archivo</AlertTitle>
+              <AlertDescription>{errorVista}</AlertDescription>
+            </Alert>
+          )}
+
+          {avisoCompatibilidad && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>El mapeo guardado no calza con este archivo</AlertTitle>
+              <AlertDescription>{avisoCompatibilidad}</AlertDescription>
+            </Alert>
+          )}
+
+          {vista && (
+            <>
+              <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-muted/30 p-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Formato detectado</p>
+                  <p className="text-sm font-medium">{etiquetaFormato(vista.file_format)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Filas con datos</p>
+                  <p className="text-sm font-medium">{vista.row_count}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Hoja leída</p>
+                  <p className="text-sm font-medium">{vista.sheet ?? "Sin hojas (CSV)"}</p>
+                </div>
+                {vista.sheets.length > 1 && (
+                  <div className="min-w-[180px]">
+                    <Label htmlFor={`${idBase}-hoja`} className="text-xs">
+                      Hoja
                     </Label>
                     <select
-                      id={id}
-                      value={columnas[papel.value] ?? ""}
-                      onChange={(evento) =>
-                        setColumnas((previas) => ({
-                          ...previas,
-                          [papel.value]: evento.target.value,
-                        }))
-                      }
+                      id={`${idBase}-hoja`}
+                      value={hoja ?? vista.sheets[0] ?? ""}
+                      onChange={(evento) => cambiarHoja(evento.target.value)}
                       className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
                     >
-                      <option value="">Sin asignar</option>
-                      {columnasDelArchivo.map((columna) => (
-                        <option key={columna.valor} value={columna.valor}>
-                          {columna.etiqueta}
+                      {vista.sheets.map((nombre) => (
+                        <option key={nombre} value={nombre}>
+                          {nombre}
                         </option>
                       ))}
                     </select>
-                    <p className="mt-1 text-xs text-muted-foreground">{papel.ayuda}</p>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                )}
+                <div>
+                  <Label htmlFor={`${idBase}-fila`} className="text-xs">
+                    Fila de encabezado
+                  </Label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Input
+                      id={`${idBase}-fila`}
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={filaEncabezado}
+                      onChange={(evento) => setFilaEncabezado(Number(evento.target.value) || 1)}
+                      className="w-24"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={releerConEncabezado}
+                      disabled={analizando}
+                    >
+                      Volver a leer
+                    </Button>
+                  </div>
+                </div>
+              </div>
 
-          {columnas["sale_unit"] && valoresDeUnidad.length > 0 && (
-            <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
-              <p className="text-sm font-medium">Traducción de unidades</p>
-              <p className="text-xs text-muted-foreground">
-                La unidad debe ser caja, paquete, unidad o botella. Traduce los textos vistos en la
-                muestra y en el mapeo guardado; las filas con una unidad sin traducir se rechazan.
-              </p>
-              <div className="grid gap-2 md:grid-cols-2">
-                {valoresDeUnidad.map((texto) => {
-                  const id = `${idBase}-unidad-${texto}`;
-                  return (
-                    <div key={texto} className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm" title={texto}>
-                        «{texto}»
-                      </span>
-                      <select
-                        id={id}
-                        aria-label={`Traducción de la unidad ${texto}`}
-                        value={unidades[texto] ?? ""}
-                        onChange={(evento) =>
-                          setUnidades((previas) => ({
+              <details className="rounded-xl border bg-muted/20 p-3" open={!vista}>
+                <summary className="cursor-pointer text-sm font-medium">
+                  Configuración avanzada (columnas y opciones técnicas)
+                </summary>
+                <div className="mt-3 space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Columnas de la lista</p>
+                    <p className="text-xs text-muted-foreground">
+                      Normalmente ya vienen asignadas. Cámbialas solo si la lista no se entendió
+                      bien: no se inventan datos.
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {PAPELES_COLUMNA.map((papel) => {
+                        const obligatorio =
+                          papel.obligatorio &&
+                          !(papel.value === "sale_unit" && opciones.default_sale_unit);
+                        const id = `${idBase}-rol-${papel.value}`;
+                        return (
+                          <div key={papel.value}>
+                            <Label htmlFor={id} className="text-sm">
+                              {papel.label}
+                              {obligatorio ? " (obligatorio)" : " (opcional)"}
+                            </Label>
+                            <select
+                              id={id}
+                              value={columnas[papel.value] ?? ""}
+                              onChange={(evento) =>
+                                setColumnas((previas) => ({
+                                  ...previas,
+                                  [papel.value]: evento.target.value,
+                                }))
+                              }
+                              className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                            >
+                              <option value="">Sin asignar</option>
+                              {columnasDelArchivo.map((columna) => (
+                                <option key={columna.valor} value={columna.valor}>
+                                  {columna.etiqueta}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="mt-1 text-xs text-muted-foreground">{papel.ayuda}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {columnas["sale_unit"] && valoresDeUnidad.length > 0 && (
+                    <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
+                      <p className="text-sm font-medium">Traducción de unidades</p>
+                      <p className="text-xs text-muted-foreground">
+                        La unidad debe ser caja, paquete, unidad o botella. Traduce los textos
+                        vistos; las filas con una unidad sin traducir se rechazan.
+                      </p>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {valoresDeUnidad.map((texto) => {
+                          const id = `${idBase}-unidad-${texto}`;
+                          return (
+                            <div key={texto} className="flex items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate text-sm" title={texto}>
+                                «{texto}»
+                              </span>
+                              <select
+                                id={id}
+                                aria-label={`Traducción de la unidad ${texto}`}
+                                value={unidades[texto] ?? ""}
+                                onChange={(evento) =>
+                                  setUnidades((previas) => ({
+                                    ...previas,
+                                    [texto]: evento.target.value,
+                                  }))
+                                }
+                                className="flex h-9 min-w-[150px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                              >
+                                <option value="">Sin traducir</option>
+                                {UNIDADES_VENTA.map((unidad) => (
+                                  <option key={unidad.value} value={unidad.value}>
+                                    {unidad.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Datos que no vienen en el archivo</p>
+                    <p className="text-xs text-muted-foreground">
+                      Solo se usan cuando la columna correspondiente no está mapeada. Moneda y base
+                      del precio son obligatorias si el archivo no las trae.
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <Label htmlFor={`${idBase}-moneda`} className="text-sm">
+                          Moneda de la lista
+                        </Label>
+                        <Input
+                          id={`${idBase}-moneda`}
+                          value={opciones.currency}
+                          onChange={(evento) =>
+                            setOpciones((previas) => ({
+                              ...previas,
+                              currency: evento.target.value,
+                            }))
+                          }
+                          placeholder="Ej. CLP"
+                          maxLength={3}
+                          className="mt-1 uppercase"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`${idBase}-base`} className="text-sm">
+                          Base del precio
+                        </Label>
+                        <select
+                          id={`${idBase}-base`}
+                          value={opciones.price_basis}
+                          onChange={(evento) =>
+                            setOpciones((previas) => ({
+                              ...previas,
+                              price_basis: evento.target.value,
+                            }))
+                          }
+                          className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                        >
+                          <option value="">Sin definir</option>
+                          <option value="per_commercial_unit">
+                            {etiquetaBasePrecio("per_commercial_unit")}
+                          </option>
+                          <option value="per_base_unit">
+                            {etiquetaBasePrecio("per_base_unit")}
+                          </option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor={`${idBase}-unidad-defecto`} className="text-sm">
+                          Unidad de venta por defecto
+                        </Label>
+                        <select
+                          id={`${idBase}-unidad-defecto`}
+                          value={opciones.default_sale_unit}
+                          onChange={(evento) =>
+                            setOpciones((previas) => ({
+                              ...previas,
+                              default_sale_unit: evento.target.value,
+                            }))
+                          }
+                          className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                        >
+                          <option value="">Sin definir</option>
+                          {UNIDADES_VENTA.map((unidad) => (
+                            <option key={unidad.value} value={unidad.value}>
+                              {unidad.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor={`${idBase}-decimal`} className="text-sm">
+                          Separador decimal
+                        </Label>
+                        <select
+                          id={`${idBase}-decimal`}
+                          value={opciones.decimal_separator}
+                          onChange={(evento) =>
+                            setOpciones((previas) => ({
+                              ...previas,
+                              decimal_separator: evento.target.value,
+                            }))
+                          }
+                          className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                        >
+                          <option value=".">Punto (1234.56)</option>
+                          <option value=",">Coma (1234,56)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor={`${idBase}-miles`} className="text-sm">
+                          Separador de miles
+                        </Label>
+                        <select
+                          id={`${idBase}-miles`}
+                          value={opciones.thousands_separator}
+                          onChange={(evento) =>
+                            setOpciones((previas) => ({
+                              ...previas,
+                              thousands_separator: evento.target.value,
+                            }))
+                          }
+                          className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                        >
+                          <option value="">Sin separador de miles</option>
+                          <option value=".">Punto</option>
+                          <option value=",">Coma</option>
+                          <option value=" ">Espacio</option>
+                        </select>
+                      </div>
+                      {columnas["pack"] && (
+                        <div>
+                          <Label htmlFor={`${idBase}-unidad-pack`} className="text-sm">
+                            Unidad base del contenido
+                          </Label>
+                          <select
+                            id={`${idBase}-unidad-pack`}
+                            value={opciones.pack_base_unit}
+                            onChange={(evento) =>
+                              setOpciones((previas) => ({
+                                ...previas,
+                                pack_base_unit: evento.target.value,
+                              }))
+                            }
+                            className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                          >
+                            <option value="">Sin definir</option>
+                            {UNIDADES_VENTA.map((unidad) => (
+                              <option key={unidad.value} value={unidad.value}>
+                                {unidad.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Checkbox
+                        id={`${idBase}-crear`}
+                        checked={opciones.create_missing_items}
+                        onCheckedChange={(valor) =>
+                          setOpciones((previas) => ({
                             ...previas,
-                            [texto]: evento.target.value,
+                            create_missing_items: valor === true,
                           }))
                         }
-                        className="flex h-9 min-w-[150px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                      >
-                        <option value="">Sin traducir</option>
-                        {UNIDADES_VENTA.map((unidad) => (
-                          <option key={unidad.value} value={unidad.value}>
-                            {unidad.label}
-                          </option>
-                        ))}
-                      </select>
+                      />
+                      <div>
+                        <Label htmlFor={`${idBase}-crear`} className="text-sm font-normal">
+                          Crear productos nuevos para los códigos que no estén en el catálogo
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Se usa el nombre que publica la lista. Sin esta opción, esas filas se
+                          rechazan como «producto sin vínculo».
+                        </p>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Datos que no vienen en el archivo</p>
-            <p className="text-xs text-muted-foreground">
-              Solo se usan cuando la columna correspondiente no está mapeada. Moneda y base del
-              precio son obligatorias si el archivo no las trae.
-            </p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor={`${idBase}-moneda`} className="text-sm">
-                  Moneda de la lista
-                </Label>
-                <Input
-                  id={`${idBase}-moneda`}
-                  value={opciones.currency}
-                  onChange={(evento) =>
-                    setOpciones((previas) => ({ ...previas, currency: evento.target.value }))
-                  }
-                  placeholder="Ej. CLP"
-                  maxLength={3}
-                  className="mt-1 uppercase"
-                />
-              </div>
-              <div>
-                <Label htmlFor={`${idBase}-base`} className="text-sm">
-                  Base del precio
-                </Label>
-                <select
-                  id={`${idBase}-base`}
-                  value={opciones.price_basis}
-                  onChange={(evento) =>
-                    setOpciones((previas) => ({ ...previas, price_basis: evento.target.value }))
-                  }
-                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                >
-                  <option value="">Sin definir</option>
-                  <option value="per_commercial_unit">
-                    {etiquetaBasePrecio("per_commercial_unit")}
-                  </option>
-                  <option value="per_base_unit">{etiquetaBasePrecio("per_base_unit")}</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor={`${idBase}-unidad-defecto`} className="text-sm">
-                  Unidad de venta por defecto
-                </Label>
-                <select
-                  id={`${idBase}-unidad-defecto`}
-                  value={opciones.default_sale_unit}
-                  onChange={(evento) =>
-                    setOpciones((previas) => ({
-                      ...previas,
-                      default_sale_unit: evento.target.value,
-                    }))
-                  }
-                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                >
-                  <option value="">Sin definir</option>
-                  {UNIDADES_VENTA.map((unidad) => (
-                    <option key={unidad.value} value={unidad.value}>
-                      {unidad.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label htmlFor={`${idBase}-decimal`} className="text-sm">
-                  Separador decimal
-                </Label>
-                <select
-                  id={`${idBase}-decimal`}
-                  value={opciones.decimal_separator}
-                  onChange={(evento) =>
-                    setOpciones((previas) => ({
-                      ...previas,
-                      decimal_separator: evento.target.value,
-                    }))
-                  }
-                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                >
-                  <option value=".">Punto (1234.56)</option>
-                  <option value=",">Coma (1234,56)</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor={`${idBase}-miles`} className="text-sm">
-                  Separador de miles
-                </Label>
-                <select
-                  id={`${idBase}-miles`}
-                  value={opciones.thousands_separator}
-                  onChange={(evento) =>
-                    setOpciones((previas) => ({
-                      ...previas,
-                      thousands_separator: evento.target.value,
-                    }))
-                  }
-                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                >
-                  <option value="">Sin separador de miles</option>
-                  <option value=".">Punto</option>
-                  <option value=",">Coma</option>
-                  <option value=" ">Espacio</option>
-                </select>
-              </div>
-              {columnas["pack"] && (
-                <div>
-                  <Label htmlFor={`${idBase}-unidad-pack`} className="text-sm">
-                    Unidad base del contenido
-                  </Label>
-                  <select
-                    id={`${idBase}-unidad-pack`}
-                    value={opciones.pack_base_unit}
-                    onChange={(evento) =>
-                      setOpciones((previas) => ({
-                        ...previas,
-                        pack_base_unit: evento.target.value,
-                      }))
-                    }
-                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                  >
-                    <option value="">Sin definir</option>
-                    {UNIDADES_VENTA.map((unidad) => (
-                      <option key={unidad.value} value={unidad.value}>
-                        {unidad.label}
-                      </option>
-                    ))}
-                  </select>
+                  </div>
                 </div>
+              </details>
+
+              {errorRevision && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>No pudimos revisar la planilla</AlertTitle>
+                  <AlertDescription>{errorRevision}</AlertDescription>
+                </Alert>
               )}
-            </div>
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id={`${idBase}-crear`}
-                checked={opciones.create_missing_items}
-                onCheckedChange={(valor) =>
-                  setOpciones((previas) => ({
-                    ...previas,
-                    create_missing_items: valor === true,
-                  }))
-                }
-              />
-              <div>
-                <Label htmlFor={`${idBase}-crear`} className="text-sm font-normal">
-                  Crear productos nuevos para los códigos que no estén en el catálogo
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Se usa el nombre que publica la lista. Sin esta opción, esas filas se rechazan
-                  como «producto sin vínculo».
-                </p>
+
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={() => void revisar()} disabled={revisando}>
+                  <Upload className="h-4 w-4" />
+                  {revisando ? "Revisando…" : "Revisar productos"}
+                </Button>
               </div>
-            </div>
+              <p className="text-xs text-muted-foreground">
+                Revisar no guarda ni importa nada: muestra qué productos se entendieron y qué
+                problemas hay.
+              </p>
+            </>
+          )}
+        </>
+      )}
+
+      {paso === 2 && revision && (
+        <>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Revisa los productos</p>
+            <p className="text-xs text-muted-foreground">
+              De {revision.rows_total} filas, {revision.rows_accepted} se pueden importar y{" "}
+              {revision.rows_rejected} tienen problemas. Nada se ha importado todavía.
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => void guardar()} disabled={ocupado || !archivo}>
-              {ocupado ? "Guardando…" : "Guardar mapeo"}
+            <Badge variant="secondary">{listos} listos</Badge>
+            {revision.rows_needs_review > 0 && (
+              <Badge variant="outline">{revision.rows_needs_review} por revisar</Badge>
+            )}
+            {revision.rows_rejected > 0 && (
+              <Badge variant="destructive">{revision.rows_rejected} con problemas</Badge>
+            )}
+            <Badge variant="outline">
+              {revision.profile_source === "saved"
+                ? `Mapeo guardado (versión ${revision.profile_version})`
+                : "Mapeo de esta pantalla"}
+            </Badge>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Fila</th>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Producto</th>
+                  <th className="px-3 py-2">Precio</th>
+                  <th className="px-3 py-2">Unidad</th>
+                  <th className="px-3 py-2">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {revision.rows.map((fila) => (
+                  <tr key={fila.row} className="border-t align-top">
+                    <td className="px-3 py-2 text-muted-foreground">{fila.row}</td>
+                    <td className="px-3 py-2">{fila.sku ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      {fila.name ?? "—"}
+                      {fila.problem && (
+                        <p className="text-xs text-destructive">{fila.problem.message}</p>
+                      )}
+                      {fila.warnings.length > 0 && (
+                        <p className="text-xs text-muted-foreground">{fila.warnings.join(" ")}</p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {fila.price ? `${fila.price} ${fila.currency ?? ""}`.trim() : "—"}
+                      {fila.price_basis && (
+                        <p className="text-xs text-muted-foreground">
+                          {etiquetaBasePrecio(fila.price_basis)}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {fila.sale_unit ? etiquetaUnidad(fila.sale_unit) : "—"}
+                      {fila.sale_unit_text && (
+                        <p className="text-xs text-muted-foreground">{fila.sale_unit_text}</p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Badge
+                        variant={
+                          fila.status === "rejected"
+                            ? "destructive"
+                            : fila.status === "review"
+                              ? "outline"
+                              : "secondary"
+                        }
+                      >
+                        {etiquetaEstadoFila(fila.status)}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {revision.rows_truncated && (
+            <p className="text-xs text-muted-foreground">
+              La tabla muestra las primeras {revision.rows.length} filas; los conteos y los
+              problemas consideran el archivo completo.
+            </p>
+          )}
+
+          {revision.problems.length > 0 && (
+            <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
+              <p className="text-sm font-medium">Qué impide importar algunas filas</p>
+              <ul className="space-y-2 text-sm">
+                {revision.problems.map((problema) => (
+                  <li key={`${problema.code}-${problema.fields.join("-")}`}>
+                    <p className="font-medium">
+                      {tituloDeProblema(problema.code)} · {problema.count}{" "}
+                      {problema.count === 1 ? "fila" : "filas"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{problema.message}</p>
+                    {problema.sample_rows.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Por ejemplo, fila{problema.sample_rows.length === 1 ? "" : "s"}{" "}
+                        {problema.sample_rows.join(", ")}.
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                Esas filas no se importarán. Corrige el archivo original y vuelve a cargarlo si
+                quieres incluirlas.
+              </p>
+            </div>
+          )}
+
+          {(faltanMoneda || faltanBase || unidadSinTraducir.length > 0 || productosSinVinculo) && (
+            <div className="space-y-3 rounded-xl border bg-muted/30 p-3">
+              <p className="text-sm font-medium">Necesitamos confirmar algunos datos</p>
+              <p className="text-xs text-muted-foreground">
+                Son datos obligatorios que el archivo no trae con certeza. No se completan solos.
+              </p>
+
+              {faltanMoneda && (
+                <div>
+                  <Label htmlFor={`${idBase}-moneda-revision`} className="text-sm">
+                    ¿En qué moneda están los precios? (código de 3 letras)
+                  </Label>
+                  <Input
+                    id={`${idBase}-moneda-revision`}
+                    value={opciones.currency}
+                    onChange={(evento) =>
+                      setOpciones((previas) => ({ ...previas, currency: evento.target.value }))
+                    }
+                    placeholder="Ej. CLP"
+                    maxLength={3}
+                    className="mt-1 w-32 uppercase"
+                  />
+                </div>
+              )}
+
+              {faltanBase && (
+                <div>
+                  <Label htmlFor={`${idBase}-base-revision`} className="text-sm">
+                    ¿El precio es por unidad de venta o por unidad base?
+                  </Label>
+                  <select
+                    id={`${idBase}-base-revision`}
+                    value={opciones.price_basis}
+                    onChange={(evento) =>
+                      setOpciones((previas) => ({
+                        ...previas,
+                        price_basis: evento.target.value,
+                      }))
+                    }
+                    className="mt-1 flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                  >
+                    <option value="">Sin definir</option>
+                    <option value="per_commercial_unit">
+                      {etiquetaBasePrecio("per_commercial_unit")}
+                    </option>
+                    <option value="per_base_unit">{etiquetaBasePrecio("per_base_unit")}</option>
+                  </select>
+                </div>
+              )}
+
+              {unidadSinTraducir.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm">Traduce las unidades que la lista usa:</p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {unidadSinTraducir.map((unidad) => (
+                      <div key={unidad.text} className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm" title={unidad.text}>
+                          «{unidad.text}» · {unidad.count} {unidad.count === 1 ? "fila" : "filas"}
+                        </span>
+                        <select
+                          aria-label={`Traducción de la unidad ${unidad.text} para la revisión`}
+                          value={unidades[unidad.text] ?? ""}
+                          onChange={(evento) =>
+                            setUnidades((previas) => ({
+                              ...previas,
+                              [unidad.text]: evento.target.value,
+                            }))
+                          }
+                          className="flex h-9 min-w-[150px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+                        >
+                          <option value="">Sin traducir</option>
+                          {UNIDADES_VENTA.map((opcion) => (
+                            <option key={opcion.value} value={opcion.value}>
+                              {opcion.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {productosSinVinculo && !opciones.create_missing_items && (
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id={`${idBase}-crear-revision`}
+                    checked={opciones.create_missing_items}
+                    onCheckedChange={(valor) =>
+                      setOpciones((previas) => ({
+                        ...previas,
+                        create_missing_items: valor === true,
+                      }))
+                    }
+                  />
+                  <div>
+                    <Label htmlFor={`${idBase}-crear-revision`} className="text-sm font-normal">
+                      Crear productos nuevos para los códigos que no están en el catálogo (
+                      {productosSinVinculo.count}{" "}
+                      {productosSinVinculo.count === 1 ? "fila" : "filas"})
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Se usará únicamente el nombre que publica la lista. No se vinculan productos
+                      por parecido de nombre.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {errorRevision && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>No pudimos revisar la planilla</AlertTitle>
+              <AlertDescription>{errorRevision}</AlertDescription>
+            </Alert>
+          )}
+
+          {revisionDesactualizada && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>La revisión está desactualizada</AlertTitle>
+              <AlertDescription>
+                Cambiaste el mapeo o algún dato. Actualiza la revisión para ver los conteos reales
+                antes de confirmar.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => setPaso(1)} disabled={revisando}>
+              Volver al archivo
             </Button>
             <Button
               type="button"
               variant="secondary"
-              onClick={() => void importar()}
-              disabled={ocupado || !archivo}
+              onClick={() => void revisar()}
+              disabled={revisando}
             >
+              {revisando ? "Actualizando…" : "Actualizar revisión"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setPaso(3)}
+              disabled={revisando || revisionDesactualizada || revision.rows_accepted === 0}
+            >
+              Continuar
+            </Button>
+          </div>
+          {revision.rows_accepted === 0 && (
+            <p className="text-xs text-destructive">
+              No hay filas válidas para importar. Corrige el archivo o el mapeo y vuelve a revisar.
+            </p>
+          )}
+        </>
+      )}
+
+      {paso === 3 && revision && !resultado && (
+        <>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Confirma la importación</p>
+            <p className="text-xs text-muted-foreground">
+              Se importarán {revision.rows_accepted} de {revision.rows_total} filas. El mapeo
+              revisado quedará guardado para las próximas listas de este proveedor.
+            </p>
+          </div>
+
+          <ul className="space-y-1 text-sm">
+            <li>
+              {listos} {listos === 1 ? "producto listo" : "productos listos"} para importar.
+            </li>
+            {revision.rows_needs_review > 0 && (
+              <li>
+                {revision.rows_needs_review} filas con condiciones comerciales quedarán marcadas
+                para revisión; no se inventan condiciones.
+              </li>
+            )}
+            {revision.rows_rejected > 0 && (
+              <li className="text-muted-foreground">
+                {revision.rows_rejected} filas con problemas no se importarán.
+              </li>
+            )}
+          </ul>
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => setPaso(2)} disabled={ocupado}>
+              Volver a la revisión
+            </Button>
+            <Button type="button" onClick={() => void confirmarImportacion()} disabled={ocupado}>
               <Upload className="h-4 w-4" />
-              {ocupado ? "Procesando…" : "Guardar e importar"}
+              {ocupado ? "Importando…" : "Confirmar importación"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -822,6 +1354,9 @@ export function ImportadorLista({
               Se muestran los primeros 20 motivos de {resultado.errors.length}.
             </p>
           )}
+          <Button type="button" variant="outline" onClick={reiniciar}>
+            Cargar otra lista
+          </Button>
         </div>
       )}
 
@@ -839,7 +1374,7 @@ export function ImportadorLista({
         </p>
       )}
 
-      {perfil && perfil.options["default_sale_unit"] != null && (
+      {perfil && !archivo && perfil.options["default_sale_unit"] != null && (
         <p className="text-xs text-muted-foreground">
           Unidad por defecto guardada: {etiquetaUnidad(String(perfil.options["default_sale_unit"]))}
           .

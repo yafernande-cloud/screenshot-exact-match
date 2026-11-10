@@ -42,6 +42,7 @@ import {
   obtenerPerfilImportacion,
   previsualizarImportacion,
   proveedorUsaPortal,
+  revisarImportacion,
   type Fuente,
   type Proveedor,
 } from "@/lib/proveedores-api";
@@ -289,6 +290,71 @@ describe("listas de precios importadas", () => {
     // Sin Content-Type explícito: el navegador debe agregar el límite del multipart.
     expect(init.headers as Record<string, string>).not.toHaveProperty("Content-Type");
     expect(vista.sheets).toEqual(["Lista", "Otra"]);
+  });
+
+  it("revisa con el mapeo en multipart y no envía nada más que el mapeo y la lectura", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        file_format: "csv",
+        sheets: [],
+        sheet: null,
+        header_row: 1,
+        headers: ["Código", "Precio", "Unidad"],
+        rows_total: 1,
+        rows_accepted: 1,
+        rows_rejected: 0,
+        rows_needs_review: 0,
+        rows: [],
+        rows_truncated: false,
+        problems: [],
+        unrecognised_units: [],
+        profile_source: "request",
+        profile_version: 0,
+        file_hash: "a".repeat(64),
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const revision = await revisarImportacion(
+      "src-1",
+      archivo(),
+      {
+        file_format: "csv",
+        sheet: null,
+        header_row: 1,
+        columns: {
+          sku: { header: "Código", position: 1 },
+          price: { header: "Precio", position: 2 },
+          sale_unit: { header: "Unidad", position: 3 },
+        },
+        units: { caja: "box" },
+        options: { currency: "CLP", price_basis: "per_commercial_unit" },
+      },
+      { filaEncabezado: 1 },
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/sources/src-1/import-check");
+    expect(init.method).toBe("POST");
+    const cuerpo = init.body as FormData;
+    expect(cuerpo.get("file")).toBeInstanceOf(File);
+    expect(cuerpo.get("header_row")).toBe("1");
+    expect(cuerpo.get("sheet")).toBeNull();
+    // El mapeo viaja por nombre y posición, y sin claves ajenas al contrato de revisión.
+    expect(JSON.parse(String(cuerpo.get("profile")))).toEqual({
+      file_format: "csv",
+      sheet: null,
+      header_row: 1,
+      columns: {
+        sku: { header: "Código", position: 1 },
+        price: { header: "Precio", position: 2 },
+        sale_unit: { header: "Unidad", position: 3 },
+      },
+      units: { caja: "box" },
+      options: { currency: "CLP", price_basis: "per_commercial_unit" },
+    });
+    expect(init.headers as Record<string, string>).not.toHaveProperty("Content-Type");
+    expect(revision.rows_total).toBe(1);
   });
 
   it("obtiene el perfil y guarda con If-Match 0 cuando todavía no existe", async () => {

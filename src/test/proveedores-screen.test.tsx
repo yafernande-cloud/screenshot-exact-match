@@ -10,6 +10,7 @@ import type {
   EstadoConexionFuente,
   Fuente,
   Proveedor,
+  RevisionImportacion,
   VistaPreviaImportacion,
 } from "@/lib/proveedores-api";
 
@@ -47,6 +48,7 @@ vi.mock("@/lib/proveedores-api", async (importOriginal) => {
     obtenerPerfilImportacion: vi.fn(),
     guardarPerfilImportacion: vi.fn(),
     previsualizarImportacion: vi.fn(),
+    revisarImportacion: vi.fn(),
     importarListaDePrecios: vi.fn(),
     listarOfertasProveedor: vi.fn(),
     nuevaClaveIdempotencia: vi.fn(),
@@ -68,6 +70,7 @@ import {
   obtenerEstadoConexionFuente,
   obtenerPerfilImportacion,
   previsualizarImportacion,
+  revisarImportacion,
 } from "@/lib/proveedores-api";
 
 const listarProveedoresMock = listarProveedores as unknown as Mock;
@@ -80,6 +83,7 @@ const obtenerEstadoConexionMock = obtenerEstadoConexionFuente as unknown as Mock
 const obtenerPerfilMock = obtenerPerfilImportacion as unknown as Mock;
 const guardarPerfilMock = guardarPerfilImportacion as unknown as Mock;
 const previsualizarMock = previsualizarImportacion as unknown as Mock;
+const revisarMock = revisarImportacion as unknown as Mock;
 const importarMock = importarListaDePrecios as unknown as Mock;
 const listarOfertasMock = listarOfertasProveedor as unknown as Mock;
 const claveMock = nuevaClaveIdempotencia as unknown as Mock;
@@ -156,6 +160,7 @@ function vistaPrevia(overrides: Partial<VistaPreviaImportacion> = {}): VistaPrev
     file_format: "csv",
     sheets: [],
     sheet: null,
+    suggested_sheet: null,
     header_row: 1,
     headers: ["Código", "Producto", "Precio", "Unidad"],
     sample_rows: [{ row: 2, values: ["SKU-1", "Paracetamol", "1990", "caja"] }],
@@ -180,6 +185,45 @@ function archivoCsv(nombre = "lista.csv"): File {
   return new File(["codigo,producto,precio,unidad\nSKU-1,Paracetamol,1990,caja\n"], nombre, {
     type: "text/csv",
   });
+}
+
+function revision(overrides: Partial<RevisionImportacion> = {}): RevisionImportacion {
+  return {
+    file_format: "csv",
+    sheets: [],
+    sheet: null,
+    header_row: 1,
+    headers: ["Código", "Producto", "Precio", "Unidad"],
+    rows_total: 1,
+    rows_accepted: 1,
+    rows_rejected: 0,
+    rows_needs_review: 0,
+    rows: [
+      {
+        row: 2,
+        status: "ready",
+        sku: "SKU-1",
+        name: "Paracetamol",
+        price: "1990.00",
+        currency: "CLP",
+        price_basis: "per_commercial_unit",
+        sale_unit: "box",
+        sale_unit_text: "caja",
+        pack_units: null,
+        stock: null,
+        observed_at: "2026-11-10T10:00:00Z",
+        warnings: [],
+        problem: null,
+      },
+    ],
+    rows_truncated: false,
+    problems: [],
+    unrecognised_units: [],
+    profile_source: "request",
+    profile_version: 0,
+    file_hash: "a".repeat(64),
+    ...overrides,
+  };
 }
 
 async function renderizarProveedores() {
@@ -207,6 +251,7 @@ beforeEach(() => {
   obtenerPerfilMock.mockResolvedValue({ profile: null, version: 0 });
   guardarPerfilMock.mockReset();
   previsualizarMock.mockReset();
+  revisarMock.mockReset();
   importarMock.mockReset();
   listarOfertasMock.mockReset();
   listarOfertasMock.mockResolvedValue([]);
@@ -616,20 +661,21 @@ describe("pantalla de proveedores", () => {
     );
   });
 
-  it("lee la vista previa de un archivo real y guarda el mapeo antes de importar", async () => {
+  it("revisa los productos antes de importar y no guarda ni importa hasta confirmar", async () => {
     listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
     listarFuentesMock.mockResolvedValue([fuente()]);
     previsualizarMock.mockResolvedValue(vistaPrevia());
+    revisarMock.mockResolvedValue(revision());
     guardarPerfilMock.mockResolvedValue({
       source_id: "src-1",
       file_format: "csv",
       sheet: null,
       header_row: 1,
       columns: {
-        sku: { position: 1 },
-        name: { position: 2 },
-        price: { position: 3 },
-        sale_unit: { position: 4 },
+        sku: { header: "Código", position: 1 },
+        name: { header: "Producto", position: 2 },
+        price: { header: "Precio", position: 3 },
+        sale_unit: { header: "Unidad", position: 4 },
       },
       units: { caja: "box" },
       options: {
@@ -684,32 +730,51 @@ describe("pantalla de proveedores", () => {
       target: { value: "box" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Guardar e importar" }));
+    // Se revisa, pero todavía no se escribe nada.
+    fireEvent.click(screen.getByRole("button", { name: "Revisar productos" }));
+
+    const datosEsperados = {
+      file_format: "csv",
+      sheet: null,
+      header_row: 1,
+      columns: {
+        sku: { header: "Código", position: 1 },
+        name: { header: "Producto", position: 2 },
+        price: { header: "Precio", position: 3 },
+        sale_unit: { header: "Unidad", position: 4 },
+      },
+      units: { caja: "box" },
+      options: {
+        decimal_separator: ".",
+        create_missing_items: false,
+        currency: "CLP",
+        price_basis: "per_commercial_unit",
+      },
+    };
 
     await waitFor(() =>
-      expect(guardarPerfilMock).toHaveBeenCalledWith(
-        "src-1",
-        {
-          file_format: "csv",
-          sheet: null,
-          header_row: 1,
-          columns: {
-            sku: { position: 1 },
-            name: { position: 2 },
-            price: { position: 3 },
-            sale_unit: { position: 4 },
-          },
-          units: { caja: "box" },
-          options: {
-            decimal_separator: ".",
-            create_missing_items: false,
-            currency: "CLP",
-            price_basis: "per_commercial_unit",
-          },
-        },
-        0,
-      ),
+      expect(revisarMock).toHaveBeenCalledWith("src-1", archivo, datosEsperados, {
+        hoja: null,
+        filaEncabezado: 1,
+      }),
     );
+    expect(guardarPerfilMock).not.toHaveBeenCalled();
+    expect(importarMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Revisa los productos")).toBeInTheDocument();
+    expect(
+      screen.getByText(/De 1 filas, 1 se pueden importar y 0 tienen problemas/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Paracetamol")).toBeInTheDocument();
+    expect(screen.getByText("1 listos")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    expect(await screen.findByText("Confirma la importación")).toBeInTheDocument();
+    expect(guardarPerfilMock).not.toHaveBeenCalled();
+    expect(importarMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar importación" }));
+
+    await waitFor(() => expect(guardarPerfilMock).toHaveBeenCalledWith("src-1", datosEsperados, 0));
     await waitFor(() =>
       expect(importarMock).toHaveBeenCalledWith({
         supplierId: "sup-1",
@@ -721,6 +786,127 @@ describe("pantalla de proveedores", () => {
     expect(await screen.findByText("Importación completa")).toBeInTheDocument();
     expect(screen.getByText("1 de 1 filas aceptadas")).toBeInTheDocument();
     expect(toastSuccess).toHaveBeenCalledWith("Se importaron 1 filas.");
+  });
+
+  it("pide solo la moneda que falta y no permite continuar sin actualizar la revisión", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+    previsualizarMock.mockResolvedValue(vistaPrevia());
+    revisarMock.mockResolvedValue(
+      revision({
+        rows_accepted: 0,
+        rows_rejected: 1,
+        rows: [
+          {
+            row: 2,
+            status: "rejected",
+            sku: "SKU-1",
+            name: "Paracetamol",
+            price: "1990.00",
+            currency: null,
+            price_basis: null,
+            sale_unit: "box",
+            sale_unit_text: "caja",
+            pack_units: null,
+            stock: null,
+            observed_at: "2026-11-10T10:00:00Z",
+            warnings: [],
+            problem: {
+              code: "INVALID_CURRENCY",
+              message: "La fila no trae moneda y el mapeo no la declara.",
+              fields: ["currency"],
+              values: { currency: null },
+            },
+          },
+        ],
+        problems: [
+          {
+            code: "INVALID_CURRENCY",
+            message: "La fila no trae moneda y el mapeo no la declara.",
+            fields: ["currency"],
+            count: 1,
+            sample_rows: [2],
+          },
+        ],
+      }),
+    );
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    const entrada = await screen.findByLabelText("Archivo de la lista de precios");
+    fireEvent.change(entrada, { target: { files: [archivoCsv()] } });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Código del producto (obligatorio)")).toHaveValue("1"),
+    );
+
+    // Sin moneda en el archivo: se revisa y la revisión explica el problema.
+    fireEvent.change(screen.getByLabelText("Traducción de la unidad caja"), {
+      target: { value: "box" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Revisar productos" }));
+
+    expect(
+      await screen.findByLabelText("¿En qué moneda están los precios? (código de 3 letras)"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Falta la moneda · 1 fila")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeDisabled();
+    expect(guardarPerfilMock).not.toHaveBeenCalled();
+    expect(importarMock).not.toHaveBeenCalled();
+
+    fireEvent.change(
+      screen.getByLabelText("¿En qué moneda están los precios? (código de 3 letras)"),
+      { target: { value: "CLP" } },
+    );
+    // La corrección exige una nueva revisión: los conteos anteriores ya no valen.
+    expect(await screen.findByText("La revisión está desactualizada")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeDisabled();
+    expect(importarMock).not.toHaveBeenCalled();
+  });
+
+  it("avisa cuando el mapeo guardado no calza por nombre de columna y no aplica posiciones viejas", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+    obtenerPerfilMock.mockResolvedValue({
+      profile: {
+        source_id: "src-1",
+        file_format: "csv",
+        sheet: null,
+        header_row: 1,
+        columns: {
+          sku: { header: "Código Interno" },
+          price: { header: "Precio final" },
+          sale_unit: { header: "Envase" },
+        },
+        units: {},
+        options: { currency: "CLP", price_basis: "per_commercial_unit" },
+        status: "active",
+        version: 2,
+        created_at: "2026-11-01T10:00:00Z",
+        updated_at: "2026-11-01T10:00:00Z",
+      },
+      version: 2,
+    });
+    previsualizarMock.mockResolvedValue(vistaPrevia());
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    expect(await screen.findByText("Mapeo guardado (versión 2)")).toBeInTheDocument();
+    const entrada = await screen.findByLabelText("Archivo de la lista de precios");
+    fireEvent.change(entrada, { target: { files: [archivoCsv()] } });
+
+    expect(
+      await screen.findByText("El mapeo guardado no calza con este archivo"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/El archivo cambió de columnas/)).toBeInTheDocument();
+    // Se usan las columnas sugeridas del archivo actual, no las posiciones del mapeo viejo.
+    expect(screen.getByLabelText("Código del producto (obligatorio)")).toHaveValue("1");
+    expect(screen.getByLabelText("Precio (obligatorio)")).toHaveValue("3");
+    expect(revisarMock).not.toHaveBeenCalled();
+    expect(importarMock).not.toHaveBeenCalled();
   });
 
   it("informa cuando un archivo no se puede leer y no deja importarlo", async () => {
