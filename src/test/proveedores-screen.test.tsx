@@ -936,4 +936,87 @@ describe("pantalla de proveedores", () => {
     expect(await screen.findByText("https://compras.farmaloop.cl")).toBeInTheDocument();
     expect(screen.getByText("Farmaloop API")).toBeInTheDocument();
   });
+
+  it("filtra por nombre en tiempo real sin distinguir mayúsculas ni tildes", async () => {
+    listarProveedoresMock.mockResolvedValue([
+      proveedor({ supplier_id: "sup-1", name: "Distribuidora Andes", sources: ["src-1"] }),
+      proveedor({ supplier_id: "sup-2", name: "Droguería Pacífico" }),
+    ]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+    expect(listarProveedoresMock).toHaveBeenCalledTimes(1);
+
+    const buscador = screen.getByLabelText("Buscar proveedor por nombre");
+    fireEvent.change(buscador, { target: { value: "PACIFICO" } });
+
+    expect(screen.getByText("Droguería Pacífico")).toBeInTheDocument();
+    expect(screen.queryByText("Distribuidora Andes")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("1 de 2 proveedores coinciden");
+    // El total registrado sigue visible mientras hay un filtro.
+    expect(screen.getByText("2 activos de 2")).toBeInTheDocument();
+
+    fireEvent.change(buscador, { target: { value: "ándes" } });
+    expect(screen.getByText("Distribuidora Andes")).toBeInTheDocument();
+    expect(screen.queryByText("Droguería Pacífico")).toBeNull();
+
+    // El filtro es local: no se pidió de nuevo la lista al servidor.
+    expect(listarProveedoresMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("vuelve a mostrar todas las tarjetas cuando la búsqueda queda vacía", async () => {
+    listarProveedoresMock.mockResolvedValue([
+      proveedor({ supplier_id: "sup-1", name: "Distribuidora Andes" }),
+      proveedor({ supplier_id: "sup-2", name: "Droguería Pacífico" }),
+    ]);
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    const buscador = screen.getByLabelText("Buscar proveedor por nombre");
+    fireEvent.change(buscador, { target: { value: "andes" } });
+    expect(screen.queryByText("Droguería Pacífico")).toBeNull();
+
+    fireEvent.change(buscador, { target: { value: "" } });
+    expect(screen.getByText("Distribuidora Andes")).toBeInTheDocument();
+    expect(screen.getByText("Droguería Pacífico")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("avisa cuando ninguna tarjeta coincide con la búsqueda", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ name: "Distribuidora Andes" })]);
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.change(screen.getByLabelText("Buscar proveedor por nombre"), {
+      target: { value: "inexistente" },
+    });
+
+    expect(screen.getByText("No se encontraron proveedores")).toBeInTheDocument();
+    expect(screen.queryByText("Distribuidora Andes")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("0 de 1 proveedores coinciden");
+    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
+  });
+
+  it("mantiene las acciones y la configuración de la tarjeta filtrada", async () => {
+    listarProveedoresMock.mockResolvedValue([
+      proveedor({ supplier_id: "sup-1", name: "Distribuidora Andes", sources: ["src-1"] }),
+      proveedor({ supplier_id: "sup-2", name: "Droguería Pacífico" }),
+    ]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+
+    await renderizarProveedores();
+    await screen.findByText("Droguería Pacífico");
+
+    fireEvent.change(screen.getByLabelText("Buscar proveedor por nombre"), {
+      target: { value: "andes" },
+    });
+
+    expect(screen.getByText("Sin archivo cargado")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cargar Excel" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(await screen.findByText("Lista de precios Andes")).toBeInTheDocument();
+  });
 });

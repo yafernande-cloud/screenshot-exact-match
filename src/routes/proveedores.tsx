@@ -10,6 +10,7 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  Search,
   Truck,
   X,
 } from "lucide-react";
@@ -97,6 +98,11 @@ function fechaCorta(iso: string): string {
   return new Date(iso).toLocaleDateString("es-CL");
 }
 
+/** Texto comparable: sin distinguir mayúsculas, minúsculas ni tildes. */
+function normalizarTexto(texto: string): string {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+
 /** Fecha y hora de la última respuesta registrada, no una comprobación en este momento. */
 function fechaHoraCorta(iso: string): string {
   const fecha = new Date(iso);
@@ -130,6 +136,7 @@ function Proveedores() {
   const [conexiones, setConexiones] = useState<Record<string, EstadoConexionCargado>>({});
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState("");
 
   /**
    * Lee el estado real de las fuentes API. Un fallo en una fuente no oculta las demás ni rompe la
@@ -226,6 +233,12 @@ function Proveedores() {
   );
 
   const activos = proveedores.filter((p) => p.status === "active").length;
+  // El filtro es local: trabaja sobre lo ya cargado y no consulta al servidor.
+  const termino = normalizarTexto(busqueda);
+  const filtroActivo = termino !== "";
+  const filtrados = filtroActivo
+    ? proveedores.filter((proveedor) => normalizarTexto(proveedor.name).includes(termino))
+    : proveedores;
 
   return (
     <div className="min-h-screen bg-hero">
@@ -269,6 +282,29 @@ function Proveedores() {
             </Button>
           </div>
 
+          {!cargando && !errorCarga && proveedores.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <label className="flex w-full items-center gap-2 rounded-full border bg-background px-4 py-2 sm:w-80">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <input
+                  type="search"
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  maxLength={200}
+                  autoComplete="off"
+                  placeholder="Buscar proveedor por nombre..."
+                  aria-label="Buscar proveedor por nombre"
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+              </label>
+              {filtroActivo && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {filtrados.length} de {proveedores.length} proveedores coinciden
+                </p>
+              )}
+            </div>
+          )}
+
           {cargando ? (
             <p role="status" className="py-6 text-sm text-muted-foreground">
               Cargando proveedores…
@@ -294,9 +330,11 @@ function Proveedores() {
             <p className="py-6 text-sm text-muted-foreground">
               Todavía no hay proveedores registrados. Agrega el primero para empezar.
             </p>
+          ) : filtrados.length === 0 ? (
+            <p className="mt-4 py-6 text-sm text-muted-foreground">No se encontraron proveedores</p>
           ) : (
-            <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {proveedores.map((proveedor) => (
+            <ul className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {filtrados.map((proveedor) => (
                 <TarjetaProveedor
                   key={proveedor.supplier_id}
                   proveedor={proveedor}
