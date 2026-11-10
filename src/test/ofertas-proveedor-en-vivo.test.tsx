@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import { FichaOfertaEnVivo } from "@/components/FichaOfertaEnVivo";
 import { OfertasProveedorEnVivo } from "@/components/OfertasProveedorEnVivo";
-import type { EstadoFuenteEnVivo, OfertaEnVivo, ResultadoEnVivo } from "@/lib/proveedores-en-vivo";
+import type {
+  EstadoFuenteEnVivo,
+  OfertaEnVivo,
+  ProductoPublicadoEnVivo,
+  ResultadoEnVivo,
+} from "@/lib/proveedores-en-vivo";
 
 /**
  * Pruebas de presentación: cada tarjeta muestra solo lo que el proveedor informó y cada fuente
@@ -33,6 +38,30 @@ function oferta(over: Partial<OfertaEnVivo> = {}): OfertaEnVivo {
   };
 }
 
+function publicado(over: Partial<ProductoPublicadoEnVivo> = {}): ProductoPublicadoEnVivo {
+  return {
+    external_id: "140640",
+    name: "Predual Pamabron 25 mg 12 Comprimidos",
+    laboratory: "LABORATORIO MAVER S.A",
+    presentation: "Comprimido",
+    stock_status: "out_of_stock",
+    reference_price: { amount: "2290", currency: "CLP" },
+    image_url: null,
+    product_url: null,
+    ean: "crearpredual12",
+    match_relation: "direct",
+    match_reasons: ["all_query_terms_in_name"],
+    cart_eligible: false,
+    cart_blockers: [
+      "not_available_for_sale",
+      "no_current_price",
+      "sale_unit_unconfirmed",
+      "price_basis_unconfirmed",
+    ],
+    ...over,
+  };
+}
+
 function resultado(over: Partial<ResultadoEnVivo> = {}): ResultadoEnVivo {
   return {
     search_id: "busq-1",
@@ -50,6 +79,7 @@ function resultado(over: Partial<ResultadoEnVivo> = {}): ResultadoEnVivo {
     discarded: 0,
     warnings: [],
     offers: [],
+    published: [],
     ...over,
   };
 }
@@ -238,21 +268,102 @@ describe("proveedores en vivo en la pantalla principal", () => {
     ).toBeInTheDocument();
   });
 
-  it("muestra advertencias del backend y las publicaciones descartadas", () => {
+  it("muestra las advertencias funcionales y oculta el detalle técnico de descartes", () => {
     renderizar([
       estado({
         resultado: resultado({
           offers: [oferta()],
-          warnings: ["El proveedor informó precios sin IVA."],
-          discarded: 2,
+          warnings: [
+            "El proveedor informó precios sin IVA.",
+            "5 ítem(s) descartados por datos incompletos o inválidos.",
+          ],
+          discarded: 5,
         }),
       }),
     ]);
 
     expect(screen.getByText("El proveedor informó precios sin IVA.")).toBeInTheDocument();
+    expect(screen.queryByText(/descartad/i)).toBeNull();
+    expect(screen.queryByText(/no se pudieron interpretar/)).toBeNull();
+  });
+
+  it("muestra un producto publicado sin precio vigente como coincidencia directa y sin habilitar el carrito", () => {
+    renderizar([
+      estado({ resultado: resultado({ offers: [oferta()], published: [publicado()] }) }),
+    ]);
+
+    const directas = screen.getByRole("heading", { name: /Coincidencias directas/ });
+    expect(directas).toHaveTextContent("(2)");
+
+    const tarjeta = screen.getByRole("article", {
+      name: "Producto publicado por Farmaloop: Predual Pamabron 25 mg 12 Comprimidos",
+    });
+    expect(within(tarjeta).getByText("Sin stock (informado por el proveedor)")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("Sin precio vigente")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("$2.290")).toBeInTheDocument();
+    expect(within(tarjeta).getByText(/Precio de lista referencial/)).toHaveTextContent(
+      "Precio de lista referencial: $2.290",
+    );
     expect(
-      screen.getByText("2 publicaciones no se pudieron interpretar y no se muestran."),
+      within(tarjeta).getByText("Sin precio comercial vigente: no se puede cotizar."),
     ).toBeInTheDocument();
+    expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
+    expect(
+      within(tarjeta).getByText(
+        /No se puede agregar: el proveedor informa que no está disponible para la venta; no hay precio comercial vigente/,
+      ),
+    ).toBeInTheDocument();
+    // No se presenta como oferta comercial.
+    expect(
+      screen.queryByRole("article", {
+        name: "Oferta de Farmaloop: Predual Pamabron 25 mg 12 Comprimidos",
+      }),
+    ).toBeNull();
+  });
+
+  it("distingue «Sin stock» de «Stock no informado» en un producto publicado", () => {
+    renderizar([
+      estado({
+        resultado: resultado({
+          published: [publicado({ stock_status: "unknown", reference_price: null })],
+        }),
+      }),
+    ]);
+
+    const tarjeta = screen.getByRole("article", { name: /Producto publicado por Farmaloop/ });
+    const filaDisponibilidad = within(tarjeta).getByText("Disponibilidad:").parentElement;
+    expect(filaDisponibilidad).toHaveTextContent("Disponibilidad: No informado");
+    expect(within(tarjeta).getByText(/Precio de lista referencial/)).toHaveTextContent(
+      "Precio de lista referencial: No informado",
+    );
+    expect(within(tarjeta).queryByText(/Sin stock/)).toBeNull();
+  });
+
+  it("mantiene separados los publicados directos de los relacionados y no niega los resultados", () => {
+    renderizar([
+      estado({
+        resultado: resultado({
+          published: [
+            publicado(),
+            publicado({
+              external_id: "8127",
+              name: "Pedialyte 60 Manzana x 500 ml Solución Oral",
+              match_relation: "related",
+              stock_status: "unknown",
+              reference_price: null,
+            }),
+          ],
+        }),
+      }),
+    ]);
+
+    expect(screen.getByRole("heading", { name: /Coincidencias directas/ })).toHaveTextContent(
+      "(1)",
+    );
+    expect(screen.getByRole("heading", { name: /Resultados relacionados/ })).toHaveTextContent(
+      "(1)",
+    );
+    expect(screen.queryByText(/no devolvió ofertas/)).toBeNull();
   });
 
   it("no renderiza nada mientras no hay fuentes ni consulta en curso", () => {

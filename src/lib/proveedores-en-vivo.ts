@@ -76,6 +76,28 @@ export interface OfertaEnVivo {
   cart_blockers: string[];
 }
 
+/**
+ * `PublishedProductOut`: publicación del catálogo sin precio comercial vigente.
+ *
+ * No es una oferta. `reference_price` es el precio de lista del proveedor y solo se muestra como
+ * referencial; nunca se presenta como precio de venta ni habilita el carrito.
+ */
+export interface ProductoPublicadoEnVivo {
+  external_id: string;
+  name: string;
+  laboratory: string | null;
+  presentation: string | null;
+  stock_status: EstadoStock;
+  reference_price: { amount: string; currency: string } | null;
+  image_url: string | null;
+  product_url: string | null;
+  ean: string | null;
+  match_relation: RelacionCoincidencia;
+  match_reasons: string[];
+  cart_eligible: boolean;
+  cart_blockers: string[];
+}
+
 /** `SupplierSearchOut`. */
 export interface ResultadoEnVivo {
   search_id: string;
@@ -93,6 +115,8 @@ export interface ResultadoEnVivo {
   discarded: number;
   warnings: string[];
   offers: OfertaEnVivo[];
+  // Separadas de `offers`: se muestran, pero no son ofertas comerciales ni se pueden cotizar.
+  published: ProductoPublicadoEnVivo[];
 }
 
 /** Fuente lista para la pantalla: perfil leído y decisión de si se puede consultar. */
@@ -159,6 +183,8 @@ export function mensajeMotivo(reason: string | null, state: EstadoConector): str
 
 const MENSAJES_BLOQUEADOR: Record<string, string> = {
   match_not_direct: "el nombre publicado no confirma la coincidencia",
+  not_available_for_sale: "el proveedor informa que no está disponible para la venta",
+  no_current_price: "no hay precio comercial vigente",
   sale_unit_unconfirmed: "unidad de venta no informada",
   price_basis_unconfirmed: "base del precio no informada",
 };
@@ -278,6 +304,46 @@ export function buscarProveedorEnVivo(
     },
     "No pudimos consultar al proveedor.",
   );
+}
+
+/** Un resultado mostrable: oferta comercial o publicación sin precio vigente. */
+export type ItemEnVivo =
+  | { tipo: "oferta"; oferta: OfertaEnVivo }
+  | { tipo: "publicado"; producto: ProductoPublicadoEnVivo };
+
+/**
+ * Separa coincidencias directas de resultados relacionados, conservando la distinción entre una
+ * oferta comercial y una publicación sin precio. Un publicado nunca se presenta como oferta.
+ */
+export function agruparResultados(resultado: Pick<ResultadoEnVivo, "offers" | "published">): {
+  directas: ItemEnVivo[];
+  relacionadas: ItemEnVivo[];
+} {
+  const directas: ItemEnVivo[] = [];
+  const relacionadas: ItemEnVivo[] = [];
+  const items: ItemEnVivo[] = [
+    ...resultado.offers.map((oferta) => ({ tipo: "oferta" as const, oferta })),
+    ...resultado.published.map((producto) => ({ tipo: "publicado" as const, producto })),
+  ];
+  for (const item of items) {
+    const relacion =
+      item.tipo === "oferta" ? item.oferta.match_relation : item.producto.match_relation;
+    if (relacion === "direct") directas.push(item);
+    else relacionadas.push(item);
+  }
+  return { directas, relacionadas };
+}
+
+/**
+ * Advertencia técnica del conector sobre ítems descartados: se conserva para diagnóstico, pero no
+ * forma parte de la experiencia de cotización.
+ */
+const ADVERTENCIA_DESCARTES =
+  /^\d+\s+ítem\(s\)\s+descartados por datos incompletos o inválidos\.$/i;
+
+/** Advertencias que sí corresponden a la persona; los descartes técnicos no se muestran. */
+export function advertenciasVisibles(advertencias: string[]): string[] {
+  return advertencias.filter((texto) => !ADVERTENCIA_DESCARTES.test(texto.trim()));
 }
 
 /** Separa coincidencias directas de resultados que no confirman la consulta. */

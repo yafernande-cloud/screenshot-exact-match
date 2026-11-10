@@ -10,12 +10,14 @@ import type { ReactNode } from "react";
 import { AlertCircle, Loader2, Truck } from "lucide-react";
 
 import { FichaOfertaEnVivo } from "@/components/FichaOfertaEnVivo";
+import { FichaProductoPublicadoEnVivo } from "@/components/FichaProductoPublicadoEnVivo";
 import {
-  agruparOfertas,
+  advertenciasVisibles,
+  agruparResultados,
   mensajeMotivo,
   type EstadoConector,
   type EstadoFuenteEnVivo,
-  type ResultadoEnVivo,
+  type ItemEnVivo,
 } from "@/lib/proveedores-en-vivo";
 
 const ETIQUETA_ESTADO: Record<EstadoConector, string> = {
@@ -67,32 +69,40 @@ function Cargando({ children }: { children: ReactNode }) {
   );
 }
 
-function GrupoOfertas({
+function GrupoResultados({
   titulo,
   descripcion,
-  ofertas,
+  items,
   proveedor,
 }: {
   titulo: string;
   descripcion?: string;
-  ofertas: ResultadoEnVivo["offers"];
+  items: ItemEnVivo[];
   proveedor: string;
 }) {
-  if (ofertas.length === 0) return null;
+  if (items.length === 0) return null;
   return (
     <div className="mt-4">
       <h5 className="text-sm font-semibold">
-        {titulo} <span className="text-muted-foreground">({ofertas.length})</span>
+        {titulo} <span className="text-muted-foreground">({items.length})</span>
       </h5>
       {descripcion && <p className="mt-1 text-xs text-muted-foreground">{descripcion}</p>}
       <div className="mt-3 space-y-3">
-        {ofertas.map((oferta) => (
-          <FichaOfertaEnVivo
-            key={`${oferta.external_id}-${oferta.name}`}
-            oferta={oferta}
-            proveedor={proveedor}
-          />
-        ))}
+        {items.map((item) =>
+          item.tipo === "oferta" ? (
+            <FichaOfertaEnVivo
+              key={`oferta-${item.oferta.external_id}-${item.oferta.name}`}
+              oferta={item.oferta}
+              proveedor={proveedor}
+            />
+          ) : (
+            <FichaProductoPublicadoEnVivo
+              key={`publicado-${item.producto.external_id}-${item.producto.name}`}
+              producto={item.producto}
+              proveedor={proveedor}
+            />
+          ),
+        )}
       </div>
     </div>
   );
@@ -110,6 +120,7 @@ function BloqueFuente({
   const motivo = resultado?.reason ?? fuente.reason;
   const ultimaConexion = fechaHora(fuente.lastSuccessAt);
   const consultaVisible = consulta?.trim() || resultado?.query || "";
+  const advertencias = resultado ? advertenciasVisibles(resultado.warnings) : [];
 
   return (
     <div className="rounded-2xl border p-4" data-source-id={fuente.sourceId}>
@@ -139,12 +150,12 @@ function BloqueFuente({
 
       {!cargando && !error && resultado && (
         <>
-          {resultado.warnings.length > 0 && (
+          {advertencias.length > 0 && (
             <p
               role="status"
               className="mt-2 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground"
             >
-              {resultado.warnings.join(" ")}
+              {advertencias.join(" ")}
             </p>
           )}
 
@@ -157,45 +168,38 @@ function BloqueFuente({
             <Aviso>{mensajeMotivo(motivo, estadoConexion)}</Aviso>
           )}
 
-          {estadoConexion === "connected" && resultado.offers.length === 0 && (
-            <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
-              {fuente.supplierName} respondió
-              {consultaVisible ? ` y no devolvió ofertas para «${consultaVisible}»` : ""}.
-            </p>
-          )}
+          {estadoConexion === "connected" &&
+            resultado.offers.length === 0 &&
+            resultado.published.length === 0 && (
+              <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+                {fuente.supplierName} respondió
+                {consultaVisible ? ` y no devolvió ofertas para «${consultaVisible}»` : ""}.
+              </p>
+            )}
 
-          {resultado.offers.length > 0 &&
+          {resultado.offers.length + resultado.published.length > 0 &&
             (() => {
-              const { directas, relacionadas } = agruparOfertas(resultado.offers);
+              const { directas, relacionadas } = agruparResultados(resultado);
               return (
                 <>
-                  <GrupoOfertas
+                  <GrupoResultados
                     titulo="Coincidencias directas"
-                    ofertas={directas}
+                    items={directas}
                     proveedor={fuente.supplierName}
                   />
-                  <GrupoOfertas
+                  <GrupoResultados
                     titulo="Resultados relacionados"
                     descripcion={
                       directas.length === 0
                         ? "No hubo coincidencias directas. Estos resultados no confirman la consulta."
                         : "El nombre publicado no confirma la consulta; no son coincidencias directas."
                     }
-                    ofertas={relacionadas}
+                    items={relacionadas}
                     proveedor={fuente.supplierName}
                   />
                 </>
               );
             })()}
-
-          {resultado.discarded > 0 && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              {resultado.discarded}{" "}
-              {resultado.discarded === 1
-                ? "publicación no se pudo interpretar y no se muestra."
-                : "publicaciones no se pudieron interpretar y no se muestran."}
-            </p>
-          )}
         </>
       )}
     </div>

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  advertenciasVisibles,
   agruparOfertas,
+  agruparResultados,
   buscarProveedorEnVivo,
   descubrirProveedoresEnVivo,
   etiquetaBloqueador,
@@ -9,6 +11,7 @@ import {
   mensajeDeErrorProveedor,
   mensajeMotivo,
   type OfertaEnVivo,
+  type ProductoPublicadoEnVivo,
 } from "@/lib/proveedores-en-vivo";
 
 /**
@@ -66,6 +69,25 @@ function oferta(over: Partial<OfertaEnVivo> = {}): OfertaEnVivo {
     match_reasons: ["all_query_terms_in_name"],
     cart_eligible: false,
     cart_blockers: ["sale_unit_unconfirmed", "price_basis_unconfirmed"],
+    ...over,
+  };
+}
+
+function publicado(over: Partial<ProductoPublicadoEnVivo> = {}): ProductoPublicadoEnVivo {
+  return {
+    external_id: "140640",
+    name: "Predual Pamabron 25 mg 12 Comprimidos",
+    laboratory: "Laboratorio Maver",
+    presentation: "Comprimido",
+    stock_status: "out_of_stock",
+    reference_price: { amount: "2290", currency: "CLP" },
+    image_url: null,
+    product_url: null,
+    ean: null,
+    match_relation: "direct",
+    match_reasons: ["all_query_terms_in_name"],
+    cart_eligible: false,
+    cart_blockers: ["not_available_for_sale", "no_current_price"],
     ...over,
   };
 }
@@ -190,6 +212,7 @@ describe("búsqueda en vivo", () => {
       profile_version: 1,
       discarded: 5,
       warnings: [],
+      published: [],
       offers: [oferta()],
     });
 
@@ -220,8 +243,44 @@ describe("clasificación y bloqueos", () => {
     expect(relacionadas.map((o) => o.external_id)).toEqual(["B", "C"]);
   });
 
+  it("agrupa ofertas y publicaciones conservando su tipo y su relación", () => {
+    const { directas, relacionadas } = agruparResultados({
+      offers: [
+        oferta({ external_id: "A" }),
+        oferta({ external_id: "B", match_relation: "related" }),
+      ],
+      published: [
+        publicado({ external_id: "C" }),
+        publicado({ external_id: "D", match_relation: "related" }),
+      ],
+    });
+
+    expect(directas.map((item) => (item.tipo === "oferta" ? item.oferta : item.producto))).toEqual([
+      expect.objectContaining({ external_id: "A" }),
+      expect.objectContaining({ external_id: "C" }),
+    ]);
+    expect(directas.map((item) => item.tipo)).toEqual(["oferta", "publicado"]);
+    expect(
+      relacionadas.map((item) => (item.tipo === "oferta" ? item.oferta : item.producto)),
+    ).toEqual([
+      expect.objectContaining({ external_id: "B" }),
+      expect.objectContaining({ external_id: "D" }),
+    ]);
+  });
+
+  it("oculta la advertencia técnica de descartes y conserva las funcionales", () => {
+    expect(
+      advertenciasVisibles([
+        "5 ítem(s) descartados por datos incompletos o inválidos.",
+        "El proveedor informó precios sin IVA.",
+      ]),
+    ).toEqual(["El proveedor informó precios sin IVA."]);
+  });
+
   it("traduce bloqueadores y relaciones sin presentar un resultado como coincidencia", () => {
     expect(etiquetaBloqueador("match_not_direct")).toMatch(/no confirma/);
+    expect(etiquetaBloqueador("not_available_for_sale")).toMatch(/no está disponible/);
+    expect(etiquetaBloqueador("no_current_price")).toMatch(/precio comercial vigente/);
     expect(etiquetaBloqueador("sale_unit_unconfirmed")).toMatch(/unidad de venta/);
     expect(etiquetaBloqueador("price_basis_unconfirmed")).toMatch(/base del precio/);
     expect(etiquetaBloqueador("otro_motivo")).toBe("otro_motivo");

@@ -187,6 +187,7 @@ function resultado(over: Partial<ResultadoEnVivo> = {}): ResultadoEnVivo {
     profile_version: 1,
     discarded: 0,
     warnings: [],
+    published: [],
     offers: [
       {
         external_id: "PRE-1",
