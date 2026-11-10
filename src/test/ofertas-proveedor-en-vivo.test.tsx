@@ -1,5 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { FichaOfertaEnVivo } from "@/components/FichaOfertaEnVivo";
 import { OfertasProveedorEnVivo } from "@/components/OfertasProveedorEnVivo";
@@ -11,9 +11,9 @@ import type {
 } from "@/lib/proveedores-en-vivo";
 
 /**
- * Pruebas de presentación: cada tarjeta muestra solo lo que el proveedor informó y cada fuente
- * tiene su propio estado. Los fixtures reproducen la forma del contrato; no son datos de
- * demostración de la aplicación.
+ * Pruebas de presentación: solo se muestran las coincidencias directas, cada tarjeta enseña los
+ * datos esenciales y el carrito sigue dependiendo de `cart_eligible`. Los fixtures reproducen la
+ * forma del contrato; no son datos de demostración de la aplicación.
  */
 function oferta(over: Partial<OfertaEnVivo> = {}): OfertaEnVivo {
   return {
@@ -116,7 +116,7 @@ function renderizar(estados: EstadoFuenteEnVivo[], consulta: string | null = "Pr
 }
 
 describe("proveedores en vivo en la pantalla principal", () => {
-  it("separa coincidencias directas de resultados relacionados y muestra los datos informados", () => {
+  it("muestra solo las coincidencias directas y omite los resultados relacionados", () => {
     renderizar([
       estado({
         resultado: resultado({
@@ -125,7 +125,6 @@ describe("proveedores en vivo en la pantalla principal", () => {
             oferta({
               external_id: "PRE-002",
               name: "Predual 30 mg x 30 comprimidos",
-              match_relation: "direct",
             }),
             oferta({
               external_id: "PREG-001",
@@ -139,64 +138,49 @@ describe("proveedores en vivo en la pantalla principal", () => {
       }),
     ]);
 
-    const directas = screen.getByRole("heading", { name: /Coincidencias directas/ });
-    expect(directas).toHaveTextContent("(2)");
-    const relacionadas = screen.getByRole("heading", { name: /Resultados relacionados/ });
-    expect(relacionadas).toHaveTextContent("(1)");
-    expect(screen.getByText(/El nombre publicado no confirma la consulta/)).toBeInTheDocument();
-
-    const tarjetaDirecta = screen.getByRole("article", {
-      name: "Oferta de Farmaloop: Predual 30 mg comprimidos",
-    });
-    expect(within(tarjetaDirecta).getByText("Predual 30 mg comprimidos")).toBeInTheDocument();
-    expect(within(tarjetaDirecta).getByText("Laboratorio Ficticio")).toBeInTheDocument();
-    expect(within(tarjetaDirecta).getByText("Caja 30 comprimidos")).toBeInTheDocument();
-    expect(within(tarjetaDirecta).getByText("Coincidencia directa")).toBeInTheDocument();
-    expect(within(tarjetaDirecta).getByText("$12.990")).toBeInTheDocument();
-    // Un dato ausente no se completa: queda «No informado».
-    const filaStock = within(tarjetaDirecta).getByText("Stock:").parentElement;
-    expect(filaStock).toHaveTextContent("Stock: No informado");
-
-    const tarjetaRelacionada = screen.getByRole("article", {
-      name: "Oferta de Farmaloop: Pregalex 75 mg",
-    });
-    expect(within(tarjetaRelacionada).getByText("Relacionado")).toBeInTheDocument();
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.queryByText("Pregalex 75 mg")).toBeNull();
+    expect(screen.queryByText(/Resultados relacionados/)).toBeNull();
+    expect(screen.queryByText(/Coincidencias directas/)).toBeNull();
+    expect(screen.queryByText(/El nombre publicado no confirma la consulta/)).toBeNull();
   });
 
-  it("mantiene el carrito deshabilitado y muestra los motivos reales", () => {
+  it("muestra los datos esenciales de la oferta sin explicaciones técnicas", () => {
     renderizar([estado({ resultado: resultado({ offers: [oferta()] }) })]);
 
     const tarjeta = screen.getByRole("article", {
       name: "Oferta de Farmaloop: Predual 30 mg comprimidos",
     });
-    const boton = within(tarjeta).getByRole("button", { name: /Agregar a cotización/ });
-    expect(boton).toBeDisabled();
+    expect(within(tarjeta).getByText("Predual 30 mg comprimidos")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("Laboratorio Ficticio · Código PRE-001")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("$12.990")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("Precio")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("Stock no informado")).toBeInTheDocument();
+    // Los datos internos no se escriben en la tarjeta.
+    expect(within(tarjeta).queryByText(/unidad de venta/i)).toBeNull();
+    expect(within(tarjeta).queryByText(/base del precio/i)).toBeNull();
+    expect(within(tarjeta).queryByText(/Presentación/)).toBeNull();
+    expect(within(tarjeta).queryByText(/Farmaloop API/)).toBeNull();
+  });
+
+  it("mantiene el carrito deshabilitado con una explicación breve", () => {
+    renderizar([estado({ resultado: resultado({ offers: [oferta()] }) })]);
+
+    const tarjeta = screen.getByRole("article", {
+      name: "Oferta de Farmaloop: Predual 30 mg comprimidos",
+    });
+    expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
     expect(
-      within(tarjeta).getByText(
-        "No se puede agregar: unidad de venta no informada; base del precio no informada.",
-      ),
+      within(tarjeta).getByText("No disponible para agregar a la cotización."),
     ).toBeInTheDocument();
+    expect(within(tarjeta).queryByText(/No se puede agregar/)).toBeNull();
   });
 
-  it("no inventa stock ni unidad de venta cuando el proveedor no los informa", () => {
-    render(<FichaOfertaEnVivo oferta={oferta()} proveedor="Farmaloop" />);
-
-    const tarjeta = screen.getByRole("article");
-    const filaStock = within(tarjeta).getByText("Stock:").parentElement;
-    expect(filaStock).toHaveTextContent("Stock: No informado");
-    const filaUnidad = within(tarjeta).getByText("Unidad de venta:").parentElement;
-    expect(filaUnidad).toHaveTextContent("Unidad de venta: No informado");
-    expect(within(tarjeta).queryByText(/Con stock|Sin stock/)).toBeNull();
-    expect(within(tarjeta).queryByText(/^Precio por/)).toBeNull();
-  });
-
-  it("muestra stock y precio tal como los informa el proveedor", () => {
+  it("no habilita la acción si el backend autoriza pero no hay carrito conectado", () => {
     render(
       <FichaOfertaEnVivo
         oferta={oferta({
           stock_status: "in_stock",
-          stock_quantity: "6",
-          stock_unit: "box",
           sale_unit: "box",
           price_basis: "per_commercial_unit",
           cart_eligible: true,
@@ -206,13 +190,156 @@ describe("proveedores en vivo en la pantalla principal", () => {
       />,
     );
 
-    expect(screen.getByText("Con stock: 6 cajas (informado por el proveedor)")).toBeInTheDocument();
-    expect(screen.getByText("Precio por unidad de venta")).toBeInTheDocument();
+    expect(screen.getByText("Con stock")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
+    expect(screen.getByText("No disponible para agregar a la cotización.")).toBeInTheDocument();
+  });
+
+  it("habilita la acción solo con elegibilidad del backend y una acción real", () => {
+    const agregar = vi.fn();
+    const ofertaElegible = oferta({
+      stock_status: "in_stock",
+      sale_unit: "box",
+      price_basis: "per_commercial_unit",
+      cart_eligible: true,
+      cart_blockers: [],
+    });
+    render(<FichaOfertaEnVivo oferta={ofertaElegible} proveedor="Farmaloop" onAgregar={agregar} />);
+
+    const boton = screen.getByRole("button", { name: /Agregar a cotización/ });
+    expect(boton).toBeEnabled();
+    expect(screen.queryByText("No disponible para agregar a la cotización.")).toBeNull();
+    boton.click();
+    expect(agregar).toHaveBeenCalledWith(ofertaElegible);
+  });
+
+  it("el contenedor no habilita el carrito sin una acción conectada", () => {
+    renderizar([
+      estado({
+        resultado: resultado({
+          offers: [
+            oferta({
+              cart_eligible: true,
+              cart_blockers: [],
+              sale_unit: "box",
+              price_basis: "per_commercial_unit",
+            }),
+          ],
+          published: [publicado({ cart_eligible: true, cart_blockers: [] })],
+        }),
+      }),
+    ]);
+
+    for (const boton of screen.getAllByRole("button", { name: /Agregar a cotización/ })) {
+      expect(boton).toBeDisabled();
+    }
+  });
+
+  it("el contenedor entrega la acción real con el ítem completo", () => {
+    const agregar = vi.fn();
+    render(
+      <OfertasProveedorEnVivo
+        estados={[
+          estado({
+            resultado: resultado({
+              offers: [oferta({ cart_eligible: true, cart_blockers: [] })],
+              published: [publicado({ cart_eligible: true, cart_blockers: [] })],
+            }),
+          }),
+        ]}
+        consulta="Predual"
+        descubriendo={false}
+        error={null}
+        onAgregar={agregar}
+      />,
+    );
+
+    const botones = screen.getAllByRole("button", { name: /Agregar a cotización/ });
+    expect(botones).toHaveLength(2);
+    const [botonOferta, botonPublicado] = botones as [HTMLButtonElement, HTMLButtonElement];
+    expect(botonOferta).toBeEnabled();
+    expect(botonPublicado).toBeEnabled();
+    botonOferta.click();
+    botonPublicado.click();
+    expect(agregar).toHaveBeenNthCalledWith(1, {
+      tipo: "oferta",
+      oferta: expect.objectContaining({ external_id: "PRE-001", cart_eligible: true }),
+    });
+    expect(agregar).toHaveBeenNthCalledWith(2, {
+      tipo: "publicado",
+      producto: expect.objectContaining({ external_id: "140640", cart_eligible: true }),
+    });
+  });
+
+  it("distingue las tres disponibilidades sin inventar datos", () => {
+    renderizar([
+      estado({
+        resultado: resultado({
+          offers: [
+            oferta({ external_id: "A", name: "Predual A", stock_status: "in_stock" }),
+            oferta({ external_id: "B", name: "Predual B", stock_status: "out_of_stock" }),
+            oferta({ external_id: "C", name: "Predual C", stock_status: "unknown" }),
+          ],
+        }),
+      }),
+    ]);
+
+    const tarjeta = (nombre: string) =>
+      screen.getByRole("article", { name: `Oferta de Farmaloop: ${nombre}` });
+    expect(within(tarjeta("Predual A")).getByText("Con stock")).toBeInTheDocument();
+    expect(within(tarjeta("Predual B")).getByText("Sin stock")).toBeInTheDocument();
+    expect(within(tarjeta("Predual C")).getByText("Stock no informado")).toBeInTheDocument();
+  });
+
+  it("muestra el precio de lista como referencial y no como precio vigente", () => {
+    renderizar([estado({ resultado: resultado({ published: [publicado()] }) })]);
+
+    const tarjeta = screen.getByRole("article", {
+      name: "Producto publicado por Farmaloop: Predual Pamabron 25 mg 12 Comprimidos",
+    });
+    expect(within(tarjeta).getByText("$2.290")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("Precio de lista (referencial)")).toBeInTheDocument();
+    expect(within(tarjeta).queryByText("Precio")).toBeNull();
+    expect(within(tarjeta).getByText("Sin stock")).toBeInTheDocument();
+    expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
     expect(
-      screen.getByText(
-        "Datos comerciales completos; el carrito se habilitará en una etapa posterior.",
-      ),
+      within(tarjeta).getByText("No disponible para agregar a la cotización."),
     ).toBeInTheDocument();
+  });
+
+  it("un publicado directo sin stock se mantiene entre los resultados", () => {
+    renderizar([
+      estado({ resultado: resultado({ offers: [oferta()], published: [publicado()] }) }),
+    ]);
+
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(
+      screen.getByRole("article", {
+        name: "Producto publicado por Farmaloop: Predual Pamabron 25 mg 12 Comprimidos",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("cuando solo hay resultados relacionados informa que no hay coincidencias", () => {
+    renderizar([
+      estado({
+        resultado: resultado({
+          offers: [
+            oferta({
+              external_id: "PREG-001",
+              name: "Pregalex 75 mg",
+              match_relation: "related",
+            }),
+          ],
+          published: [publicado({ match_relation: "related" })],
+        }),
+      }),
+    ]);
+
+    expect(
+      screen.getByText("No encontramos productos que coincidan con tu búsqueda."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("article")).toBeNull();
   });
 
   it("una fuente sin conexión se informa como tal y nunca como «sin resultados»", () => {
@@ -229,8 +356,7 @@ describe("proveedores en vivo en la pantalla principal", () => {
 
     expect(screen.getByText("Sin conexión")).toBeInTheDocument();
     expect(screen.getByText(/Falta configurar la conexión/)).toBeInTheDocument();
-    expect(screen.queryByText(/no devolvió ofertas/)).toBeNull();
-    expect(screen.queryByRole("heading", { name: /Coincidencias directas/ })).toBeNull();
+    expect(screen.queryByText(/No encontramos productos/)).toBeNull();
   });
 
   it("un error de una fuente no oculta el resultado de otra", () => {
@@ -260,11 +386,11 @@ describe("proveedores en vivo en la pantalla principal", () => {
     ).toBeInTheDocument();
   });
 
-  it("una fuente conectada sin ofertas lo dice con la consulta real", () => {
+  it("una fuente conectada sin resultados lo dice con un mensaje simple", () => {
     renderizar([estado({ resultado: resultado({ offers: [], outcome: "no_matches" }) })]);
 
     expect(
-      screen.getByText("Farmaloop respondió y no devolvió ofertas para «Predual»."),
+      screen.getByText("No encontramos productos que coincidan con tu búsqueda."),
     ).toBeInTheDocument();
   });
 
@@ -285,85 +411,6 @@ describe("proveedores en vivo en la pantalla principal", () => {
     expect(screen.getByText("El proveedor informó precios sin IVA.")).toBeInTheDocument();
     expect(screen.queryByText(/descartad/i)).toBeNull();
     expect(screen.queryByText(/no se pudieron interpretar/)).toBeNull();
-  });
-
-  it("muestra un producto publicado sin precio vigente como coincidencia directa y sin habilitar el carrito", () => {
-    renderizar([
-      estado({ resultado: resultado({ offers: [oferta()], published: [publicado()] }) }),
-    ]);
-
-    const directas = screen.getByRole("heading", { name: /Coincidencias directas/ });
-    expect(directas).toHaveTextContent("(2)");
-
-    const tarjeta = screen.getByRole("article", {
-      name: "Producto publicado por Farmaloop: Predual Pamabron 25 mg 12 Comprimidos",
-    });
-    expect(within(tarjeta).getByText("Sin stock (informado por el proveedor)")).toBeInTheDocument();
-    expect(within(tarjeta).getByText("Sin precio vigente")).toBeInTheDocument();
-    expect(within(tarjeta).getByText("$2.290")).toBeInTheDocument();
-    expect(within(tarjeta).getByText(/Precio de lista referencial/)).toHaveTextContent(
-      "Precio de lista referencial: $2.290",
-    );
-    expect(
-      within(tarjeta).getByText("Sin precio comercial vigente: no se puede cotizar."),
-    ).toBeInTheDocument();
-    expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
-    expect(
-      within(tarjeta).getByText(
-        /No se puede agregar: el proveedor informa que no está disponible para la venta; no hay precio comercial vigente/,
-      ),
-    ).toBeInTheDocument();
-    // No se presenta como oferta comercial.
-    expect(
-      screen.queryByRole("article", {
-        name: "Oferta de Farmaloop: Predual Pamabron 25 mg 12 Comprimidos",
-      }),
-    ).toBeNull();
-  });
-
-  it("distingue «Sin stock» de «Stock no informado» en un producto publicado", () => {
-    renderizar([
-      estado({
-        resultado: resultado({
-          published: [publicado({ stock_status: "unknown", reference_price: null })],
-        }),
-      }),
-    ]);
-
-    const tarjeta = screen.getByRole("article", { name: /Producto publicado por Farmaloop/ });
-    const filaDisponibilidad = within(tarjeta).getByText("Disponibilidad:").parentElement;
-    expect(filaDisponibilidad).toHaveTextContent("Disponibilidad: No informado");
-    expect(within(tarjeta).getByText(/Precio de lista referencial/)).toHaveTextContent(
-      "Precio de lista referencial: No informado",
-    );
-    expect(within(tarjeta).queryByText(/Sin stock/)).toBeNull();
-  });
-
-  it("mantiene separados los publicados directos de los relacionados y no niega los resultados", () => {
-    renderizar([
-      estado({
-        resultado: resultado({
-          published: [
-            publicado(),
-            publicado({
-              external_id: "8127",
-              name: "Pedialyte 60 Manzana x 500 ml Solución Oral",
-              match_relation: "related",
-              stock_status: "unknown",
-              reference_price: null,
-            }),
-          ],
-        }),
-      }),
-    ]);
-
-    expect(screen.getByRole("heading", { name: /Coincidencias directas/ })).toHaveTextContent(
-      "(1)",
-    );
-    expect(screen.getByRole("heading", { name: /Resultados relacionados/ })).toHaveTextContent(
-      "(1)",
-    );
-    expect(screen.queryByText(/no devolvió ofertas/)).toBeNull();
   });
 
   it("no renderiza nada mientras no hay fuentes ni consulta en curso", () => {

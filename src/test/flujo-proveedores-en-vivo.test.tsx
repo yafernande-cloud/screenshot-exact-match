@@ -330,16 +330,19 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     expect(await screen.findByText("Predual Salcobrand")).toBeInTheDocument();
     expect(await screen.findByText("Predual Cruz Verde")).toBeInTheDocument();
 
-    // Proveedores: dos coincidencias directas y un resultado relacionado.
-    expect(screen.getByRole("heading", { name: /Coincidencias directas/ })).toHaveTextContent(
-      "(2)",
-    );
-    expect(screen.getByRole("heading", { name: /Resultados relacionados/ })).toHaveTextContent(
-      "(1)",
-    );
+    // Proveedores: solo las dos coincidencias directas; el relacionado no se presenta.
     expect(
       screen.getByRole("article", { name: "Oferta de Farmaloop: Predual 30 mg comprimidos" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("article", { name: "Oferta de Farmaloop: Predual 30 mg x 30" }),
+    ).toBeInTheDocument();
+    const tarjetasProveedor = screen
+      .getAllByRole("article")
+      .filter((tarjeta) => (tarjeta.getAttribute("aria-label") ?? "").startsWith("Oferta de "));
+    expect(tarjetasProveedor).toHaveLength(2);
+    expect(screen.queryByText("Pregalex 75 mg")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Resultados relacionados/ })).toBeNull();
     expect(
       screen
         .getAllByRole("button", { name: /Agregar a cotización/ })

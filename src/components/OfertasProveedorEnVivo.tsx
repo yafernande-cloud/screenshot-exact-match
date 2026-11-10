@@ -2,8 +2,9 @@
  * Bloque «Proveedores en vivo» de la pantalla principal.
  *
  * Cada fuente tiene su propio estado: una que no responde no oculta ni retrasa a las demás, y una
- * sin conexión configurada nunca se presenta como «sin resultados». Las coincidencias directas se
- * separan de los resultados relacionados porque el nombre publicado no confirma la consulta.
+ * sin conexión configurada nunca se presenta como «sin resultados». Solo se muestran las
+ * coincidencias directas que confirman la consulta; los resultados que el proveedor devuelve sin
+ * confirmarla se conservan en la respuesta pero no se presentan como productos encontrados.
  */
 
 import type { ReactNode } from "react";
@@ -69,58 +70,54 @@ function Cargando({ children }: { children: ReactNode }) {
   );
 }
 
-function GrupoResultados({
-  titulo,
-  descripcion,
+function ListaResultados({
   items,
   proveedor,
+  onAgregar,
 }: {
-  titulo: string;
-  descripcion?: string;
   items: ItemEnVivo[];
   proveedor: string;
+  onAgregar?: ((item: ItemEnVivo) => void) | undefined;
 }) {
-  if (items.length === 0) return null;
   return (
-    <div className="mt-4">
-      <h5 className="text-sm font-semibold">
-        {titulo} <span className="text-muted-foreground">({items.length})</span>
-      </h5>
-      {descripcion && <p className="mt-1 text-xs text-muted-foreground">{descripcion}</p>}
-      <div className="mt-3 space-y-3">
-        {items.map((item) =>
-          item.tipo === "oferta" ? (
-            <FichaOfertaEnVivo
-              key={`oferta-${item.oferta.external_id}-${item.oferta.name}`}
-              oferta={item.oferta}
-              proveedor={proveedor}
-            />
-          ) : (
-            <FichaProductoPublicadoEnVivo
-              key={`publicado-${item.producto.external_id}-${item.producto.name}`}
-              producto={item.producto}
-              proveedor={proveedor}
-            />
-          ),
-        )}
-      </div>
+    <div className="mt-3 space-y-3">
+      {items.map((item) =>
+        item.tipo === "oferta" ? (
+          <FichaOfertaEnVivo
+            key={`oferta-${item.oferta.external_id}-${item.oferta.name}`}
+            oferta={item.oferta}
+            proveedor={proveedor}
+            onAgregar={onAgregar ? (oferta) => onAgregar({ tipo: "oferta", oferta }) : undefined}
+          />
+        ) : (
+          <FichaProductoPublicadoEnVivo
+            key={`publicado-${item.producto.external_id}-${item.producto.name}`}
+            producto={item.producto}
+            proveedor={proveedor}
+            onAgregar={
+              onAgregar ? (producto) => onAgregar({ tipo: "publicado", producto }) : undefined
+            }
+          />
+        ),
+      )}
     </div>
   );
 }
 
 function BloqueFuente({
   estado,
-  consulta,
+  onAgregar,
 }: {
   estado: EstadoFuenteEnVivo;
-  consulta: string | null;
+  onAgregar?: ((item: ItemEnVivo) => void) | undefined;
 }) {
   const { fuente, resultado, cargando, error } = estado;
   const estadoConexion = resultado?.state ?? fuente.state;
   const motivo = resultado?.reason ?? fuente.reason;
   const ultimaConexion = fechaHora(fuente.lastSuccessAt);
-  const consultaVisible = consulta?.trim() || resultado?.query || "";
   const advertencias = resultado ? advertenciasVisibles(resultado.warnings) : [];
+  // Solo lo que confirma la consulta; los relacionados se conservan en la respuesta del backend.
+  const directas = resultado ? agruparResultados(resultado).directas : [];
 
   return (
     <div className="rounded-2xl border p-4" data-source-id={fuente.sourceId}>
@@ -131,7 +128,6 @@ function BloqueFuente({
         >
           {ETIQUETA_ESTADO[estadoConexion]}
         </span>
-        <span className="text-xs text-muted-foreground">{fuente.sourceName}</span>
         {ultimaConexion && (
           <span className="text-xs text-muted-foreground">· última respuesta {ultimaConexion}</span>
         )}
@@ -168,38 +164,19 @@ function BloqueFuente({
             <Aviso>{mensajeMotivo(motivo, estadoConexion)}</Aviso>
           )}
 
-          {estadoConexion === "connected" &&
-            resultado.offers.length === 0 &&
-            resultado.published.length === 0 && (
-              <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
-                {fuente.supplierName} respondió
-                {consultaVisible ? ` y no devolvió ofertas para «${consultaVisible}»` : ""}.
-              </p>
-            )}
+          {estadoConexion === "connected" && directas.length === 0 && (
+            <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+              No encontramos productos que coincidan con tu búsqueda.
+            </p>
+          )}
 
-          {resultado.offers.length + resultado.published.length > 0 &&
-            (() => {
-              const { directas, relacionadas } = agruparResultados(resultado);
-              return (
-                <>
-                  <GrupoResultados
-                    titulo="Coincidencias directas"
-                    items={directas}
-                    proveedor={fuente.supplierName}
-                  />
-                  <GrupoResultados
-                    titulo="Resultados relacionados"
-                    descripcion={
-                      directas.length === 0
-                        ? "No hubo coincidencias directas. Estos resultados no confirman la consulta."
-                        : "El nombre publicado no confirma la consulta; no son coincidencias directas."
-                    }
-                    items={relacionadas}
-                    proveedor={fuente.supplierName}
-                  />
-                </>
-              );
-            })()}
+          {directas.length > 0 && (
+            <ListaResultados
+              items={directas}
+              proveedor={fuente.supplierName}
+              onAgregar={onAgregar}
+            />
+          )}
         </>
       )}
     </div>
@@ -211,11 +188,17 @@ export function OfertasProveedorEnVivo({
   consulta,
   descubriendo,
   error,
+  onAgregar,
 }: {
   estados: EstadoFuenteEnVivo[];
   consulta: string | null;
   descubriendo: boolean;
   error: string | null;
+  /**
+   * Acción real de agregar al carrito. Mientras no exista, «Agregar a cotización» queda deshabilitado
+   * aunque el backend marque el producto como elegible.
+   */
+  onAgregar?: ((item: ItemEnVivo) => void) | undefined;
 }) {
   if (!descubriendo && !error && estados.length === 0) return null;
 
@@ -227,14 +210,13 @@ export function OfertasProveedorEnVivo({
         {consulta && <span className="text-xs text-muted-foreground">· {consulta}</span>}
       </div>
       <p className="text-xs text-muted-foreground">
-        Consulta directa al proveedor. Se muestra solo lo que el proveedor informa; los campos
-        ausentes dicen «No informado». Las ofertas no se guardan en el catálogo.
+        Precios y disponibilidad informados por el proveedor en el momento de la consulta.
       </p>
 
       {descubriendo && estados.length === 0 && <Cargando>Consultando proveedores…</Cargando>}
       {error && <Aviso>{error}</Aviso>}
       {estados.map((estado) => (
-        <BloqueFuente key={estado.fuente.sourceId} estado={estado} consulta={consulta} />
+        <BloqueFuente key={estado.fuente.sourceId} estado={estado} onAgregar={onAgregar} />
       ))}
     </div>
   );

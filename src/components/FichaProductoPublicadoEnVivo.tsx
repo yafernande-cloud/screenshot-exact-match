@@ -1,32 +1,22 @@
 /**
  * Tarjeta de una publicación del catálogo sin precio comercial vigente.
  *
- * El producto existe en el portal, pero no se puede cotizar: no tiene precio de venta, así que
- * `reference_price` (precio de lista) se muestra **solo** como referencial y nunca con el estilo
- * de un precio vigente. La disponibilidad sale de `stock_status` y no se inventa: un dato ausente
- * queda «No informado». El botón de agregar permanece deshabilitado y los motivos salen de
- * `cart_blockers`.
+ * El producto existe en el portal pero no se puede cotizar. Se muestra con la misma estructura
+ * que una oferta —imagen, nombre, laboratorio y código, disponibilidad y acción— y el precio de
+ * lista queda rotulado como referencial para que nunca se lea como un precio vigente.
  */
 
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
 import { formatearDinero } from "@/lib/catalogo";
-import {
-  etiquetaBloqueador,
-  etiquetaRelacion,
-  type ProductoPublicadoEnVivo,
-} from "@/lib/proveedores-en-vivo";
+import type { ProductoPublicadoEnVivo } from "@/lib/proveedores-en-vivo";
 
-/** Texto de disponibilidad: solo lo que el proveedor informó. */
-function textoDisponibilidad(producto: ProductoPublicadoEnVivo): string {
-  if (producto.stock_status === "out_of_stock") {
-    return "Sin stock (informado por el proveedor)";
-  }
-  if (producto.stock_status === "in_stock") {
-    return "Con stock (informado por el proveedor)";
-  }
-  return "No informado";
+/** Disponibilidad con el mismo vocabulario en toda la pantalla. */
+function textoDisponibilidad(estado: ProductoPublicadoEnVivo["stock_status"]): string {
+  if (estado === "in_stock") return "Con stock";
+  if (estado === "out_of_stock") return "Sin stock";
+  return "Stock no informado";
 }
 
 function urlPublicada(valor: string | null): string | null {
@@ -52,27 +42,22 @@ function iniciales(nombre: string): string {
 export function FichaProductoPublicadoEnVivo({
   producto,
   proveedor,
+  onAgregar,
 }: {
   producto: ProductoPublicadoEnVivo;
   proveedor: string;
+  /** Acción real del carrito. Sin ella el botón nunca se habilita, aunque el backend autorice. */
+  onAgregar?: ((producto: ProductoPublicadoEnVivo) => void) | undefined;
 }) {
   const [imagenFallida, setImagenFallida] = useState(false);
-  const referencia = producto.reference_price ? formatearDinero(producto.reference_price) : null;
   const imagen = urlPublicada(producto.image_url);
-  const enlace = urlPublicada(producto.product_url);
-  const bloqueos = producto.cart_blockers.map(etiquetaBloqueador);
-
-  const datos: Array<[string, string]> = [
-    ["Proveedor", proveedor],
-    ["Laboratorio", producto.laboratory?.trim() || "No informado"],
-    ["Presentación", producto.presentation?.trim() || "No informado"],
-    ["Disponibilidad", textoDisponibilidad(producto)],
-    ["Código en el proveedor", producto.external_id],
-  ];
+  const laboratorio = producto.laboratory?.trim() || "Laboratorio no informado";
+  const referencia = producto.reference_price ? formatearDinero(producto.reference_price) : null;
+  const puedeAgregar = producto.cart_eligible && Boolean(onAgregar);
 
   return (
     <article
-      className="@container rounded-2xl border border-dashed p-4"
+      className="@container rounded-2xl border p-4"
       aria-label={`Producto publicado por ${proveedor}: ${producto.name}`}
     >
       <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-start @2xl:justify-between">
@@ -95,57 +80,30 @@ export function FichaProductoPublicadoEnVivo({
             </div>
           )}
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="font-medium">{producto.name}</h4>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                {etiquetaRelacion(producto.match_relation)}
-              </span>
-              <span className="rounded-full border border-amber-500/50 px-2 py-0.5 text-xs text-amber-700">
-                Sin precio vigente
-              </span>
-            </div>
-            <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm @md:grid-cols-2 @5xl:grid-cols-3">
-              {datos.map(([etiqueta, valor]) => (
-                <div key={etiqueta}>
-                  <span className="text-muted-foreground">{etiqueta}: </span>
-                  <span className="text-foreground">{valor}</span>
-                </div>
-              ))}
-            </dl>
-            {enlace && (
-              <a
-                href={enlace}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-block text-xs text-brand-blue hover:underline"
-              >
-                Ver publicación del proveedor
-              </a>
-            )}
+            <h4 className="font-medium">{producto.name}</h4>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {laboratorio} · Código {producto.external_id}
+            </p>
+            <p className="mt-1 text-sm">{textoDisponibilidad(producto.stock_status)}</p>
           </div>
         </div>
 
         <div className="flex shrink-0 flex-col items-start gap-2 border-t pt-3 @2xl:ml-auto @2xl:items-end @2xl:border-t-0 @2xl:pt-0 @2xl:text-right">
           <div>
-            <p className="text-sm text-muted-foreground">
-              Precio de lista referencial:{" "}
-              <span className="text-foreground">{referencia ?? "No informado"}</span>
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Sin precio comercial vigente: no se puede cotizar.
-            </p>
+            <p className="text-lg font-medium">{referencia ?? "Sin precio de lista informado"}</p>
+            <p className="text-xs text-muted-foreground">Precio de lista (referencial)</p>
           </div>
           <button
             type="button"
-            disabled
-            title="Este producto no tiene precio comercial vigente"
-            className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50"
+            disabled={!puedeAgregar}
+            onClick={() => onAgregar?.(producto)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
           >
             <ShoppingCart className="h-3.5 w-3.5" /> Agregar a cotización
           </button>
-          {bloqueos.length > 0 && (
+          {!puedeAgregar && (
             <p className="max-w-xs text-xs text-muted-foreground">
-              No se puede agregar: {bloqueos.join("; ")}.
+              No disponible para agregar a la cotización.
             </p>
           )}
         </div>
