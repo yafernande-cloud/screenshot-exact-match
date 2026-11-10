@@ -15,6 +15,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
+import { OfertasProveedorEnVivo } from "@/components/OfertasProveedorEnVivo";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
   buscarOferta,
@@ -76,6 +77,12 @@ import { TarjetaAhumada } from "@/components/TarjetaAhumada";
 import { TarjetaCruzVerde } from "@/components/TarjetaCruzVerde";
 import { TarjetaSalcobrand } from "@/components/TarjetaSalcobrand";
 import { SeccionCotizaciones, type CotizacionAcciones } from "@/components/MiCotizacion";
+import {
+  buscarProveedorEnVivo,
+  descubrirProveedoresEnVivo,
+  mensajeDeErrorProveedor,
+  type EstadoFuenteEnVivo,
+} from "@/lib/proveedores-en-vivo";
 import { MenuPrincipal } from "@/components/MenuPrincipal";
 import {
   AlertDialog,
@@ -160,6 +167,11 @@ function Index() {
     "inicial" | "cargando" | "listo" | "error"
   >("inicial");
   const [errorCruzVerde, setErrorCruzVerde] = useState<string | null>(null);
+  // Proveedores en vivo: cada fuente conserva su propio estado y nunca bloquea al catálogo ni a
+  // las cadenas. Antes de la primera búsqueda no se muestra nada.
+  const [estadosVivo, setEstadosVivo] = useState<EstadoFuenteEnVivo[]>([]);
+  const [descubriendoVivo, setDescubriendoVivo] = useState(false);
+  const [errorVivo, setErrorVivo] = useState<string | null>(null);
   // Bandeja real: el backend es la única fuente; nunca se vuelve a los datos de demostración.
   const [faltantes, setFaltantes] = useState<Faltante[]>([]);
   const [estadoFaltantes, setEstadoFaltantes] = useState<"cargando" | "listo" | "error">(
@@ -329,6 +341,53 @@ function Index() {
     }
   };
 
+  const ejecutarProveedoresEnVivo = async (texto: string, seq: number) => {
+    setDescubriendoVivo(true);
+    setEstadosVivo([]);
+    setErrorVivo(null);
+    try {
+      const fuentes = await descubrirProveedoresEnVivo();
+      if (seq !== busquedaSeq.current) return;
+      setEstadosVivo(
+        fuentes.map((fuente) => ({
+          fuente,
+          cargando: fuente.consultable,
+          resultado: null,
+          error: fuente.error,
+        })),
+      );
+      setDescubriendoVivo(false);
+
+      await Promise.all(
+        fuentes
+          .filter((fuente) => fuente.consultable)
+          .map(async (fuente) => {
+            const actualizar = (cambio: Partial<EstadoFuenteEnVivo>) => {
+              setEstadosVivo((previos) =>
+                previos.map((estado) =>
+                  estado.fuente.sourceId === fuente.sourceId
+                    ? { ...estado, ...cambio, cargando: false }
+                    : estado,
+                ),
+              );
+            };
+            try {
+              const resultado = await buscarProveedorEnVivo(fuente.sourceId, texto);
+              if (seq !== busquedaSeq.current) return;
+              actualizar({ resultado, error: null });
+            } catch (error) {
+              if (seq !== busquedaSeq.current) return;
+              actualizar({ error: mensajeDeErrorProveedor(error) });
+            }
+          }),
+      );
+    } catch (error) {
+      if (seq !== busquedaSeq.current) return;
+      setErrorVivo(mensajeDeErrorProveedor(error));
+      setDescubriendoVivo(false);
+    }
+  };
+
   const ejecutarBusqueda = async (texto: string) => {
     const t = texto.trim();
     const seq = ++busquedaSeq.current;
@@ -344,6 +403,9 @@ function Index() {
     setErrorSalcobrand(null);
     setFuenteCruzVerde(null);
     setErrorCruzVerde(null);
+    setEstadosVivo([]);
+    setDescubriendoVivo(false);
+    setErrorVivo(null);
 
     if (t.length < 3) {
       const corto = t !== "";
@@ -361,8 +423,9 @@ function Index() {
     setEstadoCadenas("cargando");
     setEstadoCadenasSalcobrand("cargando");
     setEstadoCadenasCruzVerde("cargando");
-    // Las cadenas arrancan cuando el catálogo ya respondió: así no hay dos solicitudes autenticadas
-    // compitiendo por la misma renovación de sesión al mismo tiempo.
+    // Las fuentes externas arrancan cuando el catálogo ya respondió: así no hay solicitudes
+    // autenticadas compitiendo por la misma renovación de sesión al mismo tiempo. Cada cadena y
+    // cada proveedor conserva su estado: un fallo de uno no altera a los demás.
     let cadenaIniciada = false;
     const iniciarCadena = () => {
       if (cadenaIniciada) return;
@@ -370,6 +433,7 @@ function Index() {
       void ejecutarAhumada(t, seq);
       void ejecutarSalcobrand(t, seq);
       void ejecutarCruzVerde(t, seq);
+      void ejecutarProveedoresEnVivo(t, seq);
     };
     try {
       const data = await buscarCatalogo(t);
@@ -502,7 +566,7 @@ function Index() {
             </div>
           </form>
           <p className="mt-4 text-xs text-primary-foreground/80">
-            Faltantes conectados a Telegram · catálogo de proveedores en demostración
+            Faltantes conectados a Telegram · ofertas de proveedores en vivo y de catálogo
           </p>
         </section>
 
@@ -626,6 +690,13 @@ function Index() {
             </p>
           )}
 
+          <OfertasProveedorEnVivo
+            estados={estadosVivo}
+            consulta={consulta || null}
+            descubriendo={descubriendoVivo}
+            error={errorVivo}
+          />
+
           {estadoOfertas === "inicial" && (
             <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
               Busca un producto para ver las ofertas de proveedores.
@@ -674,9 +745,9 @@ function Index() {
                 </p>
               )}
               <p className="mb-5 text-sm text-muted-foreground">
-                Ofertas informadas por cada proveedor en el catálogo del servidor (datos de
-                demostración). Cada tarjeta indica el artículo al que corresponde; los campos que el
-                proveedor no informa se muestran como «No informado».
+                Ofertas guardadas en el catálogo del servidor. Cada tarjeta indica el artículo al
+                que corresponde y su origen; los campos que el proveedor no informa se muestran como
+                «No informado».
               </p>
               <div className="space-y-4">
                 {ofertas.map(({ oferta, articulo }) => (
