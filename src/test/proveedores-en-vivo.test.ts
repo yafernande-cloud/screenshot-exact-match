@@ -166,6 +166,35 @@ describe("descubrimiento de proveedores en vivo", () => {
     expect(fuente.consultable).toBe(false);
   });
 
+  it("una lista cargada no aparece en proveedores en vivo ni pide un perfil", async () => {
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path.startsWith("/api/v1/sources?")) {
+        return Promise.resolve({
+          sources: [
+            fuenteApi(),
+            fuenteApi({
+              source_id: "src-lista",
+              name: "Distribuidora Andes",
+              supplier_id: "sup-andes",
+              mode: "manual_import",
+            }),
+          ],
+        });
+      }
+      return Promise.resolve({ profile: perfil() });
+    });
+
+    const fuentes = await descubrirProveedoresEnVivo();
+
+    expect(fuentes).toHaveLength(1);
+    expect(fuentes[0]?.sourceId).toBe("src-1");
+    expect(apiRequestMock).not.toHaveBeenCalledWith(
+      "/api/v1/sources/src-lista/connector-profile",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("un perfil ilegible no oculta las demás fuentes", async () => {
     apiRequestMock.mockImplementation((path: string) => {
       if (path.startsWith("/api/v1/sources?")) {

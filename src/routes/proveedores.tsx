@@ -38,6 +38,7 @@ import {
   etiquetaCapacidad,
   etiquetaEstadoFuente,
   etiquetaEstadoPortal,
+  etiquetaEstadoRevision,
   etiquetaTipoFuente,
   etiquetaUnidad,
   listarFuentes,
@@ -1718,6 +1719,7 @@ function PreciosImportados({ proveedor, refresco }: { proveedor: Proveedor; refr
                     <th className="px-3 py-2 font-medium">Código proveedor</th>
                     <th className="px-3 py-2 font-medium">Precio</th>
                     <th className="px-3 py-2 font-medium">Unidad</th>
+                    <th className="px-3 py-2 font-medium">Revisión</th>
                     <th className="px-3 py-2 font-medium">Fuente</th>
                     <th className="px-3 py-2 font-medium">Observado</th>
                   </tr>
@@ -1736,6 +1738,22 @@ function PreciosImportados({ proveedor, refresco }: { proveedor: Proveedor; refr
                         </span>
                       </td>
                       <td className="px-3 py-2">{etiquetaUnidad(oferta.sale_unit)}</td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={
+                            oferta.review_status === "needs_review"
+                              ? "text-amber-700"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {etiquetaEstadoRevision(oferta.review_status)}
+                        </span>
+                        {oferta.review_status === "needs_review" && oferta.notes && (
+                          <span className="block text-xs text-muted-foreground">
+                            {oferta.notes}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground">{oferta.source_name}</td>
                       <td className="px-3 py-2 text-muted-foreground">
                         {fechaCorta(oferta.observed_at)}

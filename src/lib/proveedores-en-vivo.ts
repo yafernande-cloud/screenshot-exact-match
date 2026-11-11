@@ -236,8 +236,12 @@ export async function descubrirProveedoresEnVivo(): Promise<FuenteEnVivo[]> {
     "No pudimos cargar los proveedores.",
   );
 
+  // Una lista cargada (Excel/CSV) no se consulta en vivo: se muestra en su propia sección, con
+  // sus precios importados. Consultarle un perfil de conector solo produciría «sin conexión».
+  const proveedores = sources.filter((source) => source.mode === "api");
+
   const perfiles = await Promise.all(
-    sources.map(async (source) => {
+    proveedores.map(async (source) => {
       try {
         const { profile } = await apiRequest<{ profile: PerfilConectorApi }>(
           `/api/v1/sources/${encodeURIComponent(source.source_id)}/connector-profile`,

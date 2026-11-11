@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routeTree } from "@/routeTree.gen";
 import type { ChainSource } from "@/lib/cadenas";
 import type { Article, ArticleDetail, Offer, SearchResponse, SearchResult } from "@/lib/catalogo";
+import type { Fuente, OfertaImportada } from "@/lib/proveedores-api";
 import type { FuenteEnVivo, ResultadoEnVivo } from "@/lib/proveedores-en-vivo";
 
 /**
@@ -16,17 +17,27 @@ import type { FuenteEnVivo, ResultadoEnVivo } from "@/lib/proveedores-en-vivo";
  */
 const buscarCatalogoMock = vi.hoisted(() => vi.fn());
 const obtenerArticuloMock = vi.hoisted(() => vi.fn());
+const obtenerBusquedaMock = vi.hoisted(() => vi.fn());
 const buscarAhumadaMock = vi.hoisted(() => vi.fn());
 const buscarSalcobrandMock = vi.hoisted(() => vi.fn());
 const buscarCruzVerdeMock = vi.hoisted(() => vi.fn());
 const descubrirMock = vi.hoisted(() => vi.fn());
 const buscarEnVivoMock = vi.hoisted(() => vi.fn());
 const listarFaltantesMock = vi.hoisted(() => vi.fn());
+const listarFuentesMock = vi.hoisted(() => vi.fn());
+const listarOfertasMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/catalogo", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/catalogo")>()),
   buscarCatalogo: buscarCatalogoMock,
   obtenerArticulo: obtenerArticuloMock,
+  obtenerBusqueda: obtenerBusquedaMock,
+}));
+
+vi.mock("@/lib/proveedores-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/proveedores-api")>()),
+  listarFuentes: listarFuentesMock,
+  listarOfertasProveedor: listarOfertasMock,
 }));
 
 vi.mock("@/lib/cadenas", async (importOriginal) => ({
@@ -282,6 +293,79 @@ function cadena(chain: ChainSource["chain"], nombre: string): ChainSource {
   };
 }
 
+function fuenteLista(over: Partial<Fuente> = {}): Fuente {
+  return {
+    source_id: "src-andes",
+    name: "Distribuidora Andes",
+    kind: "supplier",
+    supplier_id: "sup-andes",
+    mode: "manual_import",
+    capabilities: ["price"],
+    enabled: true,
+    status: "ok",
+    has_secret: false,
+    last_success_at: "2026-11-10T09:00:00Z",
+    last_error: null,
+    version: 1,
+    created_at: "2026-11-01T00:00:00Z",
+    updated_at: "2026-11-10T09:00:00Z",
+    ...over,
+  };
+}
+
+function ofertaLista(over: Partial<OfertaImportada> = {}): OfertaImportada {
+  return {
+    offer_id: "of-lista-1",
+    source_id: "src-andes",
+    source_name: "Distribuidora Andes",
+    source_mode: "manual_import",
+    external_id: "AND-100",
+    external_name: "Paracetamol 500 mg",
+    trade_item_id: "art-paracetamol",
+    trade_item_name: "Paracetamol 500 mg comprimidos",
+    price_amount: "12990",
+    currency: "CLP",
+    price_basis: "per_commercial_unit",
+    sale_unit: "box",
+    sale_unit_text: null,
+    pack_units_per_commercial_unit: null,
+    pack_base_unit: null,
+    stock_status: "unknown",
+    stock_quantity: null,
+    stock_unit: null,
+    review_status: "accepted",
+    notes: null,
+    valid_from: null,
+    valid_to: null,
+    is_current: true,
+    fresh_until: "2099-01-01T00:00:00Z",
+    is_stale: false,
+    observed_at: "2026-11-10T09:00:00Z",
+    imported_at: "2026-11-10T09:00:00Z",
+    ...over,
+  };
+}
+
+const RESULTADO_PARACETAMOL: SearchResult = {
+  article_id: "art-paracetamol",
+  display_name: "Paracetamol 500 mg comprimidos",
+  identity_summary: "Paracetamol 500 mg · 20 comprimidos",
+  presentation: {},
+  match: { level: "needs_review", causes: [] },
+  relation: "needs_review",
+  offer_count: 0,
+  supplier_count: 0,
+  lowest_verified_price: null,
+  sources: [],
+};
+
+const CATALOGO_CON_LISTA: SearchResponse = {
+  ...CATALOGO,
+  search_id: "busq-listas",
+  query: { original_text: "Paracetamol", filters: {}, interpretation: {} },
+  results: [RESULTADO_PARACETAMOL],
+};
+
 function renderizarPantalla() {
   const router = createRouter({
     routeTree,
@@ -308,6 +392,10 @@ beforeEach(() => {
   buscarCruzVerdeMock.mockResolvedValue(cadena("cruz_verde", "Predual Cruz Verde"));
   descubrirMock.mockResolvedValue([fuente()]);
   buscarEnVivoMock.mockResolvedValue(resultado());
+  // Por defecto no hay listas cargadas: la sección nueva no altera los flujos ya probados.
+  listarFuentesMock.mockResolvedValue([]);
+  listarOfertasMock.mockResolvedValue([]);
+  obtenerBusquedaMock.mockRejectedValue(new Error("sin páginas adicionales"));
 });
 
 describe("búsqueda de Predual con proveedores en vivo", () => {
@@ -387,5 +475,127 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     expect(screen.getByText(/Falta configurar la conexión/)).toBeInTheDocument();
     expect(buscarEnVivoMock).toHaveBeenCalledTimes(1);
     expect(buscarEnVivoMock).toHaveBeenCalledWith("src-farmaloop", "Predual");
+  });
+});
+
+describe("precios de listas cargadas en la búsqueda", () => {
+  it("muestra los precios importados con su estado de revisión y sin inventar ofertas", async () => {
+    buscarCatalogoMock.mockResolvedValue(CATALOGO_CON_LISTA);
+    listarFuentesMock.mockResolvedValue([fuenteLista()]);
+    listarOfertasMock.mockResolvedValue([
+      ofertaLista({ review_status: "needs_review", notes: "Entrega en 48 horas" }),
+    ]);
+
+    await renderizarPantalla();
+    await buscar("Paracetamol");
+
+    expect(
+      await screen.findByRole("heading", { name: "Precios de listas cargadas" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Pendiente de revisión")).toBeInTheDocument();
+    expect(screen.getByText(/Entrega en 48 horas/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("article", {
+        name: "Precio de lista de Distribuidora Andes: Paracetamol 500 mg comprimidos",
+      }),
+    ).toHaveTextContent(/12\.990/);
+    // El catálogo no tiene ofertas verificadas para el artículo, pero el precio importado existe:
+    // no se informa una búsqueda sin ofertas.
+    expect(screen.queryByText(/No encontramos ofertas de proveedores/)).toBeNull();
+    // Un precio importado todavía no entra al carrito.
+    expect(
+      screen
+        .getAllByRole("button", { name: /Agregar a cotización/ })
+        .every((boton) => (boton as HTMLButtonElement).disabled),
+    ).toBe(true);
+    expect(obtenerBusquedaMock).not.toHaveBeenCalled();
+  });
+
+  it("revisa páginas siguientes del catálogo para encontrar un producto importado", async () => {
+    buscarCatalogoMock.mockResolvedValue({ ...CATALOGO_CON_LISTA, next_cursor: "pagina-2" });
+    listarFuentesMock.mockResolvedValue([fuenteLista()]);
+    listarOfertasMock.mockResolvedValue([
+      ofertaLista({
+        offer_id: "of-exclusivo",
+        external_id: "AND-EXC-1",
+        trade_item_id: "art-exclusivo-andes",
+        trade_item_name: "Jarabe exclusivo Andes",
+        price_amount: "4590",
+      }),
+    ]);
+    obtenerBusquedaMock.mockResolvedValue({
+      ...CATALOGO_CON_LISTA,
+      results: [
+        {
+          ...RESULTADO_PARACETAMOL,
+          article_id: "art-exclusivo-andes",
+          display_name: "Jarabe exclusivo Andes",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    await renderizarPantalla();
+    await buscar("Paracetamol");
+
+    expect(await screen.findByText(/Jarabe exclusivo Andes/)).toBeInTheDocument();
+    expect(screen.getByText(/4\.590/)).toBeInTheDocument();
+    expect(obtenerBusquedaMock).toHaveBeenCalledWith("busq-listas", "pagina-2", 50);
+  });
+
+  it("un error en la lista no oculta a Farmaloop en vivo", async () => {
+    buscarCatalogoMock.mockResolvedValue(CATALOGO_CON_LISTA);
+    listarFuentesMock.mockResolvedValue([fuenteLista()]);
+    listarOfertasMock.mockRejectedValue({ status: 500 });
+
+    await renderizarPantalla();
+    await buscar("Paracetamol");
+
+    expect(
+      await screen.findByText("No pudimos cargar los precios de la lista de Distribuidora Andes."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("article", { name: "Oferta de Farmaloop: Predual 30 mg comprimidos" }),
+    ).toBeInTheDocument();
+  });
+
+  it("no repite la oferta de catálogo que ya muestra una lista cargada", async () => {
+    buscarCatalogoMock.mockResolvedValue({
+      ...CATALOGO,
+      search_id: "busq-listas",
+      results: [{ ...RESULTADO_PARACETAMOL, offer_count: 1, supplier_count: 1 }],
+    });
+    obtenerArticuloMock.mockResolvedValue({
+      ...DETALLE_CATALOGO,
+      article: {
+        ...ARTICULO,
+        article_id: "art-paracetamol",
+        display_name: "Paracetamol 500 mg comprimidos",
+      },
+      offers: [
+        {
+          ...OFERTA_CATALOGO,
+          offer_id: "of-e3",
+          article_id: "art-paracetamol",
+          provenance: {
+            ...OFERTA_CATALOGO.provenance,
+            source: { source_id: "src-andes", name: "Distribuidora Andes", mode: "manual_import" },
+          },
+        },
+      ],
+    });
+    listarFuentesMock.mockResolvedValue([fuenteLista()]);
+    listarOfertasMock.mockResolvedValue([ofertaLista()]);
+
+    await renderizarPantalla();
+    await buscar("Paracetamol");
+
+    expect(
+      await screen.findByRole("article", {
+        name: "Precio de lista de Distribuidora Andes: Paracetamol 500 mg comprimidos",
+      }),
+    ).toBeInTheDocument();
+    // La misma oferta guardada en E3 no se vuelve a mostrar como tarjeta de catálogo.
+    expect(screen.queryByText(/Ofertas guardadas en el catálogo del servidor/)).toBeNull();
   });
 });

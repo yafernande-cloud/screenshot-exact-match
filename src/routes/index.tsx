@@ -16,6 +16,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { OfertasProveedorEnVivo } from "@/components/OfertasProveedorEnVivo";
+import { PreciosListasCargadas } from "@/components/PreciosListasCargadas";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
   buscarOferta,
@@ -55,9 +56,11 @@ import {
   formatearDinero,
   mensajeDeError,
   obtenerArticulo,
+  obtenerBusqueda,
   resumenPresentacion,
   type Article,
   type Offer,
+  type SearchResponse,
   type SearchResult,
 } from "@/lib/catalogo";
 import {
@@ -83,6 +86,12 @@ import {
   mensajeDeErrorProveedor,
   type EstadoFuenteEnVivo,
 } from "@/lib/proveedores-en-vivo";
+import {
+  buscarPreciosDeListas,
+  descubrirFuentesDeLista,
+  type FuenteDeLista,
+  type GrupoPreciosLista,
+} from "@/lib/ofertas-listas";
 import { MenuPrincipal } from "@/components/MenuPrincipal";
 import {
   AlertDialog,
@@ -172,6 +181,17 @@ function Index() {
   const [estadosVivo, setEstadosVivo] = useState<EstadoFuenteEnVivo[]>([]);
   const [descubriendoVivo, setDescubriendoVivo] = useState(false);
   const [errorVivo, setErrorVivo] = useState<string | null>(null);
+  // Precios de listas cargadas (Excel/CSV): sección independiente de los proveedores en vivo.
+  // `clavesListas` evita mostrar dos veces la misma oferta de una fuente manual.
+  const [gruposListas, setGruposListas] = useState<GrupoPreciosLista[]>([]);
+  const [clavesListas, setClavesListas] = useState<Set<string>>(new Set());
+  const [estadoListas, setEstadoListas] = useState<"inicial" | "cargando" | "listo" | "error">(
+    "inicial",
+  );
+  const [erroresListas, setErroresListas] = useState<string[]>([]);
+  const [desactualizadasListas, setDesactualizadasListas] = useState(0);
+  const [paginasRestantesListas, setPaginasRestantesListas] = useState(false);
+  const [hayFuentesLista, setHayFuentesLista] = useState(false);
   // Bandeja real: el backend es la única fuente; nunca se vuelve a los datos de demostración.
   const [faltantes, setFaltantes] = useState<Faltante[]>([]);
   const [estadoFaltantes, setEstadoFaltantes] = useState<"cargando" | "listo" | "error">(
@@ -388,6 +408,48 @@ function Index() {
     }
   };
 
+  const ejecutarPreciosDeListas = async (seq: number, data: SearchResponse) => {
+    setEstadoListas("cargando");
+    setGruposListas([]);
+    setClavesListas(new Set());
+    setErroresListas([]);
+    setDesactualizadasListas(0);
+    setPaginasRestantesListas(false);
+    try {
+      const fuentes: FuenteDeLista[] = await descubrirFuentesDeLista();
+      if (seq !== busquedaSeq.current) return;
+      setHayFuentesLista(fuentes.length > 0);
+      if (fuentes.length === 0) {
+        setEstadoListas("listo");
+        return;
+      }
+
+      const resultado = await buscarPreciosDeListas({
+        fuentes,
+        resultadosIniciales: data.results,
+        nextCursor: data.next_cursor,
+        cargarPagina: (cursor, limit) => obtenerBusqueda(data.search_id, cursor, limit),
+        alAvanzar: (grupos, desactualizadas, claves) => {
+          if (seq !== busquedaSeq.current) return;
+          setGruposListas(grupos);
+          setDesactualizadasListas(desactualizadas);
+          setClavesListas(claves);
+        },
+      });
+      if (seq !== busquedaSeq.current) return;
+      setGruposListas(resultado.grupos);
+      setClavesListas(resultado.claves);
+      setDesactualizadasListas(resultado.desactualizadas);
+      setErroresListas(resultado.errores);
+      setPaginasRestantesListas(resultado.paginasRestantes);
+      setEstadoListas("listo");
+    } catch {
+      if (seq !== busquedaSeq.current) return;
+      setErroresListas(["No pudimos cargar los precios de las listas cargadas."]);
+      setEstadoListas("error");
+    }
+  };
+
   const ejecutarBusqueda = async (texto: string) => {
     const t = texto.trim();
     const seq = ++busquedaSeq.current;
@@ -406,6 +468,12 @@ function Index() {
     setEstadosVivo([]);
     setDescubriendoVivo(false);
     setErrorVivo(null);
+    setGruposListas([]);
+    setClavesListas(new Set());
+    setEstadoListas("inicial");
+    setErroresListas([]);
+    setDesactualizadasListas(0);
+    setPaginasRestantesListas(false);
 
     if (t.length < 3) {
       const corto = t !== "";
@@ -447,6 +515,11 @@ function Index() {
         setErrorBusqueda("No pudimos completar la búsqueda en el catálogo. Inténtalo otra vez.");
         return;
       }
+
+      // Los precios de listas cargadas se leen en paralelo con las ofertas de E3. Se recorren
+      // páginas adicionales de E2 (con tope) porque los artículos importados no tienen ofertas
+      // verificadas y el catálogo los ordena al final.
+      void ejecutarPreciosDeListas(seq, data);
 
       // Solo se piden las ofertas de los artículos que el backend informa con ofertas. Cada
       // oferta queda ligada a su propio artículo para no mezclar presentaciones ni precios.
@@ -511,6 +584,13 @@ function Index() {
   };
 
   const buscando = estadoBusqueda === "buscando";
+  // Una oferta de una lista cargada se muestra una sola vez, en su sección con su estado de
+  // revisión; su tarjeta equivalente de E3 no se repite (podría no traer esa advertencia).
+  const ofertasCatalogo = ofertas.filter(
+    ({ oferta }) =>
+      !clavesListas.has(`${oferta.article_id}::${oferta.provenance.source.source_id}`),
+  );
+  const hayOfertas = ofertasCatalogo.length > 0 || gruposListas.length > 0;
   const estadoAhumada = estadoFuenteAhumada(estadoCadenas, fuenteAhumada, errorCadenas);
   const estadoSalcobrand = estadoFuenteSalcobrand(
     estadoCadenasSalcobrand,
@@ -728,29 +808,43 @@ function Index() {
             </p>
           )}
 
-          {estadoOfertas === "listo" && resultados.length > 0 && ofertas.length === 0 && (
-            <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No encontramos ofertas de proveedores para «{consulta}».
+          <PreciosListasCargadas
+            grupos={gruposListas}
+            consulta={consulta || null}
+            cargando={estadoListas === "cargando"}
+            errores={erroresListas}
+            desactualizadas={desactualizadasListas}
+            paginasRestantes={paginasRestantesListas}
+            hayFuentes={hayFuentesLista}
+          />
+
+          {estadoOfertas === "listo" &&
+            resultados.length > 0 &&
+            !hayOfertas &&
+            estadoListas !== "cargando" && (
+              <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                No encontramos ofertas de proveedores para «{consulta}».
+              </p>
+            )}
+
+          {estadoOfertas === "listo" && avisoBusqueda && (
+            <p
+              role="status"
+              className="mb-3 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground"
+            >
+              {avisoBusqueda}
             </p>
           )}
 
-          {estadoOfertas === "listo" && ofertas.length > 0 && (
+          {estadoOfertas === "listo" && ofertasCatalogo.length > 0 && (
             <>
-              {avisoBusqueda && (
-                <p
-                  role="status"
-                  className="mb-3 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground"
-                >
-                  {avisoBusqueda}
-                </p>
-              )}
               <p className="mb-5 text-sm text-muted-foreground">
                 Ofertas guardadas en el catálogo del servidor. Cada tarjeta indica el artículo al
                 que corresponde y su origen; los campos que el proveedor no informa se muestran como
                 «No informado».
               </p>
               <div className="space-y-4">
-                {ofertas.map(({ oferta, articulo }) => (
+                {ofertasCatalogo.map(({ oferta, articulo }) => (
                   <ProveedorFicha key={oferta.offer_id} oferta={oferta} articulo={articulo} />
                 ))}
               </div>

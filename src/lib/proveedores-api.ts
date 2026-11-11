@@ -284,6 +284,8 @@ export interface OfertaImportada {
   offer_id: string;
   source_id: string;
   source_name: string;
+  /** `manual_import` para listas cargadas; la búsqueda no mezcla otros modos. */
+  source_mode: string;
   external_id: string;
   external_name: string | null;
   trade_item_id: string;
@@ -297,7 +299,17 @@ export interface OfertaImportada {
   pack_base_unit: string | null;
   stock_status: string;
   stock_quantity: string | null;
+  stock_unit: string | null;
   review_status: string;
+  /** Condiciones comerciales tal como las publicó el proveedor. */
+  notes: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  /** Vigencia declarada por el proveedor, evaluada por el backend al responder. */
+  is_current: boolean;
+  /** Hasta cuándo el backend considera fresca la observación. */
+  fresh_until: string;
+  is_stale: boolean;
   observed_at: string;
   imported_at: string;
 }
@@ -586,9 +598,12 @@ export function importarListaDePrecios(datos: {
 export async function listarOfertasProveedor(
   supplierId: string,
   limite = 200,
+  tradeItemIds?: string[],
 ): Promise<OfertaImportada[]> {
+  const params = new URLSearchParams({ limit: String(limite) });
+  for (const id of tradeItemIds ?? []) params.append("trade_item_ids", id);
   const data = await apiRequest<{ offers: OfertaImportada[] }>(
-    `/api/v1/suppliers/${encodeURIComponent(supplierId)}/offers?limit=${limite}`,
+    `/api/v1/suppliers/${encodeURIComponent(supplierId)}/offers?${params.toString()}`,
     {},
     OFERTAS_FALLBACK,
   );
@@ -804,6 +819,15 @@ export function etiquetaBasePrecio(base: string): string {
     default:
       return base;
   }
+}
+
+/**
+ * Estado de revisión de una oferta importada (D-110): una condición comercial escrita por el
+ * proveedor deja el precio guardado pero no verificado. No se presenta como «vigente» ni
+ * «verificado» cuando falta esa revisión.
+ */
+export function etiquetaEstadoRevision(estado: string): string {
+  return estado === "needs_review" ? "Pendiente de revisión" : "Sin condiciones pendientes";
 }
 
 /** Mensaje para la persona; nunca expone detalles internos. */

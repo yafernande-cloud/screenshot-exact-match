@@ -693,6 +693,7 @@ describe("pantalla de proveedores", () => {
       rows_total: 1,
       rows_accepted: 1,
       rows_rejected: 0,
+      rows_needs_review: 0,
       errors: [],
       observed_at: "2026-11-08T10:00:00Z",
     });
@@ -744,6 +745,40 @@ describe("pantalla de proveedores", () => {
     expect(await screen.findByText("Carga exitosa")).toBeInTheDocument();
     expect(screen.getByText("1 producto procesado.")).toBeInTheDocument();
     expect(toastSuccess).toHaveBeenCalledWith("Se cargaron 1 productos.");
+  });
+
+  it("informa las condiciones comerciales pendientes de revisión al terminar la carga", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+    revisarMock.mockResolvedValue(revision({ rows_needs_review: 1 }));
+    guardarPerfilMock.mockResolvedValue(perfilGuardado());
+    importarMock.mockResolvedValue({
+      import_id: "imp-2",
+      status: "completed",
+      rows_total: 1,
+      rows_accepted: 1,
+      rows_rejected: 0,
+      errors: [],
+      observed_at: "2026-11-10T10:00:00Z",
+    });
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    const entrada = await screen.findByLabelText("Archivo de la lista de precios");
+    fireEvent.change(entrada, { target: { files: [archivoCsv()] } });
+    fireEvent.click(screen.getByRole("button", { name: "Cargar lista de precios" }));
+
+    expect(await screen.findByText("Carga exitosa")).toBeInTheDocument();
+    const aviso = screen.getByRole("note");
+    expect(aviso).toHaveTextContent(/producto tiene condiciones comerciales informadas/);
+    expect(aviso).toHaveTextContent(
+      /El precio se guardó y quedó marcado como pendiente de revisión/,
+    );
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Se cargaron 1 productos. 1 tiene condiciones comerciales pendientes de revisión.",
+    );
   });
 
   it("pregunta solo la moneda que falta y reintenta antes de importar", async () => {
@@ -806,6 +841,7 @@ describe("pantalla de proveedores", () => {
       rows_total: 1,
       rows_accepted: 1,
       rows_rejected: 0,
+      rows_needs_review: 0,
       errors: [],
       observed_at: "2026-11-08T10:00:00Z",
     });
@@ -916,6 +952,7 @@ describe("pantalla de proveedores", () => {
       rows_total: 1,
       rows_accepted: 1,
       rows_rejected: 0,
+      rows_needs_review: 0,
       errors: [],
       observed_at: "2026-11-08T10:00:00Z",
     });
@@ -981,6 +1018,7 @@ describe("pantalla de proveedores", () => {
       rows_total: 1,
       rows_accepted: 1,
       rows_rejected: 0,
+      rows_needs_review: 0,
       errors: [],
       observed_at: "2026-11-08T10:00:00Z",
     });
@@ -1115,6 +1153,7 @@ describe("pantalla de proveedores", () => {
       rows_total: 1,
       rows_accepted: 1,
       rows_rejected: 0,
+      rows_needs_review: 0,
       errors: [],
       observed_at: "2026-11-08T10:00:00Z",
     });
@@ -1180,6 +1219,7 @@ describe("pantalla de proveedores", () => {
         offer_id: "of-1",
         source_id: "src-1",
         source_name: "Lista de precios Andes",
+        source_mode: "manual_import",
         external_id: "SKU-1",
         external_name: "Paracetamol",
         trade_item_id: "item-1",
@@ -1193,7 +1233,14 @@ describe("pantalla de proveedores", () => {
         pack_base_unit: null,
         stock_status: "unknown",
         stock_quantity: null,
-        review_status: "pending",
+        stock_unit: null,
+        review_status: "needs_review",
+        notes: "Entrega en 48 horas",
+        valid_from: null,
+        valid_to: null,
+        is_current: true,
+        fresh_until: "2099-01-01T00:00:00Z",
+        is_stale: false,
         observed_at: "2026-11-08T10:00:00Z",
         imported_at: "2026-11-08T10:01:00Z",
       },
@@ -1208,6 +1255,9 @@ describe("pantalla de proveedores", () => {
     expect(await screen.findByText("Paracetamol 500 mg")).toBeInTheDocument();
     expect(screen.getByText("SKU-1")).toBeInTheDocument();
     expect(screen.getByText(/No son precios de referencia de farmacias/)).toBeInTheDocument();
+    // Las condiciones comerciales pendientes se muestran junto al precio, no se ocultan.
+    expect(screen.getByText("Pendiente de revisión")).toBeInTheDocument();
+    expect(screen.getByText("Entrega en 48 horas")).toBeInTheDocument();
   });
 
   it("explica un error de permisos y permite reintentar", async () => {

@@ -347,11 +347,18 @@ export function ImportadorLista({
       }
 
       setEtapa("exito");
-      toast.success(
+      // Las condiciones comerciales no se procesan todavía. El sobre de E8 no las cuenta, pero la
+      // revisión previa sí: se conserva ese número para avisar a quien carga la lista.
+      const pendientes = revisionVigente.rows_needs_review;
+      const avisoPendientes =
+        pendientes > 0
+          ? ` ${pendientes} ${pendientes === 1 ? "tiene" : "tienen"} condiciones comerciales pendientes de revisión.`
+          : "";
+      const base =
         salida.rows_rejected > 0
           ? `Se cargaron ${salida.rows_accepted} productos; ${salida.rows_rejected} quedaron fuera.`
-          : `Se cargaron ${salida.rows_accepted} productos.`,
-      );
+          : `Se cargaron ${salida.rows_accepted} productos.`;
+      toast.success(`${base}${avisoPendientes}`);
     } catch (fallo) {
       setError(
         mensajeDeErrorProveedores(
@@ -771,6 +778,18 @@ export function ImportadorLista({
               {resultado.rows_rejected === 1 ? "fila quedó" : "filas quedaron"} fuera; no se
               modificaron.
             </p>
+          )}
+          {revision && revision.rows_needs_review > 0 && (
+            <div
+              role="note"
+              className="rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            >
+              {revision.rows_needs_review}{" "}
+              {revision.rows_needs_review === 1
+                ? "producto tiene condiciones comerciales informadas por el proveedor que todavía no se procesan"
+                : "productos tienen condiciones comerciales informadas por el proveedor que todavía no se procesan"}
+              . El precio se guardó y quedó marcado como pendiente de revisión.
+            </div>
           )}
           <p className="text-xs text-muted-foreground">
             La respuesta del servidor no distingue productos nuevos de precios actualizados.
