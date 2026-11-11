@@ -288,6 +288,21 @@ export interface OfertaImportada {
   source_mode: string;
   external_id: string;
   external_name: string | null;
+  /**
+   * Laboratorio y marca de la oferta. Pueden venir de una columna publicada o reconocerse en la
+   * descripción con una marca explícita y un nombre confirmado (D-150); `null` = no informado ni
+   * reconocible. Nunca se inventan. Opcionales para tolerar respuestas antiguas.
+   */
+  laboratory_as_published?: string | null;
+  brand_as_published?: string | null;
+  /**
+   * `published` = columna propia; `extracted` = reconocido en la descripción (pendiente de
+   * confirmación); `unconfirmed` = sin identidad. La pantalla no presenta como completa una
+   * oferta sin identidad confirmada.
+   */
+  identity_status?: "published" | "extracted" | "unconfirmed" | null;
+  laboratory_source?: "column" | "description" | null;
+  brand_source?: "column" | "description" | null;
   trade_item_id: string;
   trade_item_name: string;
   price_amount: string;

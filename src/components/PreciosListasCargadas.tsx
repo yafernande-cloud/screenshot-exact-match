@@ -10,6 +10,7 @@
 import { AlertCircle, FileSpreadsheet, ShoppingCart } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { EnsenarALaIa } from "@/components/EnsenarALaIa";
 import { formatearDinero } from "@/lib/catalogo";
 import {
   etiquetaBasePrecio,
@@ -44,7 +45,60 @@ function precio(oferta: OfertaImportada): string {
   );
 }
 
-function TarjetaPrecioLista({ oferta, proveedor }: { oferta: OfertaImportada; proveedor: string }) {
+type EstadoIdentidad = "published" | "extracted" | "unconfirmed";
+
+/**
+ * Estado de identificación de la oferta (D-150). `published` viene de una columna propia,
+ * `extracted` se reconoció en la descripción con una marca explícita y un nombre confirmado, y
+ * `unconfirmed` no tiene identidad. Respuestas antiguas sin el campo se deducen de los valores.
+ */
+function estadoIdentidad(oferta: OfertaImportada): EstadoIdentidad {
+  if (
+    oferta.identity_status === "published" ||
+    oferta.identity_status === "extracted" ||
+    oferta.identity_status === "unconfirmed"
+  ) {
+    return oferta.identity_status;
+  }
+  return oferta.laboratory_as_published || oferta.brand_as_published ? "published" : "unconfirmed";
+}
+
+/** Identidad de la lista, sin inventar la que falta ni presentarla como completa. */
+function identidad(oferta: OfertaImportada): string {
+  const partes = [
+    oferta.laboratory_as_published ? `Laboratorio: ${oferta.laboratory_as_published}` : null,
+    oferta.brand_as_published ? `Marca: ${oferta.brand_as_published}` : null,
+  ].filter((parte): parte is string => parte !== null);
+  if (partes.length === 0) return "Laboratorio y marca pendientes de identificación";
+  if (estadoIdentidad(oferta) === "extracted") {
+    return `${partes.join(" · ")} (reconocido en la descripción, pendiente de confirmación)`;
+  }
+  return partes.join(" · ");
+}
+
+function EtiquetaIdentidad({ oferta }: { oferta: OfertaImportada }) {
+  const estado = estadoIdentidad(oferta);
+  if (estado === "published") return null;
+  return (
+    <Badge variant={estado === "unconfirmed" ? "destructive" : "secondary"}>
+      {estado === "extracted"
+        ? "Identidad extraída de la descripción"
+        : "Pendiente de identificación"}
+    </Badge>
+  );
+}
+
+function TarjetaPrecioLista({
+  oferta,
+  proveedor,
+  proveedorId,
+  onActualizar,
+}: {
+  oferta: OfertaImportada;
+  proveedor: string;
+  proveedorId: string;
+  onActualizar?: ((articuloId: string) => void | Promise<void>) | undefined;
+}) {
   const pendiente = oferta.review_status === "needs_review";
   return (
     <article
@@ -60,6 +114,7 @@ function TarjetaPrecioLista({ oferta, proveedor }: { oferta: OfertaImportada; pr
           <p className="mt-1 text-xs text-muted-foreground">
             {etiquetaBasePrecio(oferta.price_basis)} · Observado el {fechaCorta(oferta.observed_at)}
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">{identidad(oferta)}</p>
         </div>
         <div className="text-right">
           <p className="text-xl font-semibold text-brand-green">{precio(oferta)}</p>
@@ -71,6 +126,7 @@ function TarjetaPrecioLista({ oferta, proveedor }: { oferta: OfertaImportada; pr
         <Badge variant={pendiente ? "destructive" : "outline"}>
           {etiquetaEstadoRevision(oferta.review_status)}
         </Badge>
+        <EtiquetaIdentidad oferta={oferta} />
         <span className="text-xs text-muted-foreground">{oferta.source_name}</span>
       </div>
 
@@ -88,6 +144,17 @@ function TarjetaPrecioLista({ oferta, proveedor }: { oferta: OfertaImportada; pr
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        <EnsenarALaIa
+          articuloId={oferta.trade_item_id}
+          ofertaId={oferta.offer_id}
+          proveedorId={proveedorId}
+          nombreArticulo={oferta.trade_item_name}
+          nombreProveedor={proveedor}
+          sinLaboratorio={estadoIdentidad(oferta) === "unconfirmed"}
+          onPreferenciaAplicada={
+            onActualizar ? () => onActualizar(oferta.trade_item_id) : undefined
+          }
+        />
         <button
           type="button"
           disabled
@@ -112,6 +179,7 @@ export function PreciosListasCargadas({
   desactualizadas,
   paginasRestantes,
   hayFuentes,
+  onActualizar,
 }: {
   grupos: GrupoPreciosLista[];
   consulta: string | null;
@@ -120,6 +188,7 @@ export function PreciosListasCargadas({
   desactualizadas: number;
   paginasRestantes: boolean;
   hayFuentes: boolean;
+  onActualizar?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
   // Sin proveedores de lista no hay nada que mostrar; un fallo al descubrirlos sí se informa.
   if (!consulta) return null;
@@ -184,6 +253,8 @@ export function PreciosListasCargadas({
                   key={oferta.offer_id}
                   oferta={oferta}
                   proveedor={grupo.supplierName}
+                  proveedorId={grupo.supplierId}
+                  onActualizar={onActualizar}
                 />
               ))}
             </div>

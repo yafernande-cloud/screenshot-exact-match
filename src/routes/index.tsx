@@ -11,12 +11,12 @@ import {
   ShoppingCart,
   ClipboardList,
   Trash2,
-  Sparkles,
   Loader2,
   AlertCircle,
 } from "lucide-react";
 import { OfertasProveedorEnVivo } from "@/components/OfertasProveedorEnVivo";
 import { PreciosListasCargadas } from "@/components/PreciosListasCargadas";
+import { EnsenarALaIa } from "@/components/EnsenarALaIa";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
   buscarOferta,
@@ -92,6 +92,7 @@ import {
   type FuenteDeLista,
   type GrupoPreciosLista,
 } from "@/lib/ofertas-listas";
+import { reemplazarOfertasDeArticulo } from "@/lib/ofertas-preferencias";
 import { MenuPrincipal } from "@/components/MenuPrincipal";
 import {
   AlertDialog,
@@ -572,6 +573,26 @@ function Index() {
     }
   };
 
+  // Tras aplicar una preferencia se vuelve a leer E3 de ese artículo para mostrar el orden que
+  // decidió el backend. Aquí no se ordena nada: se reemplaza el bloque del artículo por lo que
+  // devolvió el servidor.
+  const actualizarOfertasDeArticulo = async (articuloId: string) => {
+    try {
+      const detalle = await obtenerArticulo(articuloId);
+      setOfertas((previas) =>
+        reemplazarOfertasDeArticulo(
+          previas,
+          articuloId,
+          detalle.offers.map((oferta) => ({ oferta, articulo: detalle.article })),
+        ),
+      );
+    } catch {
+      toast(
+        "Preferencia guardada. No pudimos actualizar el orden de las ofertas; vuelve a buscar para verla.",
+      );
+    }
+  };
+
   const acciones: CotizacionAcciones = {
     lineas,
     onCantidad: (id, prov, c) => setLineas((ls) => cambiarCantidad(ls, id, prov, c)),
@@ -816,6 +837,7 @@ function Index() {
             desactualizadas={desactualizadasListas}
             paginasRestantes={paginasRestantesListas}
             hayFuentes={hayFuentesLista}
+            onActualizar={actualizarOfertasDeArticulo}
           />
 
           {estadoOfertas === "listo" &&
@@ -845,7 +867,12 @@ function Index() {
               </p>
               <div className="space-y-4">
                 {ofertasCatalogo.map(({ oferta, articulo }) => (
-                  <ProveedorFicha key={oferta.offer_id} oferta={oferta} articulo={articulo} />
+                  <ProveedorFicha
+                    key={oferta.offer_id}
+                    oferta={oferta}
+                    articulo={articulo}
+                    onActualizar={actualizarOfertasDeArticulo}
+                  />
                 ))}
               </div>
             </>
@@ -1278,7 +1305,15 @@ function Carrito({ acciones }: { acciones: CotizacionAcciones }) {
 
 const NoInformado = () => <span className="text-muted-foreground italic">No informado</span>;
 
-function ProveedorFicha({ oferta, articulo }: { oferta: Offer; articulo: Article }) {
+function ProveedorFicha({
+  oferta,
+  articulo,
+  onActualizar,
+}: {
+  oferta: Offer;
+  articulo: Article;
+  onActualizar: (articuloId: string) => void | Promise<void>;
+}) {
   const [cantidad, setCantidad] = useState(1);
   const [verFaltantes, setVerFaltantes] = useState(false);
 
@@ -1400,14 +1435,14 @@ function ProveedorFicha({ oferta, articulo }: { oferta: Offer; articulo: Article
             {unidad ? ` ${unidad}` : " u."}: se calculará al cotizar
           </p>
           <div className="flex flex-wrap gap-2 @2xl:justify-end">
-            <button
-              type="button"
-              disabled
-              title="Disponible próximamente"
-              className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/40 px-3 py-1.5 text-xs font-medium text-brand-blue opacity-50"
-            >
-              <Sparkles className="h-3.5 w-3.5" /> Enseñar a la IA
-            </button>
+            <EnsenarALaIa
+              articuloId={articulo.article_id}
+              ofertaId={oferta.offer_id}
+              proveedorId={oferta.supplier.supplier_id}
+              nombreArticulo={articulo.display_name}
+              nombreProveedor={nombre}
+              onPreferenciaAplicada={() => onActualizar(articulo.article_id)}
+            />
             <button
               type="button"
               disabled

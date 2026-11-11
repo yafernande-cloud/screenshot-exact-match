@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/react-router";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +26,8 @@ const buscarEnVivoMock = vi.hoisted(() => vi.fn());
 const listarFaltantesMock = vi.hoisted(() => vi.fn());
 const listarFuentesMock = vi.hoisted(() => vi.fn());
 const listarOfertasMock = vi.hoisted(() => vi.fn());
+const guardarObservacionMock = vi.hoisted(() => vi.fn());
+const interpretarObservacionMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/catalogo", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/catalogo")>()),
@@ -51,6 +53,12 @@ vi.mock("@/lib/proveedores-en-vivo", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/proveedores-en-vivo")>()),
   descubrirProveedoresEnVivo: descubrirMock,
   buscarProveedorEnVivo: buscarEnVivoMock,
+}));
+
+vi.mock("@/lib/observaciones-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/observaciones-api")>()),
+  guardarObservacion: guardarObservacionMock,
+  interpretarObservacion: interpretarObservacionMock,
 }));
 
 vi.mock("@/lib/faltantes-api", () => ({
@@ -597,5 +605,93 @@ describe("precios de listas cargadas en la búsqueda", () => {
     ).toBeInTheDocument();
     // La misma oferta guardada en E3 no se vuelve a mostrar como tarjeta de catálogo.
     expect(screen.queryByText(/Ofertas guardadas en el catálogo del servidor/)).toBeNull();
+  });
+});
+
+describe("«Enseñar a la IA» desde una oferta del catálogo", () => {
+  const OFERTA_ZETA: Offer = {
+    ...OFERTA_CATALOGO,
+    offer_id: "of-zeta",
+    supplier: { supplier_id: "sup-zeta", name: "Proveedor Zeta", status: "active" },
+  };
+
+  function detalle(offers: Offer[]): ArticleDetail {
+    return { ...DETALLE_CATALOGO, offers, offers_total: offers.length };
+  }
+
+  /**
+   * Mientras el diálogo modal está abierto, Radix deja el resto de la página con `aria-hidden`:
+   * se consultan también esos nodos, porque interesa el orden que el backend ya devolvió.
+   */
+  function ordenVisible(): string[] {
+    return screen
+      .getAllByRole("article", { hidden: true })
+      .map((nodo) => nodo.querySelector("h3")?.textContent ?? "")
+      .filter((texto) => texto === "Proveedor Catálogo" || texto === "Proveedor Zeta");
+  }
+
+  it("vuelve a leer E3 y muestra el orden que decidió el backend", async () => {
+    obtenerArticuloMock
+      .mockResolvedValueOnce(detalle([OFERTA_CATALOGO, OFERTA_ZETA]))
+      .mockResolvedValueOnce(detalle([OFERTA_ZETA, OFERTA_CATALOGO]));
+    const guardada = {
+      observation_id: "obs-1",
+      text: "Prefiero Laboratorio Chile aunque sea un poco más caro",
+      trade_item_id: "art-1",
+      supplier_id: "sup-catalogo",
+      offer_snapshot_id: "of-1",
+      interpretation_status: "sin_interpretacion" as const,
+      interpretation: null,
+      retired_subject_kinds: [],
+    };
+    guardarObservacionMock.mockResolvedValue(guardada);
+    interpretarObservacionMock.mockResolvedValue({
+      replayed: false,
+      observation: {
+        ...guardada,
+        interpretation_status: "suggested",
+        interpretation: {
+          interpretation_id: "int-1",
+          status: "suggested",
+          error_code: null,
+          retired_subject_kinds: [],
+          created_at: "2026-11-11T12:00:00Z",
+          preferences: [
+            {
+              preference_id: "pref-1",
+              subject_kind: "laboratory",
+              subject_label: "Laboratorio Chile",
+              effect: "prefer",
+              tolerance: null,
+              price_reference: null,
+            },
+          ],
+        },
+      },
+    });
+
+    await renderizarPantalla();
+    await buscar("Predual");
+    await screen.findByText("Proveedor Zeta");
+    expect(ordenVisible()).toEqual(["Proveedor Catálogo", "Proveedor Zeta"]);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Enseñar a la IA" })[0]!);
+    fireEvent.change(screen.getByRole("textbox", { name: "Comentario sobre el producto" }), {
+      target: { value: "Prefiero Laboratorio Chile aunque sea un poco más caro" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar y enseñar" }));
+
+    expect(await screen.findByText("Preferencia guardada y aplicada")).toBeInTheDocument();
+    expect(guardarObservacionMock).toHaveBeenCalledWith(
+      {
+        texto: "Prefiero Laboratorio Chile aunque sea un poco más caro",
+        articuloId: "art-1",
+        proveedorId: "sup-catalogo",
+        ofertaId: "of-1",
+      },
+      expect.any(String),
+    );
+    await waitFor(() => expect(ordenVisible()).toEqual(["Proveedor Zeta", "Proveedor Catálogo"]));
+    expect(obtenerArticuloMock).toHaveBeenCalledTimes(2);
   });
 });
