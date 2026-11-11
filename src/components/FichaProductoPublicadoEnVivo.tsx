@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
+import { EnsenarALaIaEnVivo } from "@/components/EnsenarALaIaEnVivo";
 import { formatearDinero } from "@/lib/catalogo";
 import type { ProductoPublicadoEnVivo } from "@/lib/proveedores-en-vivo";
 
@@ -43,11 +44,19 @@ export function FichaProductoPublicadoEnVivo({
   producto,
   proveedor,
   onAgregar,
+  sourceId,
+  supplierId,
+  consulta,
 }: {
   producto: ProductoPublicadoEnVivo;
   proveedor: string;
   /** Acción real del carrito. Sin ella el botón nunca se habilita, aunque el backend autorice. */
   onAgregar?: ((producto: ProductoPublicadoEnVivo) => void) | undefined;
+  /** Fuente de la que salió la publicación; sin ella no se puede vincular ni enseñar. */
+  sourceId?: string | undefined;
+  supplierId?: string | null | undefined;
+  /** Consulta que originó el resultado, para proponerla al vincular. */
+  consulta?: string | null | undefined;
 }) {
   const [imagenFallida, setImagenFallida] = useState(false);
   const imagen = urlPublicada(producto.image_url);
@@ -105,6 +114,17 @@ export function FichaProductoPublicadoEnVivo({
             <p className="max-w-xs text-xs text-muted-foreground">
               No disponible para agregar a la cotización.
             </p>
+          )}
+          {sourceId && (
+            <EnsenarALaIaEnVivo
+              sourceId={sourceId}
+              externalId={producto.external_id}
+              externalName={producto.name}
+              proveedorId={supplierId}
+              nombreProveedor={proveedor}
+              tradeItemId={producto.trade_item_id}
+              consulta={consulta}
+            />
           )}
         </div>
       </div>

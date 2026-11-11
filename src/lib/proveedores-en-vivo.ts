@@ -58,6 +58,11 @@ export interface PerfilConectorApi {
 
 export interface OfertaEnVivo {
   external_id: string;
+  /**
+   * Artículo interno vinculado de forma exacta (vínculo de la fuente o EAN único). `null` cuando
+   * todavía no hay vínculo: en ese caso se ofrece vincularlo, nunca se adivina.
+   */
+  trade_item_id: string | null;
   name: string;
   laboratory: string | null;
   presentation: string | null;
@@ -84,6 +89,8 @@ export interface OfertaEnVivo {
  */
 export interface ProductoPublicadoEnVivo {
   external_id: string;
+  /** Artículo interno vinculado de forma exacta; `null` si aún no hay vínculo. */
+  trade_item_id: string | null;
   name: string;
   laboratory: string | null;
   presentation: string | null;
@@ -308,6 +315,71 @@ export function buscarProveedorEnVivo(
     },
     "No pudimos consultar al proveedor.",
   );
+}
+
+/** `SupplierProductMappingOut`: vínculo explícito ya guardado entre la fuente y un artículo. */
+export interface VinculoProductoEnVivo {
+  mapping_id: string;
+  source_id: string;
+  supplier_id: string;
+  external_id: string;
+  external_name: string | null;
+  trade_item_id: string;
+  origin: "explicit" | "confirmed";
+  /** `false` cuando el vínculo ya existía con el mismo artículo (reintento idempotente). */
+  created: boolean;
+  created_at: string;
+}
+
+export interface DatosVinculoEnVivo {
+  sourceId: string;
+  externalId: string;
+  externalName?: string | null;
+  tradeItemId: string;
+}
+
+/**
+ * Guarda el vínculo explícito entre un producto de la fuente y un artículo existente del catálogo.
+ *
+ * No crea artículos ni infiere equivalencias: `tradeItemId` lo eligió una persona con permiso. El
+ * backend valida la organización, exige `admin` y deja auditoría.
+ */
+export function vincularProductoEnVivo(datos: DatosVinculoEnVivo): Promise<VinculoProductoEnVivo> {
+  return apiRequest<VinculoProductoEnVivo>(
+    "/api/v1/supplier-product-mappings",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_id: datos.sourceId,
+        external_id: datos.externalId,
+        external_name: datos.externalName ?? null,
+        trade_item_id: datos.tradeItemId,
+      }),
+    },
+    "No pudimos guardar el vínculo. Inténtalo otra vez.",
+  );
+}
+
+/** Mensaje para la persona cuando falla el alta del vínculo. */
+export function mensajeDeErrorVinculo(error: unknown): string {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status: unknown }).status;
+    const code = (error as { code?: unknown }).code;
+    if (status === 401) return "Tu sesión expiró. Inicia sesión otra vez.";
+    if (status === 403) {
+      return "Solo la administración puede vincular productos con el catálogo interno.";
+    }
+    if (status === 404) return "La fuente o el artículo ya no está disponible.";
+    if (status === 409) {
+      return code === "TRADE_ITEM_INACTIVE"
+        ? "El artículo elegido está inactivo. Elige uno vigente."
+        : "Ese producto ya está vinculado a otro artículo del catálogo.";
+    }
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim() !== "") return message;
+  }
+  return "No pudimos guardar el vínculo. Inténtalo otra vez.";
 }
 
 /** Un resultado mostrable: oferta comercial o publicación sin precio vigente. */

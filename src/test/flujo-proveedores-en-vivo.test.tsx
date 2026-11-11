@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/react-router";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -210,6 +210,7 @@ function resultado(over: Partial<ResultadoEnVivo> = {}): ResultadoEnVivo {
     offers: [
       {
         external_id: "PRE-1",
+        trade_item_id: null,
         name: "Predual 30 mg comprimidos",
         laboratory: "Laboratorio",
         presentation: "Caja 30",
@@ -229,6 +230,7 @@ function resultado(over: Partial<ResultadoEnVivo> = {}): ResultadoEnVivo {
       },
       {
         external_id: "PRE-2",
+        trade_item_id: null,
         name: "Predual 30 mg x 30",
         laboratory: "Laboratorio",
         presentation: "Caja 30",
@@ -248,6 +250,7 @@ function resultado(over: Partial<ResultadoEnVivo> = {}): ResultadoEnVivo {
       },
       {
         external_id: "PREG-1",
+        trade_item_id: null,
         name: "Pregalex 75 mg",
         laboratory: null,
         presentation: null,
@@ -675,7 +678,11 @@ describe("«Enseñar a la IA» desde una oferta del catálogo", () => {
     await screen.findByText("Proveedor Zeta");
     expect(ordenVisible()).toEqual(["Proveedor Catálogo", "Proveedor Zeta"]);
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Enseñar a la IA" })[0]!);
+    // Las tarjetas en vivo también ofrecen «Enseñar a la IA»; aquí se enseña sobre la oferta E3.
+    const tarjetaCatalogo = screen
+      .getAllByRole("article", { hidden: true })
+      .find((nodo) => nodo.querySelector("h3")?.textContent === "Proveedor Catálogo");
+    fireEvent.click(within(tarjetaCatalogo!).getByRole("button", { name: "Enseñar a la IA" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Comentario sobre el producto" }), {
       target: { value: "Prefiero Laboratorio Chile aunque sea un poco más caro" },
     });

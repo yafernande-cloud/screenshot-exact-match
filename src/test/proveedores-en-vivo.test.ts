@@ -53,6 +53,7 @@ function perfil(over: Record<string, unknown> = {}) {
 function oferta(over: Partial<OfertaEnVivo> = {}): OfertaEnVivo {
   return {
     external_id: "PRE-001",
+    trade_item_id: null,
     name: "Predual 30 mg comprimidos",
     laboratory: "Laboratorio Ficticio",
     presentation: "Caja 30 comprimidos",
@@ -76,6 +77,7 @@ function oferta(over: Partial<OfertaEnVivo> = {}): OfertaEnVivo {
 function publicado(over: Partial<ProductoPublicadoEnVivo> = {}): ProductoPublicadoEnVivo {
   return {
     external_id: "140640",
+    trade_item_id: null,
     name: "Predual Pamabron 25 mg 12 Comprimidos",
     laboratory: "Laboratorio Maver",
     presentation: "Comprimido",

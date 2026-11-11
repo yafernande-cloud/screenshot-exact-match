@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
+import { EnsenarALaIaEnVivo } from "@/components/EnsenarALaIaEnVivo";
 import { formatearDinero } from "@/lib/catalogo";
 import type { OfertaEnVivo } from "@/lib/proveedores-en-vivo";
 
@@ -46,11 +47,19 @@ export function FichaOfertaEnVivo({
   oferta,
   proveedor,
   onAgregar,
+  sourceId,
+  supplierId,
+  consulta,
 }: {
   oferta: OfertaEnVivo;
   proveedor: string;
   /** Acción real del carrito. Sin ella el botón nunca se habilita, aunque el backend autorice. */
   onAgregar?: ((oferta: OfertaEnVivo) => void) | undefined;
+  /** Fuente de la que salió la oferta; sin ella no se puede vincular ni enseñar. */
+  sourceId?: string | undefined;
+  supplierId?: string | null | undefined;
+  /** Consulta que originó el resultado, para proponerla al vincular. */
+  consulta?: string | null | undefined;
 }) {
   const [imagenFallida, setImagenFallida] = useState(false);
   const imagen = urlPublicada(oferta.image_url);
@@ -109,6 +118,17 @@ export function FichaOfertaEnVivo({
             <p className="max-w-xs text-xs text-muted-foreground">
               No disponible para agregar a la cotización.
             </p>
+          )}
+          {sourceId && (
+            <EnsenarALaIaEnVivo
+              sourceId={sourceId}
+              externalId={oferta.external_id}
+              externalName={oferta.name}
+              proveedorId={supplierId}
+              nombreProveedor={proveedor}
+              tradeItemId={oferta.trade_item_id}
+              consulta={consulta}
+            />
           )}
         </div>
       </div>

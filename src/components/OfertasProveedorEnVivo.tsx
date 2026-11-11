@@ -72,11 +72,13 @@ function Cargando({ children }: { children: ReactNode }) {
 
 function ListaResultados({
   items,
-  proveedor,
+  fuente,
+  consulta,
   onAgregar,
 }: {
   items: ItemEnVivo[];
-  proveedor: string;
+  fuente: EstadoFuenteEnVivo["fuente"];
+  consulta: string | null;
   onAgregar?: ((item: ItemEnVivo) => void) | undefined;
 }) {
   return (
@@ -86,14 +88,20 @@ function ListaResultados({
           <FichaOfertaEnVivo
             key={`oferta-${item.oferta.external_id}-${item.oferta.name}`}
             oferta={item.oferta}
-            proveedor={proveedor}
+            proveedor={fuente.supplierName}
+            sourceId={fuente.sourceId}
+            supplierId={fuente.supplierId}
+            consulta={consulta}
             onAgregar={onAgregar ? (oferta) => onAgregar({ tipo: "oferta", oferta }) : undefined}
           />
         ) : (
           <FichaProductoPublicadoEnVivo
             key={`publicado-${item.producto.external_id}-${item.producto.name}`}
             producto={item.producto}
-            proveedor={proveedor}
+            proveedor={fuente.supplierName}
+            sourceId={fuente.sourceId}
+            supplierId={fuente.supplierId}
+            consulta={consulta}
             onAgregar={
               onAgregar ? (producto) => onAgregar({ tipo: "publicado", producto }) : undefined
             }
@@ -106,9 +114,11 @@ function ListaResultados({
 
 function BloqueFuente({
   estado,
+  consulta,
   onAgregar,
 }: {
   estado: EstadoFuenteEnVivo;
+  consulta: string | null;
   onAgregar?: ((item: ItemEnVivo) => void) | undefined;
 }) {
   const { fuente, resultado, cargando, error } = estado;
@@ -173,7 +183,8 @@ function BloqueFuente({
           {directas.length > 0 && (
             <ListaResultados
               items={directas}
-              proveedor={fuente.supplierName}
+              fuente={fuente}
+              consulta={consulta}
               onAgregar={onAgregar}
             />
           )}
@@ -216,7 +227,12 @@ export function OfertasProveedorEnVivo({
       {descubriendo && estados.length === 0 && <Cargando>Consultando proveedores…</Cargando>}
       {error && <Aviso>{error}</Aviso>}
       {estados.map((estado) => (
-        <BloqueFuente key={estado.fuente.sourceId} estado={estado} onAgregar={onAgregar} />
+        <BloqueFuente
+          key={estado.fuente.sourceId}
+          estado={estado}
+          consulta={consulta}
+          onAgregar={onAgregar}
+        />
       ))}
     </div>
   );

@@ -61,11 +61,16 @@ export interface EnsenarALaIaProps {
    * prometer un orden que esos datos no permiten evaluar.
    */
   sinLaboratorio?: boolean;
+  /**
+   * Abre el formulario al montar. Lo usa la oferta en vivo recién vinculada para no pedir a la
+   * persona que repita el paso que acaba de completar.
+   */
+  abrirInicial?: boolean;
   /** Se llama cuando quedó una preferencia aplicada, para refrescar las ofertas del artículo. */
   onPreferenciaAplicada?: (() => void | Promise<void>) | undefined;
 }
 
-const ESTILO_BOTON =
+export const ESTILO_BOTON =
   "inline-flex items-center gap-1.5 rounded-full border border-brand-blue/40 px-3 py-1.5 text-xs font-medium text-brand-blue transition-colors hover:bg-brand-blue/5 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function EnsenarALaIa({
@@ -75,9 +80,10 @@ export function EnsenarALaIa({
   nombreArticulo,
   nombreProveedor,
   sinLaboratorio = false,
+  abrirInicial = false,
   onPreferenciaAplicada,
 }: EnsenarALaIaProps) {
-  const [abierto, setAbierto] = useState(false);
+  const [abierto, setAbierto] = useState(abrirInicial);
   const [texto, setTexto] = useState("");
   const [paso, setPaso] = useState<Paso>("editar");
   const [resultado, setResultado] = useState<Resultado | null>(null);
