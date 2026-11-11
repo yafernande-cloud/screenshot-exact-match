@@ -184,7 +184,49 @@ describe("selección de ofertas importadas", () => {
     expect(seleccion.vigentes[0]?.trade_item_id).toBe("art-paracetamol");
   });
 
-  it("una fuente aporta una sola oferta por artículo: la observación más reciente", () => {
+  it("conserva dos SKU del mismo proveedor aunque compartan artículo canónico", () => {
+    // Caso real: Andes AND-002 (Cordillera $3.190) y AND-031 (ASCEND $2.890) apuntan al mismo
+    // artículo tras vincularlos. Son dos códigos distintos: ambas ofertas deben seguir visibles.
+    const seleccion = seleccionarOfertasDeLista(
+      [
+        oferta({
+          offer_id: "of-and-002",
+          external_id: "AND-002",
+          price_amount: "3190",
+          laboratory_as_published: "Laboratorio Cordillera",
+        }),
+        oferta({
+          offer_id: "of-and-031",
+          external_id: "AND-031",
+          price_amount: "2890",
+          laboratory_as_published: "ASCEND LABORATORIES SPA",
+        }),
+      ],
+      new Set(["art-paracetamol"]),
+      AHORA,
+    );
+
+    expect(seleccion.vigentes.map((o) => o.external_id).sort()).toEqual(["AND-002", "AND-031"]);
+    expect(seleccion.vigentes.find((o) => o.external_id === "AND-002")?.price_amount).toBe("3190");
+    expect(seleccion.vigentes.find((o) => o.external_id === "AND-031")?.price_amount).toBe("2890");
+  });
+
+  it("las claves de supresión de E3 siguen siendo por artículo y fuente", () => {
+    const seleccion = seleccionarOfertasDeLista(
+      [
+        oferta({ offer_id: "of-a", external_id: "AND-002" }),
+        oferta({ offer_id: "of-b", external_id: "AND-031" }),
+      ],
+      new Set(["art-paracetamol"]),
+      AHORA,
+    );
+
+    // Una sola clave para ambos SKU: la oferta en vivo de esa fuente no se repite en E3.
+    expect([...seleccion.claves]).toEqual(["art-paracetamol::src-andes"]);
+    expect(seleccion.vigentes).toHaveLength(2);
+  });
+
+  it("una fuente aporta una sola oferta por SKU: la observación más reciente", () => {
     const seleccion = seleccionarOfertasDeLista(
       [
         oferta({
@@ -321,13 +363,13 @@ describe("orden comercial de los precios de lista", () => {
 
 function obtenerBusquedaMockCatalogo() {
   // El refresco nunca vuelve a ejecutar la búsqueda de catálogo (E2).
-  return apiRequestMock.mock.calls.find(([ruta]) =>
-    String(ruta).startsWith("/api/v1/searches/"),
-  )?.[0] ?? null;
+  return (
+    apiRequestMock.mock.calls.find(([ruta]) => String(ruta).startsWith("/api/v1/searches/"))?.[0] ??
+    null
+  );
 }
 
 describe("búsqueda de precios de listas", () => {
-
   it("encuentra un producto importado que la primera página del catálogo no muestra", async () => {
     listarOfertas({
       "sup-andes": [

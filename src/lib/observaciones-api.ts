@@ -263,6 +263,19 @@ const NOMBRES_DE_CLASE: Record<string, string> = {
   price: "precio",
 };
 
+/**
+ * La base guarda la tolerancia como `NUMERIC(6,3)` y la API la serializa tal cual: «10.000».
+ * Ese punto es decimal, no de miles; sin formatear se lee como diez mil. Se presenta en es-CL
+ * («10», «12,5») sin tocar el valor guardado ni la regla del motor.
+ */
+const formateadorPorcentaje = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 3 });
+
+export function formatearPorcentaje(valor: string | null | undefined): string | null {
+  if (!valor) return null;
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? formateadorPorcentaje.format(numero) : valor;
+}
+
 /** Frase breve de una preferencia aplicada, sin explicaciones ni puntuaciones de la IA. */
 export function describirPreferencia(preferencia: PreferenciaComercial): string {
   if (preferencia.subject_kind === "availability") {
@@ -277,9 +290,12 @@ export function describirPreferencia(preferencia: PreferenciaComercial): string 
       : preferencia.subject_kind === "price"
         ? "se usa como referencia de precio"
         : "se prefiere";
+  const porcentaje = preferencia.tolerance
+    ? (formatearPorcentaje(preferencia.tolerance.percent) ?? preferencia.tolerance.percent)
+    : null;
   const tolerancia = preferencia.tolerance
-    ? preferencia.tolerance.kind === "relative_percent" && preferencia.tolerance.percent
-      ? `, con hasta ${preferencia.tolerance.percent} % más de precio`
+    ? preferencia.tolerance.kind === "relative_percent" && porcentaje
+      ? `, con hasta ${porcentaje} % más de precio`
       : preferencia.tolerance.kind === "absolute_amount" && preferencia.tolerance.amount
         ? `, con hasta ${preferencia.tolerance.amount} ${preferencia.tolerance.currency ?? ""} de diferencia`.trimEnd()
         : ""

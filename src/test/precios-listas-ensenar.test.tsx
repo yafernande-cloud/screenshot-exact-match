@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PreciosListasCargadas } from "@/components/PreciosListasCargadas";
@@ -136,6 +136,40 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
     expect(screen.getByText("Laboratorio y marca no informados")).toBeInTheDocument();
   });
 
+  it("muestra precio y acciones a la derecha, con el mismo patrón que las ofertas en vivo", () => {
+    render(
+      <PreciosListasCargadas
+        grupos={[GRUPO]}
+        consulta="Paracetamol"
+        cargando={false}
+        errores={[]}
+        desactualizadas={0}
+        paginasRestantes={false}
+        hayFuentes
+      />,
+    );
+
+    const tarjeta = screen.getByRole("article", {
+      name: "Precio de lista de Distribuidora Andes: Paracetamol 500 mg comprimidos",
+    });
+    // La columna de acciones es la que contiene el precio y su rótulo.
+    const columna = within(tarjeta).getByText("Precio de lista").parentElement?.parentElement;
+    expect(columna).not.toBeNull();
+    const hijos = [...(columna?.children ?? [])];
+
+    // Precio arriba; debajo, en este orden: agregar, su mensaje y enseñar a la IA.
+    expect(hijos[0]).toHaveTextContent("$12.990");
+    expect(hijos[1]).toHaveTextContent("Agregar a cotización");
+    expect(hijos[2]).toHaveTextContent(
+      "Se incorporará a la cotización cuando el carrito esté conectado.",
+    );
+    expect(hijos[3]).toHaveTextContent("Enseñar a la IA");
+    // Los datos del producto no forman parte de la columna de acciones.
+    expect(columna).not.toContainElement(
+      within(tarjeta).getByRole("heading", { name: "Paracetamol 500 mg comprimidos" }),
+    );
+  });
+
   it("distingue la identidad reconocida en la descripción de una columna publicada", () => {
     const grupo: GrupoPreciosLista = {
       ...GRUPO,
@@ -240,6 +274,48 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
       await screen.findByText("Comentario guardado sin una preferencia aplicable"),
     ).toBeInTheDocument();
     expect(onActualizar).not.toHaveBeenCalled();
+  });
+
+  it("muestra dos ofertas del mismo proveedor que comparten artículo canónico", () => {
+    // Tras vincular AND-002 y AND-031 al mismo artículo, ambas tarjetas siguen visibles con su
+    // propio precio, laboratorio y stock: compartir artículo no las vuelve la misma oferta.
+    const grupo: GrupoPreciosLista = {
+      ...GRUPO,
+      ofertas: [
+        ofertaLista({
+          offer_id: "of-and-002",
+          external_id: "AND-002",
+          price_amount: "3190",
+          laboratory_as_published: "Laboratorio Cordillera",
+        }),
+        ofertaLista({
+          offer_id: "of-and-031",
+          external_id: "AND-031",
+          price_amount: "2890",
+          laboratory_as_published: "ASCEND LABORATORIES SPA",
+        }),
+      ],
+    };
+    render(
+      <PreciosListasCargadas
+        grupos={[grupo]}
+        consulta="Ibuprofeno"
+        cargando={false}
+        errores={[]}
+        desactualizadas={0}
+        paginasRestantes={false}
+        hayFuentes
+      />,
+    );
+
+    const tarjetas = screen.getAllByRole("article");
+    expect(tarjetas).toHaveLength(2);
+    expect(screen.getByText("$3.190")).toBeInTheDocument();
+    expect(screen.getByText("$2.890")).toBeInTheDocument();
+    expect(screen.getByText(/Laboratorio: Laboratorio Cordillera/)).toBeInTheDocument();
+    expect(screen.getByText(/Laboratorio: ASCEND LABORATORIES SPA/)).toBeInTheDocument();
+    expect(screen.getByText(/Código AND-002/)).toBeInTheDocument();
+    expect(screen.getByText(/Código AND-031/)).toBeInTheDocument();
   });
 
   it("muestra la cantidad guardada en formato local y con su unidad", () => {

@@ -6,7 +6,8 @@
  * no mezcla estas ofertas con las de proveedores en vivo ni con el carrito.
  *
  * Dos reglas evitan duplicados y precios viejos:
- * - una fuente aporta una sola oferta por artículo (la observación más reciente de sus SKUs);
+ * - una fuente aporta una sola oferta por SKU (la observación más reciente de ese código); dos
+ *   códigos distintos del mismo proveedor pueden compartir artículo canónico y ambos se muestran;
  * - una observación vencida o desactualizada no se presenta como precio vigente.
  *
  * La búsqueda de catálogo devuelve páginas: un producto importado puede quedar después de los
@@ -89,9 +90,28 @@ export async function descubrirFuentesDeLista(): Promise<FuenteDeLista[]> {
   return fuentesDeLista(await listarFuentes());
 }
 
-/** Clave de una oferta por artículo y fuente: una fuente = una oferta por artículo. */
+/**
+ * Clave (artículo, fuente) de una oferta importada.
+ *
+ * Sirve para suprimir la tarjeta duplicada de E3: si la fuente ya trae precio para ese artículo,
+ * la oferta en vivo de esa misma fuente no se repite. **No** sirve para elegir qué SKU mostrar:
+ * dos códigos del mismo proveedor pueden ser el mismo artículo y seguir siendo ofertas distintas.
+ */
 export function claveOferta(oferta: Pick<OfertaImportada, "trade_item_id" | "source_id">): string {
   return `${oferta.trade_item_id}::${oferta.source_id}`;
+}
+
+/**
+ * Clave de selección de una observación importada: artículo, fuente **y SKU**.
+ *
+ * La identidad comercial es el código del proveedor. Al vincular AND-002 y AND-031 al mismo
+ * artículo canónico ambas ofertas siguen siendo SKUs distintos y deben seguir visibles con su
+ * propio precio, laboratorio y stock.
+ */
+export function claveSku(
+  oferta: Pick<OfertaImportada, "trade_item_id" | "source_id" | "external_id">,
+): string {
+  return `${oferta.trade_item_id}::${oferta.source_id}::${oferta.external_id}`;
 }
 
 function masReciente(a: OfertaImportada, b: OfertaImportada): boolean {
@@ -121,17 +141,21 @@ export function precioVigente(oferta: OfertaImportada, ahora: Date = new Date())
 }
 
 export interface SeleccionOfertasLista {
-  /** La observación más reciente de cada (artículo, fuente) que coincide con la búsqueda. */
+  /** La observación más reciente de cada (artículo, fuente, SKU) que coincide con la búsqueda. */
   vigentes: OfertaImportada[];
   /** Las que coinciden pero no están vigentes o están desactualizadas. */
   desactualizadas: number;
-  /** Claves de TODAS las ofertas importadas que coinciden, para no duplicarlas desde E3. */
+  /** Claves (artículo, fuente) de TODAS las ofertas importadas que coinciden, para E3. */
   claves: Set<string>;
 }
 
 /**
- * Cruza por `trade_item_id` exacto y conserva la última observación de cada (artículo, fuente).
+ * Cruza por `trade_item_id` exacto y conserva la última observación de cada SKU de cada fuente.
  * No compara nombres: la identidad la resolvió el backend al importar.
+ *
+ * La clave de selección incluye el SKU a propósito: compartir artículo canónico no convierte dos
+ * códigos del proveedor en la misma oferta. `claves` se mantiene por (artículo, fuente) porque es
+ * la que usa la búsqueda para no repetir la tarjeta de E3.
  */
 export function seleccionarOfertasDeLista(
   ofertas: OfertaImportada[],
@@ -139,10 +163,12 @@ export function seleccionarOfertasDeLista(
   ahora: Date = new Date(),
 ): SeleccionOfertasLista {
   const ultimas = new Map<string, OfertaImportada>();
+  const claves = new Set<string>();
   for (const oferta of ofertas) {
     if (oferta.source_mode !== "manual_import") continue;
     if (!articleIds.has(oferta.trade_item_id)) continue;
-    const clave = claveOferta(oferta);
+    claves.add(claveOferta(oferta));
+    const clave = claveSku(oferta);
     const previa = ultimas.get(clave);
     if (!previa || masReciente(oferta, previa)) ultimas.set(clave, oferta);
   }
@@ -156,7 +182,7 @@ export function seleccionarOfertasDeLista(
   // El orden comercial lo decide el backend (`order_key`); nunca se reordena por nombre ni fuente.
   // `Array.prototype.sort` es estable: un empate conserva el orden de la respuesta.
   vigentes.sort((a, b) => compararClaveOrden(a.order_key, b.order_key));
-  return { vigentes, desactualizadas, claves: new Set(ultimas.keys()) };
+  return { vigentes, desactualizadas, claves };
 }
 
 /** Agrupa las ofertas por proveedor, conservando solo proveedores con precios para la consulta. */

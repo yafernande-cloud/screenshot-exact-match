@@ -105,10 +105,10 @@ export function TarjetaPrecioLista({
   const pendiente = oferta.review_status === "needs_review";
   return (
     <article
-      className="rounded-2xl border bg-background p-4"
+      className="@container rounded-2xl border bg-background p-4"
       aria-label={`Precio de lista de ${proveedor}: ${oferta.trade_item_name}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-start @2xl:justify-between">
         <div className="min-w-0">
           <h4 className="font-medium">{oferta.trade_item_name}</h4>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -118,20 +118,46 @@ export function TarjetaPrecioLista({
             {etiquetaBasePrecio(oferta.price_basis)} · Observado el {fechaCorta(oferta.observed_at)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">{identidad(oferta)}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/* Una condición comercial no es un error: se informa sin badge destructivo (D-151). */}
+            <Badge variant={pendiente ? "secondary" : "outline"}>
+              {etiquetaEstadoRevision(oferta.review_status)}
+            </Badge>
+            <EtiquetaIdentidad oferta={oferta} />
+            <span className="text-xs text-muted-foreground">{oferta.source_name}</span>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-xl font-semibold text-brand-green">{precio(oferta)}</p>
-          <p className="text-xs text-muted-foreground">Precio de lista</p>
-        </div>
-      </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {/* Una condición comercial no es un error: se informa sin badge destructivo (D-151). */}
-        <Badge variant={pendiente ? "secondary" : "outline"}>
-          {etiquetaEstadoRevision(oferta.review_status)}
-        </Badge>
-        <EtiquetaIdentidad oferta={oferta} />
-        <span className="text-xs text-muted-foreground">{oferta.source_name}</span>
+        {/* Misma disposición que las ofertas en vivo: precio arriba y las acciones debajo, a la
+            derecha; en pantallas angostas la columna pasa debajo de los datos del producto. */}
+        <div className="flex shrink-0 flex-col items-start gap-2 border-t pt-3 @2xl:ml-auto @2xl:items-end @2xl:border-t-0 @2xl:pt-0 @2xl:text-right">
+          <div>
+            <p className="text-2xl font-semibold text-brand-green">{precio(oferta)}</p>
+            <p className="text-xs text-muted-foreground">Precio de lista</p>
+          </div>
+          <button
+            type="button"
+            disabled
+            title="Disponible próximamente"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground opacity-50"
+          >
+            <ShoppingCart className="h-3.5 w-3.5" /> Agregar a cotización
+          </button>
+          <p className="max-w-xs text-xs text-muted-foreground">
+            Se incorporará a la cotización cuando el carrito esté conectado.
+          </p>
+          <EnsenarALaIa
+            articuloId={oferta.trade_item_id}
+            ofertaId={oferta.offer_id}
+            proveedorId={proveedorId}
+            nombreArticulo={oferta.trade_item_name}
+            nombreProveedor={proveedor}
+            sinLaboratorio={estadoIdentidad(oferta) === "unconfirmed"}
+            onPreferenciaAplicada={
+              onActualizar ? () => onActualizar(oferta.trade_item_id) : undefined
+            }
+          />
+        </div>
       </div>
 
       {pendiente && (
@@ -146,31 +172,6 @@ export function TarjetaPrecioLista({
           {oferta.notes && <p className="mt-1">«{oferta.notes}»</p>}
         </div>
       )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <EnsenarALaIa
-          articuloId={oferta.trade_item_id}
-          ofertaId={oferta.offer_id}
-          proveedorId={proveedorId}
-          nombreArticulo={oferta.trade_item_name}
-          nombreProveedor={proveedor}
-          sinLaboratorio={estadoIdentidad(oferta) === "unconfirmed"}
-          onPreferenciaAplicada={
-            onActualizar ? () => onActualizar(oferta.trade_item_id) : undefined
-          }
-        />
-        <button
-          type="button"
-          disabled
-          title="Disponible próximamente"
-          className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground opacity-50"
-        >
-          <ShoppingCart className="h-3.5 w-3.5" /> Agregar a cotización
-        </button>
-        <span className="text-xs text-muted-foreground">
-          Se incorporará a la cotización cuando el carrito esté conectado.
-        </span>
-      </div>
     </article>
   );
 }
