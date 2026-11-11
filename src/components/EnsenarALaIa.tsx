@@ -31,6 +31,8 @@ import {
   describirPreferencia,
   describirPreferenciaArticulo,
   describirRetiro,
+  esErrorCorregible,
+  esErrorTransitorio,
   esIaDeshabilitada,
   guardarObservacion,
   interpretarObservacion,
@@ -54,7 +56,13 @@ type Resultado =
   | { tipo: "revision" }
   | { tipo: "sin_preferencia" }
   | { tipo: "deshabilitada" }
-  | { tipo: "error"; mensaje: string; guardado: boolean };
+  | {
+      tipo: "error";
+      mensaje: string;
+      guardado: boolean;
+      transitorio: boolean;
+      corregible: boolean;
+    };
 
 export interface EnsenarALaIaProps {
   /** Artículo exacto (`trade_item_id`) al que pertenece la tarjeta. */
@@ -98,17 +106,35 @@ export function EnsenarALaIa({
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [aclaracion, setAclaracion] = useState<Aclaracion | null>(null);
   const [observacionId, setObservacionId] = useState<string | null>(null);
+  /** Texto exacto que quedó guardado en `observacionId`; si cambia, se crea una observación nueva. */
+  const [textoGuardado, setTextoGuardado] = useState("");
+  /** Texto ya interpretado en este intento: evita reenviar sin cambios y pedir lo mismo. */
+  const [textoInterpretado, setTextoInterpretado] = useState("");
   const claveIdempotencia = useRef<string | null>(null);
   const idComentario = useId();
 
   const ocupado = paso === "guardando" || paso === "interpretando";
   const puedeEnviar = texto.trim().length > 0 && !ocupado;
+  const enRevision =
+    paso === "resultado" && (resultado?.tipo === "aclaracion" || resultado?.tipo === "revision");
+  // La aclaración se envía en el mismo campo: tiene que cambiar respecto de lo ya interpretado.
+  const puedeAclarar =
+    texto.trim().length > 0 && !ocupado && texto.trim() !== textoInterpretado.trim();
 
+  /**
+   * Guarda (si hace falta) e interpreta. Si el texto cambió respecto de lo ya guardado, crea una
+   * observación nueva enlazada a la anterior: la original nunca se sobrescribe y conserva su
+   * historial. Responder una aclaración usa exactamente este mismo camino.
+   */
   const enviar = async () => {
     const limpio = texto.trim();
     if (!limpio || ocupado) return;
 
-    let id = observacionId;
+    // Una observación solo se reutiliza si el texto es exactamente el ya guardado. Así el reintento
+    // técnico repite la misma operación, y cualquier corrección crea una observación nueva.
+    const debeCrear = !observacionId || limpio !== textoGuardado;
+    const anterior = debeCrear ? observacionId : null;
+    let id = debeCrear ? null : observacionId;
     if (!id) {
       claveIdempotencia.current ??= nuevaClaveDeIdempotencia();
       setPaso("guardando");
@@ -120,14 +146,24 @@ export function EnsenarALaIa({
             articuloId,
             proveedorId,
             ofertaId,
+            observacionAnteriorId: anterior,
           },
           claveIdempotencia.current,
         );
         id = observacion.observation_id;
         setObservacionId(id);
+        setTextoGuardado(limpio);
+        // La observación ya existe: una corrección posterior usará una clave nueva.
+        claveIdempotencia.current = null;
       } catch (error) {
         setPaso("resultado");
-        setResultado({ tipo: "error", mensaje: mensajeDeErrorObservacion(error), guardado: false });
+        setResultado({
+          tipo: "error",
+          mensaje: mensajeDeErrorObservacion(error),
+          guardado: false,
+          transitorio: esErrorTransitorio(error),
+          corregible: esErrorCorregible(error),
+        });
         return;
       }
     }
@@ -136,6 +172,7 @@ export function EnsenarALaIa({
     setResultado(null);
     try {
       const salida = await interpretarObservacion(id);
+      setTextoInterpretado(limpio);
       const estado = salida.observation.interpretation_status;
       const interpretacion = salida.observation.interpretation;
       if (estado === "suggested" || estado === "confirmed") {
@@ -164,9 +201,12 @@ export function EnsenarALaIa({
           tipo: "error",
           mensaje: "El servicio de IA no pudo interpretar el comentario esta vez.",
           guardado: true,
+          transitorio: true,
+          corregible: false,
         });
       }
     } catch (error) {
+      setTextoInterpretado(limpio);
       if (esIaDeshabilitada(error)) {
         setResultado({ tipo: "deshabilitada" });
       } else {
@@ -174,6 +214,8 @@ export function EnsenarALaIa({
           tipo: "error",
           mensaje: mensajeDeErrorObservacion(error),
           guardado: true,
+          transitorio: esErrorTransitorio(error),
+          corregible: esErrorCorregible(error),
         });
       }
     } finally {
@@ -184,17 +226,16 @@ export function EnsenarALaIa({
   const empezarDeNuevo = () => {
     setTexto("");
     setObservacionId(null);
+    setTextoGuardado("");
+    setTextoInterpretado("");
     claveIdempotencia.current = null;
     setResultado(null);
     setAclaracion(null);
     setPaso("editar");
   };
 
-  // Responder una aclaración crea una observación nueva con el texto corregido: la anterior queda
-  // guardada y ninguna preferencia se aplica hasta que la identificación sea inequívoca.
-  const responderAclaracion = () => {
-    setObservacionId(null);
-    claveIdempotencia.current = null;
+  /** Vuelve al campo conservando el comentario para corregirlo y enviarlo de nuevo. */
+  const volverAEditar = () => {
     setResultado(null);
     setPaso("editar");
   };
@@ -216,8 +257,9 @@ export function EnsenarALaIa({
         <DialogHeader>
           <DialogTitle>Enseñar a la IA</DialogTitle>
           <DialogDescription>
-            Escribe una preferencia comercial sobre {nombreArticulo} en {nombreProveedor}. Se aplica
-            solo a este producto, no a los demás de la misma marca o proveedor.
+            Cuéntale a la IA qué productos, laboratorios o presentaciones prefieres. Tus
+            preferencias ayudarán a ordenar las ofertas de los proveedores, sin modificar sus
+            precios ni disponibilidad
           </DialogDescription>
         </DialogHeader>
 
@@ -240,7 +282,7 @@ export function EnsenarALaIa({
             </p>
             {sinLaboratorio && (
               <p className="rounded-xl border border-dashed px-3 py-2 text-xs text-muted-foreground">
-                Este proveedor no informa laboratorio ni marca en su lista. Una preferencia de
+                {nombreProveedor} no informa laboratorio ni marca en su lista. Una preferencia de
                 proveedor, disponibilidad o precio sí puede ordenar sus ofertas; una de laboratorio
                 o marca quedará guardada, pero no cambiará su orden.
               </p>
@@ -267,14 +309,20 @@ export function EnsenarALaIa({
             nombreArticulo={nombreArticulo}
           />
         )}
-        {paso === "resultado" && resultado?.tipo === "aclaracion" && (
+        {paso === "resultado" && enRevision && (
           <div role="status" className="space-y-2 rounded-xl border bg-muted/40 p-3 text-sm">
             <p className="flex items-center gap-2 font-medium">
-              <ShieldQuestion className="h-4 w-4 text-brand-blue" aria-hidden /> Necesitamos una
-              aclaración
+              <ShieldQuestion className="h-4 w-4 text-brand-blue" aria-hidden />
+              {resultado?.tipo === "aclaracion"
+                ? "Necesitamos una aclaración"
+                : "Falta un dato para aplicarlo"}
             </p>
-            <p className="text-muted-foreground">{resultado.aclaracion.question}</p>
-            {resultado.aclaracion.candidates.length > 0 && (
+            <p className="text-muted-foreground">
+              {resultado?.tipo === "aclaracion"
+                ? resultado.aclaracion.question
+                : "No pude aplicar el comentario tal como está."}
+            </p>
+            {resultado?.tipo === "aclaracion" && resultado.aclaracion.candidates.length > 0 && (
               <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                 {resultado.aclaracion.candidates.map((candidato) => (
                   <li key={candidato.article_id}>{candidato.display_name}</li>
@@ -282,21 +330,20 @@ export function EnsenarALaIa({
               </ul>
             )}
             <p className="text-xs text-muted-foreground">
-              El comentario quedó guardado. La preferencia todavía no se aplica: escribe el nombre
-              exacto del producto y vuelve a enseñar.
+              Tu comentario quedó guardado y sigue aquí abajo: corrígelo o agrega el dato que falta
+              y envíalo otra vez. Todavía no cambia el orden de las ofertas.
             </p>
-            <Badge variant="outline">Sin efectos por ahora</Badge>
-          </div>
-        )}
-        {paso === "resultado" && resultado?.tipo === "revision" && (
-          <div role="status" className="space-y-2 rounded-xl border bg-muted/40 p-3 text-sm">
-            <p className="flex items-center gap-2 font-medium">
-              <ShieldQuestion className="h-4 w-4 text-brand-blue" aria-hidden /> Comentario
-              guardado, pendiente de revisión
-            </p>
-            <p className="text-muted-foreground">
-              Guardamos el comentario tal como lo escribiste. La interpretación no es inequívoca,
-              así que todavía no cambia el orden de las ofertas.
+            <Label htmlFor={idComentario}>Comentario sobre el producto</Label>
+            <Textarea
+              id={idComentario}
+              value={texto}
+              onChange={(evento) => setTexto(evento.target.value)}
+              maxLength={TEXTO_MAXIMO}
+              rows={3}
+              disabled={ocupado}
+            />
+            <p className="text-right text-xs text-muted-foreground">
+              {texto.length}/{TEXTO_MAXIMO}
             </p>
             <Badge variant="outline">Sin efectos por ahora</Badge>
           </div>
@@ -337,31 +384,53 @@ export function EnsenarALaIa({
               <AlertCircle className="h-4 w-4" aria-hidden /> No pudimos interpretar el comentario
             </p>
             <p>{resultado.mensaje}</p>
-            {resultado.guardado && (
+            {resultado.transitorio && resultado.guardado && (
               <p className="text-xs">
-                El comentario original quedó guardado. Reintentar no crea otro ni consume una
-                observación nueva.
+                El comentario quedó guardado. «Intentar nuevamente» vuelve a pedir la interpretación
+                de este mismo comentario, sin crear otra observación.
+              </p>
+            )}
+            {resultado.transitorio && !resultado.guardado && (
+              <p className="text-xs">
+                «Intentar nuevamente» vuelve a enviar este comentario, que todavía no se guardó.
               </p>
             )}
           </div>
         )}
 
         <DialogFooter className="gap-2 sm:justify-between">
-          {paso === "resultado" && resultado?.tipo === "aclaracion" && (
-            <button type="button" className={ESTILO_BOTON} onClick={responderAclaracion}>
-              Aclarar comentario
+          {/* Aclaración: se envía desde el mismo campo, sin pasos ni botones de «reintentar». */}
+          {paso === "resultado" && enRevision && (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void enviar()}
+              disabled={!puedeAclarar}
+            >
+              Guardar aclaración y enseñar
             </button>
           )}
-          {paso === "resultado" && resultado?.tipo !== "aplicada" && resultado?.tipo !== "aclaracion" && (
+          {/* Solo un fallo transitorio repite la operación; el texto explica cuál es exactamente. */}
+          {paso === "resultado" && resultado?.tipo === "error" && resultado.transitorio && (
             <button type="button" className={ESTILO_BOTON} onClick={() => void enviar()}>
-              Reintentar
+              Intentar nuevamente
             </button>
           )}
-          {paso === "resultado" && (
-            <button type="button" className={ESTILO_BOTON} onClick={empezarDeNuevo}>
-              Escribir otro comentario
-            </button>
-          )}
+          {/* Un error del comentario no se arregla repitiéndolo: se corrige. */}
+          {paso === "resultado" &&
+            resultado?.tipo === "error" &&
+            !resultado.transitorio &&
+            resultado.corregible && (
+              <button type="button" className={ESTILO_BOTON} onClick={volverAEditar}>
+                Corregir comentario
+              </button>
+            )}
+          {paso === "resultado" &&
+            (resultado?.tipo === "aplicada" || resultado?.tipo === "sin_preferencia") && (
+              <button type="button" className={ESTILO_BOTON} onClick={empezarDeNuevo}>
+                Escribir otro comentario
+              </button>
+            )}
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
@@ -399,7 +468,7 @@ function PreguntaDeAclaracion({ aclaracion }: { aclaracion: Aclaracion }) {
       {aclaracion.candidates.length > 0 && (
         <p>Opciones: {aclaracion.candidates.map((c) => c.display_name).join(" · ")}</p>
       )}
-      <p>La preferencia anterior todavía no se aplica; corrige el texto y vuelve a enseñar.</p>
+      <p>La preferencia todavía no se aplica; corrige el texto y vuelve a enseñarla.</p>
     </div>
   );
 }

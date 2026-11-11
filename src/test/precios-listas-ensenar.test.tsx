@@ -112,7 +112,7 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
     // Con identidad publicada, el formulario no advierte que la lista no la informa.
     fireEvent.click(screen.getByRole("button", { name: "Enseñar a la IA" }));
     expect(
-      screen.queryByText(/Este proveedor no informa laboratorio ni marca en su lista/),
+      screen.queryByText(/Distribuidora Andes no informa laboratorio ni marca en su lista/),
     ).toBeNull();
   });
 
@@ -171,7 +171,7 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
     // El laboratorio sí está informado (en la descripción): no se advierte que falte.
     fireEvent.click(screen.getByRole("button", { name: "Enseñar a la IA" }));
     expect(
-      screen.queryByText(/Este proveedor no informa laboratorio ni marca en su lista/),
+      screen.queryByText(/Distribuidora Andes no informa laboratorio ni marca en su lista/),
     ).toBeNull();
   });
 
@@ -192,7 +192,7 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Enseñar a la IA" }));
     expect(
-      screen.getByText(/Este proveedor no informa laboratorio ni marca en su lista/),
+      screen.getByText(/Distribuidora Andes no informa laboratorio ni marca en su lista/),
     ).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Comentario sobre el producto" }), {

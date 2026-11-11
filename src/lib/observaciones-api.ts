@@ -115,6 +115,8 @@ export interface DatosObservacion {
   articuloId: string;
   proveedorId?: string | null | undefined;
   ofertaId?: string | null | undefined;
+  /** Observación que se está aclarando; queda enlazada en el contexto de la nueva. */
+  observacionAnteriorId?: string | null | undefined;
 }
 
 interface CuerpoObservacion {
@@ -122,6 +124,7 @@ interface CuerpoObservacion {
   trade_item_id: string;
   supplier_id?: string;
   offer_snapshot_id?: string;
+  previous_observation_id?: string;
 }
 
 /**
@@ -146,6 +149,9 @@ export async function guardarObservacion(
   // Solo se envía lo que la tarjeta realmente conoce; nunca se completa a mano.
   if (datos.proveedorId) cuerpo.supplier_id = datos.proveedorId;
   if (datos.ofertaId) cuerpo.offer_snapshot_id = datos.ofertaId;
+  if (datos.observacionAnteriorId) {
+    cuerpo.previous_observation_id = datos.observacionAnteriorId;
+  }
   return apiRequest<ObservacionComercial>(
     "/api/v1/commercial-observations",
     {
@@ -182,6 +188,21 @@ function estadoHttp(error: unknown): number | null {
 /** La instalación no tiene la interpretación con IA habilitada (`503 OBSERVATION_AI_DISABLED`). */
 export function esIaDeshabilitada(error: unknown): boolean {
   return estadoHttp(error) === 503;
+}
+
+/**
+ * ¿Repetir la operación puede funcionar? Solo cuando el fallo es de red, de ritmo o del
+ * servicio (5xx). Un 400/409/422 no cambia por repetirlo: hay que corregir el comentario.
+ */
+export function esErrorTransitorio(error: unknown): boolean {
+  const status = estadoHttp(error);
+  return status === null || status === 429 || status >= 500;
+}
+
+/** El comentario se puede corregir y volver a enviar (error del contenido, no técnico). */
+export function esErrorCorregible(error: unknown): boolean {
+  const status = estadoHttp(error);
+  return status === 400 || status === 409 || status === 422;
 }
 
 /** Mensaje para la persona; nunca expone códigos, prompts ni detalles técnicos. */

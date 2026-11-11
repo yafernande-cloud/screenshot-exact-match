@@ -697,6 +697,7 @@ describe("«Enseñar a la IA» desde una oferta del catálogo", () => {
         articuloId: "art-1",
         proveedorId: "sup-catalogo",
         ofertaId: "of-1",
+        observacionAnteriorId: null,
       },
       expect.any(String),
     );
