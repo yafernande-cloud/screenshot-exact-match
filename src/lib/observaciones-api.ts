@@ -110,18 +110,48 @@ export interface ResultadoInterpretacion {
   observation: ObservacionComercial;
 }
 
+/**
+ * Oferta en vivo que la persona está viendo, con sus datos comerciales públicos.
+ *
+ * Permite enseñar sin volver a elegir un artículo: el backend resuelve la identidad con el
+ * vínculo, el EAN o una identidad técnica propia del SKU, y usa estos datos como contexto real
+ * de la interpretación. No declara ninguna equivalencia con otro producto.
+ */
+export interface ContextoOferta {
+  source_id: string;
+  external_id: string;
+  name: string;
+  supplier_id?: string | null | undefined;
+  laboratory?: string | null | undefined;
+  brand?: string | null | undefined;
+  presentation?: string | null | undefined;
+  price?: { amount: string; currency: string } | null | undefined;
+  price_basis?: string | null | undefined;
+  sale_unit?: string | null | undefined;
+  stock_status?: string | null | undefined;
+  stock_quantity?: string | null | undefined;
+  stock_unit?: string | null | undefined;
+  ean?: string | null | undefined;
+  product_url?: string | null | undefined;
+  image_url?: string | null | undefined;
+}
+
 export interface DatosObservacion {
   texto: string;
-  articuloId: string;
+  /** Artículo ya vinculado; puede faltar si se enseña desde una oferta en vivo. */
+  articuloId?: string | null | undefined;
   proveedorId?: string | null | undefined;
   ofertaId?: string | null | undefined;
+  /** Oferta en vivo que originó el comentario; el backend resuelve su identidad interna. */
+  oferta?: ContextoOferta | null | undefined;
   /** Observación que se está aclarando; queda enlazada en el contexto de la nueva. */
   observacionAnteriorId?: string | null | undefined;
 }
 
 interface CuerpoObservacion {
   text: string;
-  trade_item_id: string;
+  trade_item_id?: string;
+  offer?: ContextoOferta;
   supplier_id?: string;
   offer_snapshot_id?: string;
   previous_observation_id?: string;
@@ -144,9 +174,10 @@ export async function guardarObservacion(
 ): Promise<ObservacionComercial> {
   const cuerpo: CuerpoObservacion = {
     text: datos.texto.trim(),
-    trade_item_id: datos.articuloId,
   };
   // Solo se envía lo que la tarjeta realmente conoce; nunca se completa a mano.
+  if (datos.articuloId) cuerpo.trade_item_id = datos.articuloId;
+  if (datos.oferta) cuerpo.offer = datos.oferta;
   if (datos.proveedorId) cuerpo.supplier_id = datos.proveedorId;
   if (datos.ofertaId) cuerpo.offer_snapshot_id = datos.ofertaId;
   if (datos.observacionAnteriorId) {

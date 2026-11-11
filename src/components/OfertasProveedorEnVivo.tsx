@@ -93,7 +93,6 @@ function ListaResultados({
             proveedor={fuente.supplierName}
             sourceId={fuente.sourceId}
             supplierId={fuente.supplierId}
-            consulta={consulta}
             onAgregar={onAgregar ? (oferta) => onAgregar({ tipo: "oferta", oferta }) : undefined}
             onPreferenciaAplicada={onPreferenciaAplicada}
           />
@@ -104,7 +103,6 @@ function ListaResultados({
             proveedor={fuente.supplierName}
             sourceId={fuente.sourceId}
             supplierId={fuente.supplierId}
-            consulta={consulta}
             onAgregar={
               onAgregar ? (producto) => onAgregar({ tipo: "publicado", producto }) : undefined
             }

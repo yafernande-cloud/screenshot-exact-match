@@ -39,6 +39,7 @@ import {
   mensajeDeErrorObservacion,
   nuevaClaveDeIdempotencia,
   type Aclaracion,
+  type ContextoOferta,
   type PreferenciaArticulo,
   type PreferenciaComercial,
 } from "@/lib/observaciones-api";
@@ -65,8 +66,13 @@ type Resultado =
     };
 
 export interface EnsenarALaIaProps {
-  /** Artículo exacto (`trade_item_id`) al que pertenece la tarjeta. */
-  articuloId: string;
+  /** Artículo exacto (`trade_item_id`) al que pertenece la tarjeta, si ya está vinculado. */
+  articuloId?: string | null | undefined;
+  /**
+   * Oferta en vivo que la persona está viendo. Con ella el backend resuelve la identidad interna
+   * y usa sus datos comerciales reales; la persona no vuelve a elegir ni a vincular nada.
+   */
+  ofertaContexto?: ContextoOferta | null | undefined;
   /** Oferta persistida de la que nace la observación; puede no existir. */
   ofertaId?: string | null | undefined;
   /** Proveedor de la oferta; se envía solo si la tarjeta lo conoce. */
@@ -83,8 +89,11 @@ export interface EnsenarALaIaProps {
    * persona que repita el paso que acaba de completar.
    */
   abrirInicial?: boolean;
-  /** Se llama cuando quedó una preferencia aplicada, para refrescar las ofertas del artículo. */
-  onPreferenciaAplicada?: (() => void | Promise<void>) | undefined;
+  /**
+   * Se llama cuando quedó una preferencia aplicada, con el artículo que el backend resolvió (puede
+   * ser una identidad técnica nueva), para refrescar las ofertas de ese artículo.
+   */
+  onPreferenciaAplicada?: ((tradeItemId: string) => void | Promise<void>) | undefined;
 }
 
 export const ESTILO_BOTON =
@@ -92,6 +101,7 @@ export const ESTILO_BOTON =
 
 export function EnsenarALaIa({
   articuloId,
+  ofertaContexto,
   ofertaId,
   proveedorId,
   nombreArticulo,
@@ -143,7 +153,8 @@ export function EnsenarALaIa({
         const observacion = await guardarObservacion(
           {
             texto: limpio,
-            articuloId,
+            articuloId: articuloId ?? null,
+            oferta: ofertaContexto ?? null,
             proveedorId,
             ofertaId,
             observacionAnteriorId: anterior,
@@ -183,7 +194,7 @@ export function EnsenarALaIa({
           retiros: salida.observation.retired_subject_kinds ?? [],
         });
         setAclaracion(null);
-        void onPreferenciaAplicada?.();
+        void onPreferenciaAplicada?.(salida.observation.trade_item_id);
       } else if (estado === "needs_review") {
         // Una aclaración pendiente no aplica ninguna preferencia: se conserva la observación y se
         // sigue conversando en el mismo campo, sin perder el contexto.

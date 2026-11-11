@@ -46,17 +46,14 @@ export function FichaProductoPublicadoEnVivo({
   onAgregar,
   sourceId,
   supplierId,
-  consulta,
 }: {
   producto: ProductoPublicadoEnVivo;
   proveedor: string;
   /** Acción real del carrito. Sin ella el botón nunca se habilita, aunque el backend autorice. */
   onAgregar?: ((producto: ProductoPublicadoEnVivo) => void) | undefined;
-  /** Fuente de la que salió la publicación; sin ella no se puede vincular ni enseñar. */
+  /** Fuente de la que salió la publicación; sin ella no se puede enseñar. */
   sourceId?: string | undefined;
   supplierId?: string | null | undefined;
-  /** Consulta que originó el resultado, para proponerla al vincular. */
-  consulta?: string | null | undefined;
 }) {
   const [imagenFallida, setImagenFallida] = useState(false);
   const imagen = urlPublicada(producto.image_url);
@@ -120,10 +117,17 @@ export function FichaProductoPublicadoEnVivo({
               sourceId={sourceId}
               externalId={producto.external_id}
               externalName={producto.name}
+              laboratory={producto.laboratory}
+              presentation={producto.presentation}
+              // El precio de lista es referencial: no se presenta como precio comercial.
+              price={null}
+              stockStatus={producto.stock_status}
+              imageUrl={producto.image_url}
+              productUrl={producto.product_url}
+              ean={producto.ean}
               proveedorId={supplierId}
               nombreProveedor={proveedor}
               tradeItemId={producto.trade_item_id}
-              consulta={consulta}
             />
           )}
         </div>

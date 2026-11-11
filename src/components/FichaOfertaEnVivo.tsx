@@ -49,18 +49,15 @@ export function FichaOfertaEnVivo({
   onAgregar,
   sourceId,
   supplierId,
-  consulta,
   onPreferenciaAplicada,
 }: {
   oferta: OfertaEnVivo;
   proveedor: string;
   /** Acción real del carrito. Sin ella el botón nunca se habilita, aunque el backend autorice. */
   onAgregar?: ((oferta: OfertaEnVivo) => void) | undefined;
-  /** Fuente de la que salió la oferta; sin ella no se puede vincular ni enseñar. */
+  /** Fuente de la que salió la oferta; sin ella no se puede enseñar. */
   sourceId?: string | undefined;
   supplierId?: string | null | undefined;
-  /** Consulta que originó el resultado, para proponerla al vincular. */
-  consulta?: string | null | undefined;
   /** Refresca las ofertas después de enseñar una preferencia. */
   onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
@@ -127,10 +124,20 @@ export function FichaOfertaEnVivo({
               sourceId={sourceId}
               externalId={oferta.external_id}
               externalName={oferta.name}
+              laboratory={oferta.laboratory}
+              presentation={oferta.presentation}
+              price={oferta.price}
+              priceBasis={oferta.price_basis}
+              saleUnit={oferta.sale_unit}
+              stockStatus={oferta.stock_status}
+              stockQuantity={oferta.stock_quantity}
+              stockUnit={oferta.stock_unit}
+              imageUrl={oferta.image_url}
+              productUrl={oferta.product_url}
+              ean={oferta.ean}
               proveedorId={supplierId}
               nombreProveedor={proveedor}
               tradeItemId={oferta.trade_item_id}
-              consulta={consulta}
               onPreferenciaAplicada={onPreferenciaAplicada}
             />
           )}

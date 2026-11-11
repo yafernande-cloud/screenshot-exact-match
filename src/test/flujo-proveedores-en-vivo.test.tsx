@@ -695,6 +695,8 @@ describe("«Enseñar a la IA» desde una oferta del catálogo", () => {
       {
         texto: "Prefiero Laboratorio Chile aunque sea un poco más caro",
         articuloId: "art-1",
+        // Oferta guardada del catálogo: no viaja contexto de oferta en vivo.
+        oferta: null,
         proveedorId: "sup-catalogo",
         ofertaId: "of-1",
         observacionAnteriorId: null,
