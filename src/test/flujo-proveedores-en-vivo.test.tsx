@@ -503,7 +503,7 @@ describe("precios de listas cargadas en la búsqueda", () => {
     expect(
       await screen.findByRole("heading", { name: "Precios de listas cargadas" }),
     ).toBeInTheDocument();
-    expect(await screen.findByText("Pendiente de revisión")).toBeInTheDocument();
+    expect(await screen.findByText("Condiciones del proveedor")).toBeInTheDocument();
     expect(screen.getByText(/Entrega en 48 horas/)).toBeInTheDocument();
     expect(
       await screen.findByRole("article", {

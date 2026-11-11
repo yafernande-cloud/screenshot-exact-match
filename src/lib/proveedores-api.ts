@@ -143,6 +143,50 @@ export interface FilaVistaPrevia {
   values: unknown[];
 }
 
+/** Una celda de precio que admite más de una lectura (por ejemplo «2.490»). */
+export interface EjemploFormatoPrecio {
+  row: number;
+  raw: string;
+  /** Valores que produce cada interpretación, en el mismo orden que `interpretations`. */
+  amounts: string[];
+}
+
+/** Valor concreto que una interpretación asigna a una celda de ejemplo. */
+export interface MontoInterpretado {
+  row: number;
+  raw: string;
+  amount: string;
+}
+
+/** Una lectura posible de la columna de precios: decimal o con separador de miles. */
+export interface InterpretacionFormatoPrecio {
+  key: string;
+  decimal_separator: string;
+  thousands_separator: string | null;
+  label: string;
+  description: string;
+  examples: MontoInterpretado[];
+}
+
+/**
+ * Diagnóstico del formato de los precios (D-151). `requires_confirmation` significa que el archivo
+ * admite más de una lectura y la importación real se bloquea hasta que una persona elija. Si el
+ * perfil ya declara un separador de miles, el backend lo considera evidencia y no vuelve a preguntar.
+ */
+export interface FormatoPrecio {
+  status: "ok" | "ambiguous" | "none";
+  requires_confirmation: boolean;
+  confirmed: boolean;
+  declared_valid: boolean;
+  decimal_separator: string;
+  thousands_separator: string | null;
+  values_checked: number;
+  unrecognized_values: number;
+  examples: EjemploFormatoPrecio[];
+  interpretations: InterpretacionFormatoPrecio[];
+  message: string | null;
+}
+
 export interface VistaPreviaImportacion {
   file_format: FormatoArchivo;
   sheets: string[];
@@ -156,10 +200,14 @@ export interface VistaPreviaImportacion {
   suggested_columns: Record<string, EspecificacionColumna>;
   suggested_options: {
     decimal_separator: string | null;
+    thousands_separator?: string | null;
+    price_format_confirmed?: boolean;
     currency: string | null;
     price_basis: string | null;
     default_sale_unit: string | null;
   };
+  /** Diagnóstico del formato de precios; opcional para tolerar respuestas antiguas. */
+  price_format?: FormatoPrecio | null;
 }
 
 export interface DatosPerfil {
@@ -276,6 +324,11 @@ export interface RevisionImportacion {
   missing_columns: string[];
   /** Columnas opcionales omitidas a propósito (por ejemplo «pack» sin unidad base). */
   ignored_columns: ColumnaIgnorada[];
+  /**
+   * Formato de los precios. Si `requires_confirmation`, la persona tiene que elegir una lectura
+   * antes de importar; el backend rechaza la importación real (422) mientras no se confirme.
+   */
+  price_format?: FormatoPrecio | null;
   file_hash: string;
 }
 
@@ -837,12 +890,12 @@ export function etiquetaBasePrecio(base: string): string {
 }
 
 /**
- * Estado de revisión de una oferta importada (D-110): una condición comercial escrita por el
- * proveedor deja el precio guardado pero no verificado. No se presenta como «vigente» ni
- * «verificado» cuando falta esa revisión.
+ * Condiciones comerciales publicadas por el proveedor (D-110). `review_status` y `notes` siguen
+ * siendo del backend; aquí solo se presentan sin convertir una condición comercial en una alarma.
+ * Una oferta con condiciones no se presenta como verificada.
  */
 export function etiquetaEstadoRevision(estado: string): string {
-  return estado === "needs_review" ? "Pendiente de revisión" : "Sin condiciones pendientes";
+  return estado === "needs_review" ? "Condiciones del proveedor" : "Sin condiciones informadas";
 }
 
 /** Mensaje para la persona; nunca expone detalles internos. */

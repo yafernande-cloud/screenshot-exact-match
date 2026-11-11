@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatearCantidad } from "@/lib/catalogo";
 import {
   UNIDADES_VENTA,
   esConflictoDeVersion,
@@ -45,6 +46,12 @@ type Etapa =
   | "exito"
   | "error";
 
+/** Lectura del formato de precios que eligió la persona (D-151). */
+type FormatoElegido = {
+  decimal_separator: string;
+  thousands_separator: string | null;
+};
+
 type Respuestas = {
   currency: string;
   price_basis: string;
@@ -52,10 +59,13 @@ type Respuestas = {
   unidades: Record<string, string>;
   /** Valor publicado en la lista → base de precio confirmada para ESTE proveedor. */
   bases: Record<string, string>;
+  /** `null` mientras el archivo no tenga un formato ambiguo o nadie lo haya confirmado. */
+  formatoPrecio: FormatoElegido | null;
   crearFaltantes: boolean;
 };
 
-type Pregunta = "moneda" | "base" | "bases" | "unidad_defecto" | "unidades" | "crear";
+type Pregunta =
+  "moneda" | "base" | "bases" | "unidad_defecto" | "unidades" | "formato_precio" | "crear";
 
 const ETIQUETA_ORIGEN: Record<string, string> = {
   saved: "Mapeo guardado del proveedor",
@@ -77,6 +87,15 @@ function mapaDeTextos(valor: unknown): Record<string, string> {
   );
 }
 
+function formatoDePerfil(opciones: Record<string, unknown>): FormatoElegido | null {
+  if (opciones["price_format_confirmed"] !== true) return null;
+  const miles = opciones["thousands_separator"];
+  return {
+    decimal_separator: textoDeOpcion(opciones, "decimal_separator") || ".",
+    thousands_separator: typeof miles === "string" ? miles : null,
+  };
+}
+
 function respuestasIniciales(revision: RevisionImportacion): Respuestas {
   const perfil = revision.profile;
   const opciones = perfil?.options ?? {};
@@ -86,8 +105,14 @@ function respuestasIniciales(revision: RevisionImportacion): Respuestas {
     default_sale_unit: textoDeOpcion(opciones, "default_sale_unit"),
     unidades: { ...(perfil?.units ?? {}) },
     bases: mapaDeTextos(opciones["basis_values"]),
+    formatoPrecio: formatoDePerfil(opciones),
     crearFaltantes: opciones["create_missing_items"] === true,
   };
+}
+
+/** El archivo admite más de una lectura del precio y nadie eligió todavía. */
+function formatoAmbiguo(revision: RevisionImportacion): boolean {
+  return revision.price_format?.requires_confirmation === true;
 }
 
 /** Datos que no se pueden resolver con una pregunta: el archivo no trae la columna. */
@@ -104,6 +129,11 @@ function preguntasPendientes(revision: RevisionImportacion, respuestas: Respuest
   const codigos = new Set(revision.problems.map((problema) => problema.code));
   const pendientes: Pregunta[] = [];
 
+  // Un precio como «2.490» admite dos lecturas ($2,49 o $2.490): no se importa hasta que una
+  // persona elija. El backend también rechaza la importación real mientras no esté confirmado.
+  if (formatoAmbiguo(revision) && !respuestas.formatoPrecio) {
+    pendientes.push("formato_precio");
+  }
   if (revision.missing_columns.includes("sale_unit") && !respuestas.default_sale_unit) {
     pendientes.push("unidad_defecto");
   }
@@ -155,6 +185,13 @@ function datosConRespuestas(
     opciones["default_sale_unit"] = respuestas.default_sale_unit;
   }
   if (Object.keys(bases).length > 0) opciones["basis_values"] = bases;
+  if (respuestas.formatoPrecio) {
+    // La elección de la persona es evidencia explícita: queda en el perfil del proveedor y la
+    // importación real deja de pedir confirmación para este formato.
+    opciones["decimal_separator"] = respuestas.formatoPrecio.decimal_separator;
+    opciones["thousands_separator"] = respuestas.formatoPrecio.thousands_separator;
+    opciones["price_format_confirmed"] = true;
+  }
 
   return {
     file_format: perfil.file_format,
@@ -352,7 +389,7 @@ export function ImportadorLista({
       const pendientes = revisionVigente.rows_needs_review;
       const avisoPendientes =
         pendientes > 0
-          ? ` ${pendientes} ${pendientes === 1 ? "tiene" : "tienen"} condiciones comerciales pendientes de revisión.`
+          ? ` ${pendientes} ${pendientes === 1 ? "informa" : "informan"} condiciones comerciales del proveedor.`
           : "";
       const base =
         salida.rows_rejected > 0
@@ -513,6 +550,68 @@ export function ImportadorLista({
               La lista no trae esta información con certeza. No la completamos solos.
             </p>
           </div>
+
+          {pendientes.includes("formato_precio") && revision.price_format && (
+            <fieldset className="space-y-2">
+              <legend className="text-sm">
+                Los precios del archivo se pueden leer de más de una forma. ¿Cuál es la correcta?
+              </legend>
+              <p className="text-xs text-muted-foreground">
+                {revision.price_format.message ??
+                  "No importamos hasta que lo confirmes: una lectura equivocada cambia el precio real."}
+              </p>
+              <div className="space-y-2">
+                {revision.price_format.interpretations.map((interpretacion) => {
+                  const elegido =
+                    respuestas.formatoPrecio?.decimal_separator ===
+                      interpretacion.decimal_separator &&
+                    (respuestas.formatoPrecio?.thousands_separator ?? null) ===
+                      (interpretacion.thousands_separator ?? null);
+                  const moneda = respuestas.currency.trim().toUpperCase();
+                  return (
+                    <label
+                      key={`${interpretacion.key}-${interpretacion.decimal_separator}`}
+                      className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2 ${
+                        elegido ? "border-brand-green bg-brand-green/5" : ""
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`${idBase}-formato-precio`}
+                        className="mt-1"
+                        checked={elegido}
+                        onChange={() =>
+                          setRespuestas({
+                            ...respuestas,
+                            formatoPrecio: {
+                              decimal_separator: interpretacion.decimal_separator,
+                              thousands_separator: interpretacion.thousands_separator,
+                            },
+                          })
+                        }
+                      />
+                      <span className="space-y-0.5">
+                        <span className="block text-sm font-medium">{interpretacion.label}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {interpretacion.description}
+                        </span>
+                        {interpretacion.examples.length > 0 && (
+                          <span className="block text-xs">
+                            {interpretacion.examples
+                              .map((ejemplo) => {
+                                const cifra = formatearCantidad(ejemplo.amount) ?? ejemplo.amount;
+                                return `«${ejemplo.raw}» = ${cifra}${moneda ? ` ${moneda}` : ""}`;
+                              })
+                              .join(" · ")}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
 
           {pendientes.includes("unidad_defecto") && (
             <div>
@@ -786,9 +885,10 @@ export function ImportadorLista({
             >
               {revision.rows_needs_review}{" "}
               {revision.rows_needs_review === 1
-                ? "producto tiene condiciones comerciales informadas por el proveedor que todavía no se procesan"
-                : "productos tienen condiciones comerciales informadas por el proveedor que todavía no se procesan"}
-              . El precio se guardó y quedó marcado como pendiente de revisión.
+                ? "producto informa condiciones comerciales del proveedor"
+                : "productos informan condiciones comerciales del proveedor"}
+              . El precio se guardó; las condiciones se muestran junto a la oferta y no se presenta
+              como verificada.
             </div>
           )}
           <p className="text-xs text-muted-foreground">
@@ -821,6 +921,14 @@ export function ImportadorLista({
               <p>Fila de encabezado: {revision.header_row}</p>
               <p>Origen del mapeo: {ETIQUETA_ORIGEN[revision.profile_source]}</p>
               <p>Versión del mapeo: {revision.profile_version}</p>
+              <p>
+                Formato de precios: separador decimal «
+                {revision.price_format?.decimal_separator ?? "."}» · separador de miles{" "}
+                {revision.price_format?.thousands_separator
+                  ? `«${revision.price_format.thousands_separator}»`
+                  : "no declarado"}
+                {revision.price_format?.requires_confirmation ? " · sin confirmar" : ""}
+              </p>
               <p className="truncate">Huella del archivo: {revision.file_hash.slice(0, 16)}…</p>
             </div>
 

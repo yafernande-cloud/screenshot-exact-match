@@ -11,7 +11,7 @@ import { AlertCircle, FileSpreadsheet, ShoppingCart } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { EnsenarALaIa } from "@/components/EnsenarALaIa";
-import { formatearDinero } from "@/lib/catalogo";
+import { describirCantidad, formatearDinero } from "@/lib/catalogo";
 import {
   etiquetaBasePrecio,
   etiquetaEstadoRevision,
@@ -34,8 +34,9 @@ function presentacion(oferta: OfertaImportada): string {
 
 function stock(oferta: OfertaImportada): string {
   if (oferta.stock_status !== "known") return "Stock no informado";
-  if (!oferta.stock_quantity) return "Stock informado";
-  return `${oferta.stock_quantity} ${etiquetaUnidad(oferta.stock_unit).toLowerCase()}`;
+  // El backend serializa `Numeric(12,3)` como «120.000»: no son 120 mil, son 120 unidades.
+  // Se muestra la cifra en formato local y con la unidad en plural cuando corresponde.
+  return describirCantidad(oferta.stock_quantity, oferta.stock_unit) ?? "Stock informado";
 }
 
 function precio(oferta: OfertaImportada): string {
@@ -79,11 +80,13 @@ function identidad(oferta: OfertaImportada): string {
 function EtiquetaIdentidad({ oferta }: { oferta: OfertaImportada }) {
   const estado = estadoIdentidad(oferta);
   if (estado === "published") return null;
+  // La falta de identidad informativa se muestra como dato pendiente, sin alarma: el laboratorio y
+  // la marca son información de la lista, no una condición comercial del proveedor (D-151).
   return (
-    <Badge variant={estado === "unconfirmed" ? "destructive" : "secondary"}>
+    <Badge variant="outline">
       {estado === "extracted"
         ? "Identidad extraída de la descripción"
-        : "Pendiente de identificación"}
+        : "Laboratorio y marca no informados"}
     </Badge>
   );
 }
@@ -123,7 +126,8 @@ function TarjetaPrecioLista({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Badge variant={pendiente ? "destructive" : "outline"}>
+        {/* Una condición comercial no es un error: se informa sin badge destructivo (D-151). */}
+        <Badge variant={pendiente ? "secondary" : "outline"}>
           {etiquetaEstadoRevision(oferta.review_status)}
         </Badge>
         <EtiquetaIdentidad oferta={oferta} />
@@ -136,10 +140,10 @@ function TarjetaPrecioLista({
           className="mt-2 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900"
         >
           <p>
-            El proveedor informó condiciones comerciales que todavía no se procesan. El precio se
-            guardó, pero no se presenta como verificado.
+            El proveedor informó estas condiciones comerciales. El precio se guardó, pero no se
+            presenta como verificado.
           </p>
-          {oferta.notes && <p className="mt-1">Condiciones informadas: «{oferta.notes}»</p>}
+          {oferta.notes && <p className="mt-1">«{oferta.notes}»</p>}
         </div>
       )}
 
@@ -204,8 +208,9 @@ export function PreciosListasCargadas({
         <Badge variant="outline">Excel / CSV</Badge>
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Son precios importados de archivos del proveedor, no consultas en vivo. Cada oferta indica
-        la fecha en que se observó y su estado de revisión.
+        Son precios de la última lista importada de cada proveedor, no consultas en vivo. Cada
+        oferta indica la fecha en que se observó y las condiciones comerciales que informó el
+        proveedor.
       </p>
 
       {cargando && grupos.length === 0 && (

@@ -1719,7 +1719,7 @@ function PreciosImportados({ proveedor, refresco }: { proveedor: Proveedor; refr
                     <th className="px-3 py-2 font-medium">Código proveedor</th>
                     <th className="px-3 py-2 font-medium">Precio</th>
                     <th className="px-3 py-2 font-medium">Unidad</th>
-                    <th className="px-3 py-2 font-medium">Revisión</th>
+                    <th className="px-3 py-2 font-medium">Condiciones</th>
                     <th className="px-3 py-2 font-medium">Fuente</th>
                     <th className="px-3 py-2 font-medium">Observado</th>
                   </tr>

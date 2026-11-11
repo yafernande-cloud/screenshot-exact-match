@@ -772,12 +772,10 @@ describe("pantalla de proveedores", () => {
 
     expect(await screen.findByText("Carga exitosa")).toBeInTheDocument();
     const aviso = screen.getByRole("note");
-    expect(aviso).toHaveTextContent(/producto tiene condiciones comerciales informadas/);
-    expect(aviso).toHaveTextContent(
-      /El precio se guardó y quedó marcado como pendiente de revisión/,
-    );
+    expect(aviso).toHaveTextContent(/producto informa condiciones comerciales del proveedor/);
+    expect(aviso).toHaveTextContent(/El precio se guardó/);
     expect(toastSuccess).toHaveBeenCalledWith(
-      "Se cargaron 1 productos. 1 tiene condiciones comerciales pendientes de revisión.",
+      "Se cargaron 1 productos. 1 informa condiciones comerciales del proveedor.",
     );
   });
 
@@ -883,6 +881,113 @@ describe("pantalla de proveedores", () => {
           columns: sinMoneda.profile!.columns,
           units: { caja: "box" },
           options: { decimal_separator: ".", create_missing_items: false, currency: "CLP" },
+        },
+        { auto: true, hoja: null, filaEncabezado: 1 },
+      ),
+    );
+    expect(await screen.findByText("Carga exitosa")).toBeInTheDocument();
+  });
+
+  it("pide confirmar cómo leer «2.490» antes de importar y guarda la elección en el perfil", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+    const ambiguo = revision({
+      profile: {
+        file_format: "csv",
+        sheet: null,
+        header_row: 1,
+        columns: {
+          sku: { header: "Código", position: 1 },
+          name: { header: "Producto", position: 2 },
+          price: { header: "Precio", position: 3 },
+          sale_unit: { header: "Unidad", position: 4 },
+        },
+        units: { caja: "box" },
+        options: { decimal_separator: ".", create_missing_items: false },
+      },
+      price_format: {
+        status: "ambiguous",
+        requires_confirmation: true,
+        confirmed: false,
+        declared_valid: true,
+        decimal_separator: ".",
+        thousands_separator: null,
+        values_checked: 1,
+        unrecognized_values: 0,
+        examples: [{ row: 2, raw: "2.490", amounts: ["2.49", "2490"] }],
+        interpretations: [
+          {
+            key: "decimal",
+            decimal_separator: ".",
+            thousands_separator: null,
+            label: "«.» separa decimales",
+            description: "El separador «.» marca los decimales.",
+            examples: [{ row: 2, raw: "2.490", amount: "2.49" }],
+          },
+          {
+            key: "thousands",
+            decimal_separator: ",",
+            thousands_separator: ".",
+            label: "«.» separa miles",
+            description: "El separador «.» agrupa miles; los decimales usan «,».",
+            examples: [{ row: 2, raw: "2.490", amount: "2490" }],
+          },
+        ],
+        message: "El formato del precio «2.490» es ambiguo: puede leerse como «2.49» o «2490».",
+      },
+    });
+    revisarMock.mockResolvedValueOnce(ambiguo).mockResolvedValueOnce(revision());
+    guardarPerfilMock.mockResolvedValue(perfilGuardado());
+    importarMock.mockResolvedValue({
+      import_id: "imp-1",
+      status: "completed",
+      rows_total: 1,
+      rows_accepted: 1,
+      rows_rejected: 0,
+      errors: [],
+      observed_at: "2026-11-08T10:00:00Z",
+    });
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    const archivo = archivoCsv();
+    fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
+      target: { files: [archivo] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cargar lista de precios" }));
+
+    // El archivo se detiene: sin elección no se guarda el perfil ni se importa nada.
+    expect(
+      await screen.findByText(/Los precios del archivo se pueden leer de más de una forma/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeDisabled();
+    expect(guardarPerfilMock).not.toHaveBeenCalled();
+    expect(importarMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("radio", { name: /«.» separa miles/ }));
+    const continuar = screen.getByRole("button", { name: "Continuar" });
+    expect(continuar).toBeEnabled();
+    fireEvent.click(continuar);
+
+    await waitFor(() =>
+      expect(revisarMock).toHaveBeenNthCalledWith(
+        2,
+        "src-1",
+        archivo,
+        {
+          file_format: "csv",
+          sheet: null,
+          header_row: 1,
+          columns: ambiguo.profile!.columns,
+          units: { caja: "box" },
+          options: {
+            decimal_separator: ",",
+            create_missing_items: false,
+            thousands_separator: ".",
+            price_format_confirmed: true,
+          },
         },
         { auto: true, hoja: null, filaEncabezado: 1 },
       ),
@@ -1255,8 +1360,8 @@ describe("pantalla de proveedores", () => {
     expect(await screen.findByText("Paracetamol 500 mg")).toBeInTheDocument();
     expect(screen.getByText("SKU-1")).toBeInTheDocument();
     expect(screen.getByText(/No son precios de referencia de farmacias/)).toBeInTheDocument();
-    // Las condiciones comerciales pendientes se muestran junto al precio, no se ocultan.
-    expect(screen.getByText("Pendiente de revisión")).toBeInTheDocument();
+    // Las condiciones comerciales se muestran junto al precio, no se ocultan.
+    expect(screen.getByText("Condiciones del proveedor")).toBeInTheDocument();
     expect(screen.getByText("Entrega en 48 horas")).toBeInTheDocument();
   });
 

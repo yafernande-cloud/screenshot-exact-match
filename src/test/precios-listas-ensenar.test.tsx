@@ -107,7 +107,7 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
       screen.getByText("Laboratorio: Laboratorios Andes Ficticios · Marca: Marca Alfa Ficticia"),
     ).toBeInTheDocument();
     expect(screen.queryByText("Laboratorio y marca pendientes de identificación")).toBeNull();
-    expect(screen.queryByText("Pendiente de identificación")).toBeNull();
+    expect(screen.queryByText("Laboratorio y marca no informados")).toBeNull();
 
     // Con identidad publicada, el formulario no advierte que la lista no la informa.
     fireEvent.click(screen.getByRole("button", { name: "Enseñar a la IA" }));
@@ -133,7 +133,7 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
       screen.getByText("Laboratorio y marca pendientes de identificación"),
     ).toBeInTheDocument();
     // La oferta sigue visible, pero marcada como pendiente: no se presenta como completa.
-    expect(screen.getByText("Pendiente de identificación")).toBeInTheDocument();
+    expect(screen.getByText("Laboratorio y marca no informados")).toBeInTheDocument();
   });
 
   it("distingue la identidad reconocida en la descripción de una columna publicada", () => {
@@ -166,7 +166,7 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("Identidad extraída de la descripción")).toBeInTheDocument();
-    expect(screen.queryByText("Pendiente de identificación")).toBeNull();
+    expect(screen.queryByText("Laboratorio y marca no informados")).toBeNull();
 
     // El laboratorio sí está informado (en la descripción): no se advierte que falte.
     fireEvent.click(screen.getByRole("button", { name: "Enseñar a la IA" }));
@@ -240,5 +240,75 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
       await screen.findByText("Comentario guardado sin una preferencia aplicable"),
     ).toBeInTheDocument();
     expect(onActualizar).not.toHaveBeenCalled();
+  });
+
+  it("muestra la cantidad guardada en formato local y con su unidad", () => {
+    const grupo: GrupoPreciosLista = {
+      ...GRUPO,
+      ofertas: [
+        ofertaLista({ stock_status: "known", stock_quantity: "120.000", stock_unit: "box" }),
+      ],
+    };
+    render(
+      <PreciosListasCargadas
+        grupos={[grupo]}
+        consulta="Paracetamol"
+        cargando={false}
+        errores={[]}
+        desactualizadas={0}
+        paginasRestantes={false}
+        hayFuentes
+      />,
+    );
+
+    expect(
+      screen.getByRole("article", {
+        name: "Precio de lista de Distribuidora Andes: Paracetamol 500 mg comprimidos",
+      }),
+    ).toHaveTextContent("120 cajas");
+    // «120.000» es el decimal que serializa el backend, no 120 mil cajas.
+    expect(screen.queryByText(/120\.000 caja/)).toBeNull();
+  });
+
+  it("presenta las condiciones del proveedor sin alarmarlas y conserva su texto", () => {
+    const grupo: GrupoPreciosLista = {
+      ...GRUPO,
+      ofertas: [ofertaLista({ review_status: "needs_review", notes: "Entrega en 48 horas" })],
+    };
+    render(
+      <PreciosListasCargadas
+        grupos={[grupo]}
+        consulta="Paracetamol"
+        cargando={false}
+        errores={[]}
+        desactualizadas={0}
+        paginasRestantes={false}
+        hayFuentes
+      />,
+    );
+
+    expect(screen.getByText("Condiciones del proveedor")).toBeInTheDocument();
+    expect(screen.queryByText("Pendiente de revisión")).toBeNull();
+    expect(screen.getByText(/«Entrega en 48 horas»/)).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      /El proveedor informó estas condiciones comerciales/,
+    );
+  });
+
+  it("indica «Sin condiciones informadas» cuando la lista no publica condiciones", () => {
+    render(
+      <PreciosListasCargadas
+        grupos={[GRUPO]}
+        consulta="Paracetamol"
+        cargando={false}
+        errores={[]}
+        desactualizadas={0}
+        paginasRestantes={false}
+        hayFuentes
+      />,
+    );
+
+    expect(screen.getByText("Sin condiciones informadas")).toBeInTheDocument();
+    expect(screen.queryByRole("note")).toBeNull();
   });
 });

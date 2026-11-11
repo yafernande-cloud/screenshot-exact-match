@@ -242,14 +242,26 @@ export function etiquetaUnidad(unit: string | null | undefined, quantity?: strin
   return n === 1 ? par[0] : par[1];
 }
 
+/**
+ * Cifra en formato local. El backend guarda cantidades como decimales (`"120.000"`); mostrarlas
+ * tal cual haría creer que son 120 mil. No se altera el valor: solo se presenta en es-CL.
+ */
+export function formatearCantidad(quantity: string | number | null | undefined): string | null {
+  if (quantity == null || quantity === "") return null;
+  const valor = typeof quantity === "number" ? quantity : Number(quantity);
+  if (!Number.isFinite(valor)) return String(quantity);
+  return new Intl.NumberFormat("es-CL", { maximumFractionDigits: 3 }).format(valor);
+}
+
 /** «6 cajas», «1 caja» o solo la cifra si la unidad no viene informada. */
 export function describirCantidad(
   quantity: string | null | undefined,
   unit: string | null | undefined,
 ): string | null {
-  if (quantity == null || quantity === "") return null;
+  const cifra = formatearCantidad(quantity);
+  if (cifra == null) return null;
   const etiqueta = etiquetaUnidad(unit, quantity);
-  return etiqueta ? `${quantity} ${etiqueta}` : quantity;
+  return etiqueta ? `${cifra} ${etiqueta}` : cifra;
 }
 
 /** La medida puede venir directa (E1) o envuelta en `content.measure` (E3). */
