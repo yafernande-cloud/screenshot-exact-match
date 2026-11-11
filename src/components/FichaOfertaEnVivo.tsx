@@ -50,6 +50,7 @@ export function FichaOfertaEnVivo({
   sourceId,
   supplierId,
   consulta,
+  onPreferenciaAplicada,
 }: {
   oferta: OfertaEnVivo;
   proveedor: string;
@@ -60,6 +61,8 @@ export function FichaOfertaEnVivo({
   supplierId?: string | null | undefined;
   /** Consulta que originó el resultado, para proponerla al vincular. */
   consulta?: string | null | undefined;
+  /** Refresca las ofertas después de enseñar una preferencia. */
+  onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
   const [imagenFallida, setImagenFallida] = useState(false);
   const imagen = urlPublicada(oferta.image_url);
@@ -128,6 +131,7 @@ export function FichaOfertaEnVivo({
               nombreProveedor={proveedor}
               tradeItemId={oferta.trade_item_id}
               consulta={consulta}
+              onPreferenciaAplicada={onPreferenciaAplicada}
             />
           )}
         </div>

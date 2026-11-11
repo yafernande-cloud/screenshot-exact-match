@@ -15,6 +15,7 @@
  */
 
 import type { SearchResponse, SearchResult } from "@/lib/catalogo";
+import { compararClaveOrden } from "@/lib/orden-comercial";
 import {
   listarFuentes,
   listarOfertasProveedor,
@@ -152,11 +153,9 @@ export function seleccionarOfertasDeLista(
     if (precioVigente(oferta, ahora)) vigentes.push(oferta);
     else desactualizadas += 1;
   }
-  vigentes.sort(
-    (a, b) =>
-      a.trade_item_name.localeCompare(b.trade_item_name) ||
-      a.source_name.localeCompare(b.source_name),
-  );
+  // El orden comercial lo decide el backend (`order_key`); nunca se reordena por nombre ni fuente.
+  // `Array.prototype.sort` es estable: un empate conserva el orden de la respuesta.
+  vigentes.sort((a, b) => compararClaveOrden(a.order_key, b.order_key));
   return { vigentes, desactualizadas, claves: new Set(ultimas.keys()) };
 }
 
@@ -183,6 +182,54 @@ export function agruparPreciosPorProveedor(
     grupos.set(fuente.supplierId, grupo);
   }
   return [...grupos.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName));
+}
+
+/**
+ * Vuelve a leer las listas cargadas y recalcula solo el orden de los precios ya coincidentes.
+ *
+ * Se usa después de enseñar una preferencia: el backend ya devuelve `order_key` con la decisión
+ * nueva, así que basta volver a leer las ofertas y reagrupar. No repite la búsqueda de catálogo ni
+ * agrega artículos que antes no coincidían; tampoco inventa precios.
+ */
+export async function refrescarPreciosDeListas({
+  fuentes,
+  articleIds,
+  cargarOfertas = (supplierId) => listarOfertasProveedor(supplierId, LIMITE_OFERTAS_POR_PROVEEDOR),
+  ahora = new Date(),
+}: {
+  fuentes: FuenteDeLista[];
+  articleIds: ReadonlySet<string>;
+  cargarOfertas?: (supplierId: string) => Promise<OfertaImportada[]>;
+  ahora?: Date;
+}): Promise<ResultadoPreciosListas> {
+  const errores: string[] = [];
+  if (fuentes.length === 0) {
+    return {
+      grupos: [],
+      desactualizadas: 0,
+      errores,
+      paginasRestantes: false,
+      claves: new Set<string>(),
+    };
+  }
+  const respuestas = await Promise.allSettled(
+    fuentes.map((fuente) => cargarOfertas(fuente.supplierId)),
+  );
+  const ofertas: OfertaImportada[] = [];
+  respuestas.forEach((respuesta, indice) => {
+    const fuente = fuentes[indice];
+    if (!fuente) return;
+    if (respuesta.status === "fulfilled") ofertas.push(...respuesta.value);
+    else errores.push(`No pudimos cargar los precios de la lista de ${fuente.supplierName}.`);
+  });
+  const seleccion = seleccionarOfertasDeLista(ofertas, articleIds, ahora);
+  return {
+    grupos: agruparPreciosPorProveedor(fuentes, seleccion.vigentes),
+    desactualizadas: seleccion.desactualizadas,
+    errores,
+    paginasRestantes: false,
+    claves: seleccion.claves,
+  };
 }
 
 export interface OpcionesBusquedaListas {

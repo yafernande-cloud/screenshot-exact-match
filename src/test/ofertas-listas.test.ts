@@ -9,6 +9,7 @@ import {
   descubrirFuentesDeLista,
   fuentesDeLista,
   precioVigente,
+  refrescarPreciosDeListas,
   seleccionarOfertasDeLista,
 } from "@/lib/ofertas-listas";
 
@@ -255,7 +256,78 @@ describe("selección de ofertas importadas", () => {
   });
 });
 
+describe("orden comercial de los precios de lista", () => {
+  it("respeta la clave del backend y no reordena por nombre ni por fuente", () => {
+    const seleccion = seleccionarOfertasDeLista(
+      [
+        oferta({
+          offer_id: "of-z",
+          source_id: "src-z",
+          source_name: "Zeta",
+          trade_item_name: "Paracetamol 500 mg AAA",
+          order_key: [0, 0, 1],
+        }),
+        oferta({ offer_id: "of-a", source_id: "src-a", source_name: "Alfa", order_key: [0, 0, 0] }),
+      ],
+      new Set(["art-paracetamol"]),
+      AHORA,
+    );
+
+    // La oferta con menor clave va primero aunque su nombre y su fuente sean posteriores.
+    expect(seleccion.vigentes.map((o) => o.offer_id)).toEqual(["of-a", "of-z"]);
+  });
+
+  it("un precio con menor prioridad comercial queda después de uno comparable", () => {
+    const seleccion = seleccionarOfertasDeLista(
+      [
+        oferta({ offer_id: "of-baja", order_key: [1, 0, 0] }),
+        oferta({ offer_id: "of-alta", source_id: "src-otra", order_key: [0, 0, 0] }),
+      ],
+      new Set(["art-paracetamol"]),
+      AHORA,
+    );
+
+    expect(seleccion.vigentes.map((o) => o.offer_id)).toEqual(["of-alta", "of-baja"]);
+  });
+
+  it("al refrescar relee los precios y aplica el orden nuevo sin tocar el catálogo", async () => {
+    const fuentes = [
+      {
+        supplierId: "sup-andes",
+        supplierName: "Distribuidora Andes",
+        sourceIds: ["src-andes", "src-andes-2"],
+        sourceNames: ["Distribuidora Andes", "Distribuidora Andes (CSV)"],
+      },
+    ];
+    listarOfertas({
+      "sup-andes": [
+        oferta({ offer_id: "of-a", order_key: [1, 0, 0] }),
+        oferta({ offer_id: "of-b", source_id: "src-andes-2", order_key: [0, 0, 0] }),
+      ],
+    });
+
+    const resultado = await refrescarPreciosDeListas({
+      fuentes,
+      articleIds: new Set(["art-paracetamol"]),
+      ahora: AHORA,
+    });
+
+    expect(resultado.grupos).toHaveLength(1);
+    expect(resultado.grupos[0]?.ofertas.map((o) => o.offer_id)).toEqual(["of-b", "of-a"]);
+    expect(resultado.errores).toEqual([]);
+    expect(obtenerBusquedaMockCatalogo()).toBeNull();
+  });
+});
+
+function obtenerBusquedaMockCatalogo() {
+  // El refresco nunca vuelve a ejecutar la búsqueda de catálogo (E2).
+  return apiRequestMock.mock.calls.find(([ruta]) =>
+    String(ruta).startsWith("/api/v1/searches/"),
+  )?.[0] ?? null;
+}
+
 describe("búsqueda de precios de listas", () => {
+
   it("encuentra un producto importado que la primera página del catálogo no muestra", async () => {
     listarOfertas({
       "sup-andes": [

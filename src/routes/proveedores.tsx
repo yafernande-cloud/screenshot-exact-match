@@ -689,26 +689,34 @@ function TarjetaProveedor({
   const activo = proveedor.status === "active";
   const [ocupado, setOcupado] = useState(false);
   const [panelAbierto, setPanelAbierto] = useState(false);
-  const [fuenteParaImportar, setFuenteParaImportar] = useState<string | null>(null);
   const [nombre, setNombre] = useState(proveedor.name);
   const [codigo, setCodigo] = useState(proveedor.supplier_code ?? "");
   const [notas, setNotas] = useState(proveedor.internal_notes ?? "");
   const [refrescoOfertas, setRefrescoOfertas] = useState(0);
   const [portalAbierto, setPortalAbierto] = useState(false);
+  const [verPrecios, setVerPrecios] = useState(false);
+  // «Actualizar lista» abre el importador de la fuente elegida, sin pasar por la configuración.
+  const [eligiendoFuente, setEligiendoFuente] = useState(false);
+  const [fuenteActualizando, setFuenteActualizando] = useState<Fuente | null>(null);
   const usaPortal = proveedorUsaPortal(proveedor);
   const cerrarPanel = useCallback(() => {
     setPanelAbierto(false);
-    setFuenteParaImportar(null);
   }, []);
-  // El panel de configuración se cierra con Escape, además del botón explícito.
+  const cerrarImportador = useCallback(() => {
+    setEligiendoFuente(false);
+    setFuenteActualizando(null);
+  }, []);
+  // La configuración y el importador se cierran con Escape, además de sus botones.
   useEffect(() => {
-    if (!panelAbierto) return;
+    if (!panelAbierto && !eligiendoFuente && !fuenteActualizando) return;
     const alPresionar = (event: KeyboardEvent) => {
-      if (event.key === "Escape") cerrarPanel();
+      if (event.key !== "Escape") return;
+      cerrarPanel();
+      cerrarImportador();
     };
     document.addEventListener("keydown", alPresionar);
     return () => document.removeEventListener("keydown", alPresionar);
-  }, [panelAbierto, cerrarPanel]);
+  }, [panelAbierto, eligiendoFuente, fuenteActualizando, cerrarPanel, cerrarImportador]);
   const mostrarPortal = usaPortal || portalAbierto;
   const fuentesApi = fuentes.filter(esFuenteApi);
   const fuentesArchivo = fuentes.filter(esFuenteDeArchivo);
@@ -730,17 +738,20 @@ function TarjetaProveedor({
     setNombre(proveedor.name);
     setCodigo(proveedor.supplier_code ?? "");
     setNotas(proveedor.internal_notes ?? "");
-    setFuenteParaImportar(null);
     setPanelAbierto(true);
   };
 
-  /** Cargar Excel abre la misma configuración con el importador ya desplegado. */
-  const abrirImportador = () => {
-    setNombre(proveedor.name);
-    setCodigo(proveedor.supplier_code ?? "");
-    setNotas(proveedor.internal_notes ?? "");
-    setFuenteParaImportar(fuentesArchivo[0]?.source_id ?? null);
-    setPanelAbierto(true);
+  /**
+   * «Actualizar lista» lleva directo al importador. Con una sola lista no hay nada que elegir;
+   * con varias se pide cuál actualizar sin entrar a la configuración técnica.
+   */
+  const abrirActualizacion = () => {
+    const unica = fuentesArchivo.length === 1 ? fuentesArchivo[0] : null;
+    if (unica) {
+      setFuenteActualizando(unica);
+      return;
+    }
+    setEligiendoFuente(true);
   };
 
   const alternarActivo = async (valor: boolean) => {
@@ -804,8 +815,14 @@ function TarjetaProveedor({
       <div className="mt-3 space-y-1 text-sm">
         {estadoLista && (
           <p>
-            <span className="text-muted-foreground">Estado de carga: </span>
+            <span className="text-muted-foreground">Lista de precios: </span>
             {estadoLista}
+          </p>
+        )}
+        {fuentesArchivo.length > 0 && (
+          <p>
+            <span className="text-muted-foreground">Ofertas vigentes: </span>
+            {proveedor.offer_count ?? 0}
           </p>
         )}
         {estadoConexion && (
@@ -824,16 +841,110 @@ function TarjetaProveedor({
 
       <div className="mt-4 flex flex-wrap gap-2">
         {fuentesArchivo.length > 0 && (
-          <Button type="button" size="sm" onClick={abrirImportador}>
+          <Button type="button" size="sm" onClick={abrirActualizacion}>
             <FileSpreadsheet className="h-4 w-4" />
-            Cargar Excel
+            Actualizar lista
           </Button>
         )}
-        <Button type="button" variant="outline" size="sm" onClick={abrirPanel}>
+        {fuentesArchivo.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-expanded={verPrecios}
+            onClick={() => setVerPrecios((valor) => !valor)}
+          >
+            {verPrecios ? "Ocultar precios" : "Ver precios"}
+          </Button>
+        )}
+        <Button type="button" variant="ghost" size="sm" onClick={abrirPanel}>
           <Pencil className="h-4 w-4" />
-          Editar
+          Configuración
         </Button>
       </div>
+
+      {verPrecios && fuentesArchivo.length > 0 && (
+        <PreciosImportados
+          proveedor={proveedor}
+          refresco={refrescoOfertas}
+          inicialmenteAbierto
+          mostrarBoton={false}
+        />
+      )}
+
+      {(eligiendoFuente || fuenteActualizando) && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4 sm:p-6"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) cerrarImportador();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`importador-proveedor-${proveedor.supplier_id}`}
+            className="mx-auto my-2 w-full max-w-2xl rounded-2xl border bg-background p-4 shadow-lg sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2
+                  id={`importador-proveedor-${proveedor.supplier_id}`}
+                  className="text-lg font-semibold"
+                >
+                  Actualizar lista de {proveedor.name}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {fuenteActualizando
+                    ? `Lista «${fuenteActualizando.name}». La última carga exitosa reemplaza los precios vigentes.`
+                    : "Este proveedor tiene más de una lista. Elige cuál actualizar."}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar actualización de lista"
+                onClick={cerrarImportador}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {eligiendoFuente ? (
+              <ul className="mt-4 space-y-2">
+                {fuentesArchivo.map((fuente) => (
+                  <li key={fuente.source_id}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => {
+                        setEligiendoFuente(false);
+                        setFuenteActualizando(fuente);
+                      }}
+                    >
+                      {fuente.name}
+                      {fuente.last_success_at
+                        ? ` · última carga ${fechaCorta(fuente.last_success_at)}`
+                        : " · sin cargas todavía"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              fuenteActualizando && (
+                <div className="mt-4">
+                  <ImportadorLista
+                    proveedorId={proveedor.supplier_id}
+                    fuente={fuenteActualizando}
+                    onImportado={alImportar}
+                  />
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
 
       {panelAbierto && (
         <div
@@ -943,7 +1054,6 @@ function TarjetaProveedor({
                 conexiones={conexiones}
                 onFuenteGuardada={onFuenteGuardada}
                 onRecargar={alImportar}
-                importarFuenteId={fuenteParaImportar}
               />
 
               {mostrarPortal ? (
@@ -975,10 +1085,6 @@ function TarjetaProveedor({
                     </Button>
                   </div>
                 </div>
-              )}
-
-              {fuentesArchivo.length > 0 && (
-                <PreciosImportados proveedor={proveedor} refresco={refrescoOfertas} />
               )}
             </div>
           </div>
@@ -1233,15 +1339,12 @@ function SeccionFuentes({
   conexiones,
   onFuenteGuardada,
   onRecargar,
-  importarFuenteId,
 }: {
   proveedor: Proveedor;
   fuentes: Fuente[];
   conexiones: Record<string, EstadoConexionCargado>;
   onFuenteGuardada: (fuente: Fuente) => void;
   onRecargar: () => Promise<void>;
-  /** Fuente cuyo importador se despliega al abrir la configuración desde «Cargar Excel». */
-  importarFuenteId?: string | null;
 }) {
   const [agregandoFuente, setAgregandoFuente] = useState(false);
   const [creando, setCreando] = useState(false);
@@ -1318,7 +1421,6 @@ function SeccionFuentes({
               conexion={conexiones[fuente.source_id]}
               onGuardada={onFuenteGuardada}
               onRecargar={onRecargar}
-              inicialmenteImportando={fuente.source_id === importarFuenteId}
             />
           ))}
         </ul>
@@ -1428,17 +1530,15 @@ function FuenteItem({
   conexion,
   onGuardada,
   onRecargar,
-  inicialmenteImportando = false,
 }: {
   proveedorId: string;
   fuente: Fuente;
   conexion: EstadoConexionCargado | undefined;
   onGuardada: (fuente: Fuente) => void;
   onRecargar: () => Promise<void>;
-  inicialmenteImportando?: boolean;
 }) {
   const [editando, setEditando] = useState(false);
-  const [importando, setImportando] = useState(inicialmenteImportando);
+  const [importando, setImportando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [nombre, setNombre] = useState(fuente.name);
   const [capacidades, setCapacidades] = useState<CapacidadFuente[]>(fuente.capabilities);
@@ -1577,7 +1677,7 @@ function FuenteItem({
               onClick={() => setImportando((valor) => !valor)}
             >
               <FileSpreadsheet className="h-4 w-4" />
-              {importando ? "Cerrar carga" : "Cargar lista"}
+              {importando ? "Ocultar" : "Cargar lista"}
             </Button>
           )}
           <Button
@@ -1637,8 +1737,18 @@ function FuenteItem({
   );
 }
 
-function PreciosImportados({ proveedor, refresco }: { proveedor: Proveedor; refresco: number }) {
-  const [abierto, setAbierto] = useState(false);
+function PreciosImportados({
+  proveedor,
+  refresco,
+  inicialmenteAbierto = false,
+  mostrarBoton = true,
+}: {
+  proveedor: Proveedor;
+  refresco: number;
+  inicialmenteAbierto?: boolean;
+  mostrarBoton?: boolean;
+}) {
+  const [abierto, setAbierto] = useState(inicialmenteAbierto);
   const [cargando, setCargando] = useState(false);
   const [ofertas, setOfertas] = useState<OfertaImportada[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1668,22 +1778,25 @@ function PreciosImportados({ proveedor, refresco }: { proveedor: Proveedor; refr
     <div className="mt-4 rounded-2xl border bg-muted/30 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">Productos y precios importados</p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto"
-          onClick={() => setAbierto((valor) => !valor)}
-        >
-          {abierto ? "Ocultar" : "Ver precios"}
-        </Button>
+        {mostrarBoton && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            onClick={() => setAbierto((valor) => !valor)}
+          >
+            {abierto ? "Ocultar" : "Ver precios"}
+          </Button>
+        )}
       </div>
 
       {abierto && (
         <div className="mt-2 space-y-2">
           <p className="text-xs text-muted-foreground">
-            Son precios de este proveedor, con la fecha en que se observaron. No son precios de
-            referencia de farmacias (Cruz Verde, Salcobrand ni Farmacias Ahumada).
+            Son los precios de la última lista cargada exitosamente de este proveedor, con la fecha
+            en que se observaron; no son una consulta en vivo ni precios de referencia de farmacias
+            (Cruz Verde, Salcobrand ni Farmacias Ahumada).
           </p>
           {cargando ? (
             <p role="status" className="text-sm text-muted-foreground">

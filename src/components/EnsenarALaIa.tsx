@@ -29,19 +29,28 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   TEXTO_MAXIMO,
   describirPreferencia,
+  describirPreferenciaArticulo,
   describirRetiro,
   esIaDeshabilitada,
   guardarObservacion,
   interpretarObservacion,
   mensajeDeErrorObservacion,
   nuevaClaveDeIdempotencia,
+  type Aclaracion,
+  type PreferenciaArticulo,
   type PreferenciaComercial,
 } from "@/lib/observaciones-api";
 
 type Paso = "editar" | "guardando" | "interpretando" | "resultado";
 
 type Resultado =
-  | { tipo: "aplicada"; preferencias: PreferenciaComercial[]; retiros: string[] }
+  | {
+      tipo: "aplicada";
+      preferencias: PreferenciaComercial[];
+      articulos: PreferenciaArticulo[];
+      retiros: string[];
+    }
+  | { tipo: "aclaracion"; aclaracion: Aclaracion }
   | { tipo: "revision" }
   | { tipo: "sin_preferencia" }
   | { tipo: "deshabilitada" }
@@ -87,6 +96,7 @@ export function EnsenarALaIa({
   const [texto, setTexto] = useState("");
   const [paso, setPaso] = useState<Paso>("editar");
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [aclaracion, setAclaracion] = useState<Aclaracion | null>(null);
   const [observacionId, setObservacionId] = useState<string | null>(null);
   const claveIdempotencia = useRef<string | null>(null);
   const idComentario = useId();
@@ -132,11 +142,21 @@ export function EnsenarALaIa({
         setResultado({
           tipo: "aplicada",
           preferencias: interpretacion?.preferences ?? [],
+          articulos: interpretacion?.article_preferences ?? [],
           retiros: salida.observation.retired_subject_kinds ?? [],
         });
+        setAclaracion(null);
         void onPreferenciaAplicada?.();
       } else if (estado === "needs_review") {
-        setResultado({ tipo: "revision" });
+        // Una aclaración pendiente no aplica ninguna preferencia: se conserva la observación y se
+        // sigue conversando en el mismo campo, sin perder el contexto.
+        const pregunta = interpretacion?.clarification ?? null;
+        if (pregunta) {
+          setAclaracion(pregunta);
+          setResultado({ tipo: "aclaracion", aclaracion: pregunta });
+        } else {
+          setResultado({ tipo: "revision" });
+        }
       } else if (estado === "no_preference") {
         setResultado({ tipo: "sin_preferencia" });
       } else {
@@ -163,6 +183,16 @@ export function EnsenarALaIa({
 
   const empezarDeNuevo = () => {
     setTexto("");
+    setObservacionId(null);
+    claveIdempotencia.current = null;
+    setResultado(null);
+    setAclaracion(null);
+    setPaso("editar");
+  };
+
+  // Responder una aclaración crea una observación nueva con el texto corregido: la anterior queda
+  // guardada y ninguna preferencia se aplica hasta que la identificación sea inequívoca.
+  const responderAclaracion = () => {
     setObservacionId(null);
     claveIdempotencia.current = null;
     setResultado(null);
@@ -195,6 +225,7 @@ export function EnsenarALaIa({
         {(paso === "editar" || ocupado) && (
           <div className="space-y-2">
             <Label htmlFor={idComentario}>Comentario sobre el producto</Label>
+            {aclaracion && <PreguntaDeAclaracion aclaracion={aclaracion} />}
             <Textarea
               id={idComentario}
               value={texto}
@@ -231,9 +262,31 @@ export function EnsenarALaIa({
         {paso === "resultado" && resultado?.tipo === "aplicada" && (
           <ResultadoAplicado
             preferencias={resultado.preferencias}
+            articulos={resultado.articulos}
             retiros={resultado.retiros}
             nombreArticulo={nombreArticulo}
           />
+        )}
+        {paso === "resultado" && resultado?.tipo === "aclaracion" && (
+          <div role="status" className="space-y-2 rounded-xl border bg-muted/40 p-3 text-sm">
+            <p className="flex items-center gap-2 font-medium">
+              <ShieldQuestion className="h-4 w-4 text-brand-blue" aria-hidden /> Necesitamos una
+              aclaración
+            </p>
+            <p className="text-muted-foreground">{resultado.aclaracion.question}</p>
+            {resultado.aclaracion.candidates.length > 0 && (
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                {resultado.aclaracion.candidates.map((candidato) => (
+                  <li key={candidato.article_id}>{candidato.display_name}</li>
+                ))}
+              </ul>
+            )}
+            <p className="text-xs text-muted-foreground">
+              El comentario quedó guardado. La preferencia todavía no se aplica: escribe el nombre
+              exacto del producto y vuelve a enseñar.
+            </p>
+            <Badge variant="outline">Sin efectos por ahora</Badge>
+          </div>
         )}
         {paso === "resultado" && resultado?.tipo === "revision" && (
           <div role="status" className="space-y-2 rounded-xl border bg-muted/40 p-3 text-sm">
@@ -294,7 +347,12 @@ export function EnsenarALaIa({
         )}
 
         <DialogFooter className="gap-2 sm:justify-between">
-          {paso === "resultado" && resultado?.tipo !== "aplicada" && (
+          {paso === "resultado" && resultado?.tipo === "aclaracion" && (
+            <button type="button" className={ESTILO_BOTON} onClick={responderAclaracion}>
+              Aclarar comentario
+            </button>
+          )}
+          {paso === "resultado" && resultado?.tipo !== "aplicada" && resultado?.tipo !== "aclaracion" && (
             <button type="button" className={ESTILO_BOTON} onClick={() => void enviar()}>
               Reintentar
             </button>
@@ -331,12 +389,29 @@ export function EnsenarALaIa({
   );
 }
 
+function PreguntaDeAclaracion({ aclaracion }: { aclaracion: Aclaracion }) {
+  return (
+    <div
+      role="status"
+      className="space-y-1 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+    >
+      <p className="font-medium">{aclaracion.question}</p>
+      {aclaracion.candidates.length > 0 && (
+        <p>Opciones: {aclaracion.candidates.map((c) => c.display_name).join(" · ")}</p>
+      )}
+      <p>La preferencia anterior todavía no se aplica; corrige el texto y vuelve a enseñar.</p>
+    </div>
+  );
+}
+
 function ResultadoAplicado({
   preferencias,
+  articulos,
   retiros,
   nombreArticulo,
 }: {
   preferencias: PreferenciaComercial[];
+  articulos: PreferenciaArticulo[];
   retiros: string[];
   nombreArticulo: string;
 }) {
@@ -352,6 +427,11 @@ function ResultadoAplicado({
       <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
         {preferencias.map((preferencia) => (
           <li key={preferencia.preference_id}>{describirPreferencia(preferencia)}</li>
+        ))}
+        {articulos.map((preferencia) => (
+          <li key={preferencia.article_preference_id}>
+            {describirPreferenciaArticulo(preferencia)}
+          </li>
         ))}
         {retiros.map((clase) => (
           <li key={clase}>{describirRetiro(clase)}</li>

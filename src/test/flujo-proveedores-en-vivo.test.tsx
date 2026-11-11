@@ -414,7 +414,8 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     await renderizarPantalla();
     await buscar("Predual");
 
-    expect(await screen.findByText("Proveedores en vivo")).toBeInTheDocument();
+    // La sección se organiza por proveedor: Farmaloop aparece una sola vez con sus ofertas.
+    expect(await screen.findByRole("region", { name: "Ofertas de Farmaloop" })).toBeInTheDocument();
 
     expect(buscarCatalogoMock).toHaveBeenCalledWith("Predual");
     expect(buscarAhumadaMock).toHaveBeenCalledWith("Predual");
@@ -501,8 +502,9 @@ describe("precios de listas cargadas en la búsqueda", () => {
     await buscar("Paracetamol");
 
     expect(
-      await screen.findByRole("heading", { name: "Precios de listas cargadas" }),
+      await screen.findByRole("region", { name: "Ofertas de Distribuidora Andes" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Precios de listas cargadas")).toBeInTheDocument();
     expect(await screen.findByText("Condiciones del proveedor")).toBeInTheDocument();
     expect(screen.getByText(/Entrega en 48 horas/)).toBeInTheDocument();
     expect(

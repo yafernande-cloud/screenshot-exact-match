@@ -301,3 +301,119 @@ describe("formulario de «Enseñar a la IA»", () => {
     ).toBeInTheDocument();
   });
 });
+
+function conAclaracion(): ResultadoInterpretacion {
+  return {
+    replayed: false,
+    observation: observacion({
+      interpretation_status: "needs_review",
+      interpretation: {
+        interpretation_id: "int-aclaracion",
+        status: "needs_review",
+        error_code: "ambiguous",
+        retired_subject_kinds: [],
+        created_at: "2026-11-11T12:00:00Z",
+        preferences: [],
+        clarification: {
+          kind: "ambiguous_article",
+          question:
+            "«Ibuprofeno» puede corresponder a más de un producto del catálogo. ¿Cuál de estos es?",
+          reference: "Ibuprofeno",
+          candidates: [
+            { article_id: "art-a", display_name: "Ibuprofeno 400 mg" },
+            { article_id: "art-b", display_name: "Ibuprofeno 600 mg" },
+          ],
+        },
+      },
+    }),
+  };
+}
+
+describe("aclaraciones y preferencias entre artículos", () => {
+  it("pide aclaración sin aplicar la preferencia y conserva el comentario", async () => {
+    apiRequestMock
+      .mockResolvedValueOnce(observacion())
+      .mockResolvedValueOnce(conAclaracion());
+
+    const { onPreferenciaAplicada } = renderizar();
+    await escribirYEnviar("Prefiero el ibuprofeno de la otra marca");
+
+    expect(await screen.findByText("Necesitamos una aclaración")).toBeInTheDocument();
+    expect(screen.getByText(/puede corresponder a más de un producto/)).toBeInTheDocument();
+    expect(screen.getByText(/Ibuprofeno 400 mg/)).toBeInTheDocument();
+    expect(screen.getByText(/Ibuprofeno 600 mg/)).toBeInTheDocument();
+    expect(screen.queryByText("Preferencia guardada y aplicada")).toBeNull();
+    expect(onPreferenciaAplicada).not.toHaveBeenCalled();
+  });
+
+  it("al aclarar escribe una observación nueva sin perder el texto anterior", async () => {
+    apiRequestMock
+      .mockResolvedValueOnce(observacion())
+      .mockResolvedValueOnce(conAclaracion())
+      .mockResolvedValueOnce(observacion({ observation_id: "obs-2" }))
+      .mockResolvedValueOnce(aplicada());
+
+    renderizar();
+    await escribirYEnviar("Prefiero el ibuprofeno de la otra marca");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Aclarar comentario" }));
+    const campo = screen.getByRole("textbox", { name: "Comentario sobre el producto" });
+    // El texto original sigue ahí: la pregunta de la IA no lo borra.
+    expect(campo).toHaveValue("Prefiero el ibuprofeno de la otra marca");
+    expect(screen.getByText(/puede corresponder a más de un producto/)).toBeInTheDocument();
+
+    fireEvent.change(campo, {
+      target: { value: "Prefiero Ibuprofeno 600 mg de la otra marca" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar y enseñar" }));
+
+    expect(await screen.findByText("Preferencia guardada y aplicada")).toBeInTheDocument();
+    const guardados = apiRequestMock.mock.calls.filter(
+      ([ruta]) => ruta === "/api/v1/commercial-observations",
+    );
+    expect(guardados).toHaveLength(2);
+    expect(JSON.parse(guardados[1]![1].body)).toMatchObject({
+      text: "Prefiero Ibuprofeno 600 mg de la otra marca",
+      trade_item_id: "art-1",
+    });
+  });
+
+  it("describe la preferencia entre artículos sin hablar de equivalencias", async () => {
+    apiRequestMock.mockResolvedValueOnce(observacion()).mockResolvedValueOnce({
+      replayed: false,
+      observation: observacion({
+        interpretation_status: "suggested",
+        interpretation: {
+          interpretation_id: "int-2",
+          status: "suggested",
+          error_code: null,
+          retired_subject_kinds: [],
+          created_at: "2026-11-11T12:00:00Z",
+          preferences: [],
+          article_preferences: [
+            {
+              article_preference_id: "ap-1",
+              article_id: "art-1",
+              article_label: "Paracetamol 500 mg comprimidos",
+              relative_to_article_id: "art-2",
+              relative_to_article_label: "Paracetamol 500 mg de otra marca",
+              effect: "prefer",
+            },
+          ],
+        },
+      }),
+    });
+
+    const { onPreferenciaAplicada } = renderizar();
+    await escribirYEnviar("Prefiero este paracetamol antes que el otro");
+
+    expect(await screen.findByText("Preferencia guardada y aplicada")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Se prefiere «Paracetamol 500 mg comprimidos» frente a «Paracetamol 500 mg de otra marca» cuando ambos son comparables.",
+      ),
+    ).toBeInTheDocument();
+    expect(onPreferenciaAplicada).toHaveBeenCalledTimes(1);
+  });
+});
+

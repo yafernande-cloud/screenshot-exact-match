@@ -91,7 +91,7 @@ function EtiquetaIdentidad({ oferta }: { oferta: OfertaImportada }) {
   );
 }
 
-function TarjetaPrecioLista({
+export function TarjetaPrecioLista({
   oferta,
   proveedor,
   proveedorId,

@@ -23,6 +23,7 @@ export function EnsenarALaIaEnVivo({
   nombreProveedor,
   tradeItemId,
   consulta,
+  onPreferenciaAplicada,
 }: {
   sourceId: string;
   externalId: string;
@@ -32,6 +33,8 @@ export function EnsenarALaIaEnVivo({
   /** Artículo interno ya vinculado; `null` si el backend no encontró un vínculo exacto. */
   tradeItemId: string | null;
   consulta?: string | null | undefined;
+  /** Refresca las ofertas para que se vea el orden decidido por el backend. */
+  onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
   const [articuloId, setArticuloId] = useState<string | null>(tradeItemId);
   const [nombreArticulo, setNombreArticulo] = useState(externalName);
@@ -54,6 +57,9 @@ export function EnsenarALaIaEnVivo({
         nombreArticulo={nombreArticulo}
         nombreProveedor={nombreProveedor}
         abrirInicial={vinculadoAhora}
+        onPreferenciaAplicada={
+          onPreferenciaAplicada ? () => onPreferenciaAplicada(articuloId) : undefined
+        }
       />
     );
   }

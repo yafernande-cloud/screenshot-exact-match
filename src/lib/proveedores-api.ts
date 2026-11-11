@@ -38,6 +38,11 @@ export interface Proveedor {
   portal_status: EstadoPortal;
   /** El proveedor tiene al menos una fuente de lista de precios. */
   has_price_list: boolean;
+  /**
+   * Ofertas vigentes de la última lista cargada. Son ofertas, no artículos únicos, y el campo
+   * es aditivo: un backend anterior puede no enviarlo.
+   */
+  offer_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -380,6 +385,11 @@ export interface OfertaImportada {
   is_stale: boolean;
   observed_at: string;
   imported_at: string;
+  /**
+   * Clave opaca de orden comercial (preferencias). La pantalla ordena de forma estable por esta
+   * clave; nunca vuelve a ordenar por nombre ni fuente. Sin preferencias todas valen lo mismo.
+   */
+  order_key?: number[];
 }
 
 const LISTA_FALLBACK = "No pudimos cargar los proveedores. Inténtalo otra vez.";

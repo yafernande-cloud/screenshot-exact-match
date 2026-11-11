@@ -75,11 +75,13 @@ function ListaResultados({
   fuente,
   consulta,
   onAgregar,
+  onPreferenciaAplicada,
 }: {
   items: ItemEnVivo[];
   fuente: EstadoFuenteEnVivo["fuente"];
   consulta: string | null;
   onAgregar?: ((item: ItemEnVivo) => void) | undefined;
+  onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
   return (
     <div className="mt-3 space-y-3">
@@ -93,6 +95,7 @@ function ListaResultados({
             supplierId={fuente.supplierId}
             consulta={consulta}
             onAgregar={onAgregar ? (oferta) => onAgregar({ tipo: "oferta", oferta }) : undefined}
+            onPreferenciaAplicada={onPreferenciaAplicada}
           />
         ) : (
           <FichaProductoPublicadoEnVivo
@@ -112,14 +115,19 @@ function ListaResultados({
   );
 }
 
-function BloqueFuente({
+export function BloqueFuente({
   estado,
   consulta,
   onAgregar,
+  onPreferenciaAplicada,
+  titulo,
 }: {
   estado: EstadoFuenteEnVivo;
   consulta: string | null;
   onAgregar?: ((item: ItemEnVivo) => void) | undefined;
+  onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
+  /** Dentro de una sección de proveedor se muestra el nombre de la fuente, no el del proveedor. */
+  titulo?: string | undefined;
 }) {
   const { fuente, resultado, cargando, error } = estado;
   const estadoConexion = resultado?.state ?? fuente.state;
@@ -132,7 +140,7 @@ function BloqueFuente({
   return (
     <div className="rounded-2xl border p-4" data-source-id={fuente.sourceId}>
       <div className="flex flex-wrap items-center gap-2">
-        <h4 className="font-medium">{fuente.supplierName}</h4>
+        <h4 className="font-medium">{titulo ?? fuente.supplierName}</h4>
         <span
           className={`rounded-full border px-2 py-0.5 text-xs ${ESTILO_ESTADO[estadoConexion]}`}
         >
@@ -186,6 +194,7 @@ function BloqueFuente({
               fuente={fuente}
               consulta={consulta}
               onAgregar={onAgregar}
+              onPreferenciaAplicada={onPreferenciaAplicada}
             />
           )}
         </>
@@ -200,6 +209,7 @@ export function OfertasProveedorEnVivo({
   descubriendo,
   error,
   onAgregar,
+  onPreferenciaAplicada,
 }: {
   estados: EstadoFuenteEnVivo[];
   consulta: string | null;
@@ -210,6 +220,7 @@ export function OfertasProveedorEnVivo({
    * aunque el backend marque el producto como elegible.
    */
   onAgregar?: ((item: ItemEnVivo) => void) | undefined;
+  onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
   if (!descubriendo && !error && estados.length === 0) return null;
 
@@ -232,6 +243,7 @@ export function OfertasProveedorEnVivo({
           estado={estado}
           consulta={consulta}
           onAgregar={onAgregar}
+          onPreferenciaAplicada={onPreferenciaAplicada}
         />
       ))}
     </div>

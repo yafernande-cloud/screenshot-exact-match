@@ -292,9 +292,9 @@ describe("pantalla de proveedores", () => {
     expect(await screen.findByText("Distribuidora Andes")).toBeInTheDocument();
     expect(screen.getByText("1 activos de 1")).toBeInTheDocument();
     expect(screen.getByText("Lista de precios Excel")).toBeInTheDocument();
-    expect(screen.getByText("Estado de carga:")).toBeInTheDocument();
+    expect(screen.getByText("Lista de precios:")).toBeInTheDocument();
     expect(screen.getByText("Sin archivo cargado")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cargar Excel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Actualizar lista" })).toBeInTheDocument();
     // Los detalles de cada fuente viven en la configuración, no en la tarjeta.
     expect(screen.queryByText("Lista de precios Andes")).toBeNull();
     expect(screen.queryByText("Fuentes de precios")).toBeNull();
@@ -304,9 +304,68 @@ describe("pantalla de proveedores", () => {
     expect(screen.queryByText("Laboratorio Sur")).toBeNull();
     expect(screen.queryByText("Proveedor X")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     expect(await screen.findByText("Lista de precios Andes")).toBeInTheDocument();
     expect(screen.getByText("Fuentes de precios")).toBeInTheDocument();
+  });
+
+  it("resume la lista y las ofertas vigentes y actualiza la lista sin entrar a configuración", async () => {
+    listarProveedoresMock.mockResolvedValue([
+      proveedor({ sources: ["src-1"], offer_count: 12 }),
+    ]);
+    listarFuentesMock.mockResolvedValue([fuente({ last_success_at: "2026-11-10T10:00:00Z" })]);
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    expect(screen.getByText("Lista de precios:")).toBeInTheDocument();
+    expect(screen.getByText(/Última lista cargada:/)).toBeInTheDocument();
+    expect(screen.getByText("Ofertas vigentes:")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
+
+    // El importador se abre directo, sin el formulario técnico del proveedor.
+    expect(await screen.findByLabelText("Archivo de la lista de precios")).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: /Actualizar lista de Distribuidora Andes/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Fuentes de precios")).toBeNull();
+    expect(screen.queryByLabelText("Código interno del proveedor (opcional)")).toBeNull();
+  });
+
+  it("pide cuál lista actualizar cuando el proveedor tiene varias", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1", "src-2"] })]);
+    listarFuentesMock.mockResolvedValue([
+      fuente(),
+      fuente({ source_id: "src-2", name: "Lista de precios Andes · segunda" }),
+    ]);
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
+
+    expect(screen.getByRole("dialog", { name: /Actualizar lista/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Archivo de la lista de precios")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /segunda/ }));
+
+    expect(await screen.findByLabelText("Archivo de la lista de precios")).toBeInTheDocument();
+  });
+
+  it("oculta la carga desde la configuración en vez de cerrarla", async () => {
+    listarProveedoresMock.mockResolvedValue([proveedor({ sources: ["src-1"] })]);
+    listarFuentesMock.mockResolvedValue([fuente()]);
+
+    await renderizarProveedores();
+    await screen.findByText("Distribuidora Andes");
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cargar lista" }));
+
+    expect(screen.getByRole("button", { name: "Ocultar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cerrar carga" })).toBeNull();
   });
 
   it("muestra una lista vacía cuando la organización todavía no tiene proveedores", async () => {
@@ -360,8 +419,8 @@ describe("pantalla de proveedores", () => {
     );
     expect(await screen.findByText("Droguería Pacífico")).toBeInTheDocument();
     expect(screen.getByText("Lista de precios Excel")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cargar Excel" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(screen.getByRole("button", { name: "Actualizar lista" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     expect(await screen.findByText("Lista de precios · Droguería Pacífico")).toBeInTheDocument();
     expect(toastSuccess).toHaveBeenCalledWith(
       "Droguería Pacífico quedó registrado. Carga su lista de precios en la tarjeta del proveedor.",
@@ -475,7 +534,7 @@ describe("pantalla de proveedores", () => {
       await screen.findByText("Lista de precios Excel · Portal de compras"),
     ).toBeInTheDocument();
     expect(screen.getByText(/Credenciales guardadas · sin conectar/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     expect(await screen.findByText("Lista de precios · Droguería Pacífico")).toBeInTheDocument();
     expect(screen.getAllByText(/Credenciales guardadas · sin conectar/).length).toBeGreaterThan(0);
   });
@@ -496,7 +555,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     fireEvent.change(screen.getByLabelText("Nombre"), {
       target: { value: "Distribuidora Andes Norte" },
     });
@@ -529,7 +588,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     const interruptor = await screen.findByRole("switch", {
       name: "Activar o desactivar Distribuidora Andes",
     });
@@ -560,7 +619,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
 
     expect(await screen.findByText(/Credenciales guardadas · sin conectar/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
 
     expect(await screen.findByText("https://compras.andes.cl")).toBeInTheDocument();
     expect(screen.getByText(/Guardar credenciales no conecta el portal/)).toBeInTheDocument();
@@ -583,7 +642,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cambiar datos" }));
     fireEvent.change(screen.getByLabelText("Usuario del portal"), {
       target: { value: "compras" },
@@ -616,7 +675,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     fireEvent.click(await screen.findByRole("button", { name: "Agregar lista de precios" }));
 
     await waitFor(() =>
@@ -639,7 +698,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     fireEvent.click(await screen.findByRole("button", { name: "Agregar fuente" }));
     fireEvent.change(screen.getByLabelText("Nombre de la fuente"), {
       target: { value: "Lista de precios 2026" },
@@ -666,7 +725,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     fireEvent.click(
       await screen.findByRole("switch", { name: "Activar o desactivar Lista de precios Andes" }),
     );
@@ -701,7 +760,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     const entrada = await screen.findByLabelText("Archivo de la lista de precios");
     const archivo = archivoCsv();
     fireEvent.change(entrada, { target: { files: [archivo] } });
@@ -765,7 +824,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     const entrada = await screen.findByLabelText("Archivo de la lista de precios");
     fireEvent.change(entrada, { target: { files: [archivoCsv()] } });
     fireEvent.click(screen.getByRole("button", { name: "Cargar lista de precios" }));
@@ -847,7 +906,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     const archivo = archivoCsv();
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [archivo] },
@@ -951,7 +1010,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     const archivo = archivoCsv();
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [archivo] },
@@ -1065,7 +1124,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [archivoCsv()] },
     });
@@ -1131,7 +1190,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [archivoCsv()] },
     });
@@ -1164,7 +1223,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [archivoCsv()] },
     });
@@ -1211,7 +1270,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [archivoCsv()] },
     });
@@ -1266,7 +1325,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [archivoCsv()] },
     });
@@ -1303,7 +1362,7 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Cargar Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar lista" }));
     fireEvent.change(await screen.findByLabelText("Archivo de la lista de precios"), {
       target: { files: [new File(["roto"], "lista.xlsx", { type: "application/vnd.ms-excel" })] },
     });
@@ -1354,12 +1413,13 @@ describe("pantalla de proveedores", () => {
     await renderizarProveedores();
     await screen.findByText("Distribuidora Andes");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Ver precios" }));
+    // «Ver precios» vive en la tarjeta y muestra la última lista cargada sin pasar por la
+    // configuración ni por el importador.
+    fireEvent.click(screen.getByRole("button", { name: "Ver precios" }));
 
     expect(await screen.findByText("Paracetamol 500 mg")).toBeInTheDocument();
     expect(screen.getByText("SKU-1")).toBeInTheDocument();
-    expect(screen.getByText(/No son precios de referencia de farmacias/)).toBeInTheDocument();
+    expect(screen.getByText(/no son una consulta en vivo/)).toBeInTheDocument();
     // Las condiciones comerciales se muestran junto al precio, no se ocultan.
     expect(screen.getByText("Condiciones del proveedor")).toBeInTheDocument();
     expect(screen.getByText("Entrega en 48 horas")).toBeInTheDocument();
@@ -1390,7 +1450,7 @@ describe("pantalla de proveedores", () => {
     await screen.findByText("Distribuidora Andes");
     expect(listarProveedoresMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     fireEvent.click(
       await screen.findByRole("switch", { name: "Activar o desactivar Distribuidora Andes" }),
     );
@@ -1423,11 +1483,11 @@ describe("pantalla de proveedores", () => {
     expect(screen.getByText("Conectado")).toBeInTheDocument();
     // La tarjeta no expone el nombre técnico de la fuente ni ofrece un importador.
     expect(screen.queryByText("Farmaloop API")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Cargar Excel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Actualizar lista" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Ver precios" })).toBeNull();
     // La configuración conserva el detalle y la última respuesta registrada, sin fingir una
     // comprobación actual.
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     expect(await screen.findByText("Farmaloop API")).toBeInTheDocument();
     expect(screen.getByText(/Última conexión exitosa registrada:/)).toBeInTheDocument();
     expect(screen.queryByText(/La conexión está disponible\./)).toBeNull();
@@ -1457,7 +1517,7 @@ describe("pantalla de proveedores", () => {
     expect(await screen.findByText("Estado de conexión:")).toBeInTheDocument();
     expect(screen.getByText("Error de conexión")).toBeInTheDocument();
     expect(screen.queryByText("Conectado")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     expect(
       await screen.findByText("No pudimos comunicarnos con el proveedor."),
     ).toBeInTheDocument();
@@ -1475,7 +1535,7 @@ describe("pantalla de proveedores", () => {
 
     // La modalidad se puede agregar desde la configuración, sin dejar una sección vacía
     // siempre visible en la tarjeta.
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     fireEvent.click(await screen.findByRole("button", { name: "Agregar portal" }));
     expect(await screen.findByLabelText("Dirección del portal")).toBeInTheDocument();
   });
@@ -1508,7 +1568,7 @@ describe("pantalla de proveedores", () => {
     expect(screen.queryByText("Portal sin configurar")).toBeNull();
     expect(screen.queryByRole("button", { name: "Cargar lista" })).toBeNull();
     // La configuración reúne el portal y la conexión en vivo por separado.
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     expect(await screen.findByText("https://compras.farmaloop.cl")).toBeInTheDocument();
     expect(screen.getByText("Farmaloop API")).toBeInTheDocument();
   });
@@ -1573,7 +1633,7 @@ describe("pantalla de proveedores", () => {
     expect(screen.getByText("No se encontraron proveedores")).toBeInTheDocument();
     expect(screen.queryByText("Distribuidora Andes")).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("0 de 1 proveedores coinciden");
-    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Configuración" })).toBeNull();
   });
 
   it("mantiene las acciones y la configuración de la tarjeta filtrada", async () => {
@@ -1591,8 +1651,8 @@ describe("pantalla de proveedores", () => {
     });
 
     expect(screen.getByText("Sin archivo cargado")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cargar Excel" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(screen.getByRole("button", { name: "Actualizar lista" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configuración" }));
     expect(await screen.findByText("Lista de precios Andes")).toBeInTheDocument();
   });
 });

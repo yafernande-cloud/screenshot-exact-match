@@ -51,6 +51,37 @@ export interface PreferenciaComercial {
   price_reference: ReferenciaPrecio | null;
 }
 
+/**
+ * Preferencia entre dos artículos del catálogo (A6, capa transversal).
+ *
+ * `prefer` gana frente al artículo alternativo; `deprioritize` baja la prioridad del artículo;
+ * `retire` deja sin efecto una baja anterior. Nunca expresa una equivalencia farmacológica.
+ */
+export interface PreferenciaArticulo {
+  article_preference_id: string;
+  article_id: string;
+  article_label: string;
+  relative_to_article_id: string | null;
+  relative_to_article_label: string | null;
+  effect: "prefer" | "deprioritize" | "retire";
+}
+
+export interface CandidatoAclaracion {
+  article_id: string;
+  display_name: string;
+}
+
+/**
+ * Pregunta de aclaración cuando el comentario menciona un producto que no se puede identificar de
+ * forma inequívoca. Mientras exista, la preferencia **no** está aplicada.
+ */
+export interface Aclaracion {
+  kind: string;
+  question: string;
+  reference: string | null;
+  candidates: CandidatoAclaracion[];
+}
+
 export interface Interpretacion {
   interpretation_id: string;
   status: Exclude<EstadoInterpretacion, "sin_interpretacion">;
@@ -58,6 +89,9 @@ export interface Interpretacion {
   retired_subject_kinds: string[];
   created_at: string;
   preferences: PreferenciaComercial[];
+  /** Preferencias entre artículos; opcional para respuestas anteriores a esta capa. */
+  article_preferences?: PreferenciaArticulo[];
+  clarification?: Aclaracion | null;
 }
 
 export interface ObservacionComercial {
@@ -199,6 +233,21 @@ export function describirPreferencia(preferencia: PreferenciaComercial): string 
         : ""
     : "";
   return `${base} ${efecto}${tolerancia}.`;
+}
+
+/** Frase breve de una preferencia entre artículos, sin vocabulario de equivalencia. */
+export function describirPreferenciaArticulo(preferencia: PreferenciaArticulo): string {
+  const articulo = `«${preferencia.article_label.trim()}»`;
+  if (preferencia.effect === "retire") {
+    return `Se dejó sin efecto la baja de prioridad de ${articulo}.`;
+  }
+  if (preferencia.effect === "deprioritize") {
+    return `Las ofertas de ${articulo} quedan después de las demás comparables.`;
+  }
+  const alternativa = preferencia.relative_to_article_label?.trim();
+  return alternativa
+    ? `Se prefiere ${articulo} frente a «${alternativa}» cuando ambos son comparables.`
+    : `Se prefiere ${articulo} frente a la alternativa mencionada.`;
 }
 
 /** Clases retirables (`price:acceptable`, …) en palabras. */

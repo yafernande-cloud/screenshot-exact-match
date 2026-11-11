@@ -14,8 +14,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
-import { OfertasProveedorEnVivo } from "@/components/OfertasProveedorEnVivo";
-import { PreciosListasCargadas } from "@/components/PreciosListasCargadas";
+import { OfertasPorProveedor } from "@/components/OfertasPorProveedor";
 import { EnsenarALaIa } from "@/components/EnsenarALaIa";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
@@ -89,6 +88,7 @@ import {
 import {
   buscarPreciosDeListas,
   descubrirFuentesDeLista,
+  refrescarPreciosDeListas,
   type FuenteDeLista,
   type GrupoPreciosLista,
 } from "@/lib/ofertas-listas";
@@ -208,6 +208,9 @@ function Index() {
 
   // Cada búsqueda lleva un número: una respuesta vieja nunca pisa a la nueva.
   const busquedaSeq = useRef(0);
+  // Fuentes de lista ya descubiertas: al enseñar una preferencia se releen sus precios sin repetir
+  // el descubrimiento ni la búsqueda de catálogo.
+  const fuentesListasRef = useRef<FuenteDeLista[]>([]);
   // Sondeo de faltantes: una sola solicitud a la vez y una respuesta vieja nunca pisa a la nueva.
   const faltantesSeq = useRef(0);
   const faltantesEnVuelo = useRef(false);
@@ -419,6 +422,7 @@ function Index() {
     try {
       const fuentes: FuenteDeLista[] = await descubrirFuentesDeLista();
       if (seq !== busquedaSeq.current) return;
+      fuentesListasRef.current = fuentes;
       setHayFuentesLista(fuentes.length > 0);
       if (fuentes.length === 0) {
         setEstadoListas("listo");
@@ -475,6 +479,7 @@ function Index() {
     setErroresListas([]);
     setDesactualizadasListas(0);
     setPaginasRestantesListas(false);
+    fuentesListasRef.current = [];
 
     if (t.length < 3) {
       const corto = t !== "";
@@ -591,6 +596,54 @@ function Index() {
         "Preferencia guardada. No pudimos actualizar el orden de las ofertas; vuelve a buscar para verla.",
       );
     }
+  };
+
+  // Al enseñar una preferencia se releen las fuentes para que se vea el orden que decidió el
+  // backend. No se ordena nada en el navegador y, si una fuente falla, conserva lo que ya mostró.
+  const refrescarOfertasEnVivo = async (texto: string) => {
+    const objetivos = estadosVivo.filter((estado) => estado.fuente.consultable);
+    await Promise.all(
+      objetivos.map(async ({ fuente }) => {
+        try {
+          const resultado = await buscarProveedorEnVivo(fuente.sourceId, texto);
+          setEstadosVivo((previos) =>
+            previos.map((previo) =>
+              previo.fuente.sourceId === fuente.sourceId
+                ? { ...previo, resultado, error: null }
+                : previo,
+            ),
+          );
+        } catch {
+          // Se conserva la respuesta anterior; su aviso sigue visible.
+        }
+      }),
+    );
+  };
+
+  const refrescarPreciosListas = async () => {
+    const fuentes = fuentesListasRef.current;
+    if (fuentes.length === 0) return;
+    const articulos = new Set(
+      [...clavesListas].map((clave) => clave.split("::")[0]).filter((id): id is string => !!id),
+    );
+    if (articulos.size === 0) return;
+    try {
+      const resultado = await refrescarPreciosDeListas({ fuentes, articleIds: articulos });
+      setGruposListas(resultado.grupos);
+      setClavesListas(resultado.claves);
+      setDesactualizadasListas(resultado.desactualizadas);
+      setErroresListas(resultado.errores);
+    } catch {
+      // El orden anterior se conserva: la preferencia ya quedó guardada.
+    }
+  };
+
+  const actualizarTrasEnsenar = async (articuloId: string) => {
+    await actualizarOfertasDeArticulo(articuloId);
+    await Promise.all([
+      consulta ? refrescarOfertasEnVivo(consulta) : Promise.resolve(),
+      refrescarPreciosListas(),
+    ]);
   };
 
   const acciones: CotizacionAcciones = {
@@ -791,13 +844,6 @@ function Index() {
             </p>
           )}
 
-          <OfertasProveedorEnVivo
-            estados={estadosVivo}
-            consulta={consulta || null}
-            descubriendo={descubriendoVivo}
-            error={errorVivo}
-          />
-
           {estadoOfertas === "inicial" && (
             <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
               Busca un producto para ver las ofertas de proveedores.
@@ -829,15 +875,18 @@ function Index() {
             </p>
           )}
 
-          <PreciosListasCargadas
+          <OfertasPorProveedor
+            estados={estadosVivo}
             grupos={gruposListas}
             consulta={consulta || null}
-            cargando={estadoListas === "cargando"}
-            errores={erroresListas}
+            descubriendo={descubriendoVivo}
+            error={errorVivo}
+            cargandoListas={estadoListas === "cargando"}
+            erroresListas={erroresListas}
             desactualizadas={desactualizadasListas}
             paginasRestantes={paginasRestantesListas}
-            hayFuentes={hayFuentesLista}
-            onActualizar={actualizarOfertasDeArticulo}
+            hayFuentesLista={hayFuentesLista}
+            onActualizar={actualizarTrasEnsenar}
           />
 
           {estadoOfertas === "listo" &&

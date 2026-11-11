@@ -16,6 +16,7 @@
  */
 
 import { apiRequest } from "@/lib/api";
+import { compararClaveOrden } from "@/lib/orden-comercial";
 
 export type EstadoConector = "not_configured" | "connected" | "error" | "requires_intervention";
 
@@ -79,6 +80,8 @@ export interface OfertaEnVivo {
   match_reasons: string[];
   cart_eligible: boolean;
   cart_blockers: string[];
+  /** Clave opaca de orden comercial dentro de la fuente. Opcional para respuestas antiguas. */
+  order_key?: number[];
 }
 
 /**
@@ -397,8 +400,13 @@ export function agruparResultados(resultado: Pick<ResultadoEnVivo, "offers" | "p
 } {
   const directas: ItemEnVivo[] = [];
   const relacionadas: ItemEnVivo[] = [];
+  // Solo la clave comercial del backend decide el orden entre ofertas; el orden es estable, así
+  // que un empate conserva la posición original. Una publicación sin precio no participa.
+  const ofertasOrdenadas = [...resultado.offers].sort((a, b) =>
+    compararClaveOrden(a.order_key, b.order_key),
+  );
   const items: ItemEnVivo[] = [
-    ...resultado.offers.map((oferta) => ({ tipo: "oferta" as const, oferta })),
+    ...ofertasOrdenadas.map((oferta) => ({ tipo: "oferta" as const, oferta })),
     ...resultado.published.map((producto) => ({ tipo: "publicado" as const, producto })),
   ];
   for (const item of items) {
