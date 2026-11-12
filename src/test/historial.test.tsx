@@ -5,10 +5,12 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { routeTree } from "@/routeTree.gen";
+import { cotizacionFinalizada, informeRecuperado } from "@/test/historial-fixtures";
 
 /** El historial solo consulta cotizaciones finalizadas y su informe guardado. */
 const listarCotizacionesMock = vi.hoisted(() => vi.fn());
 const obtenerInformeMock = vi.hoisted(() => vi.fn());
+const generarInformePdfMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/cotizacion-api")>();
@@ -18,6 +20,13 @@ vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
     obtenerInforme: obtenerInformeMock,
   };
 });
+
+// El PDF se prueba en historial-pdf.test.tsx; aquí solo se comprueba la vista y sus botones.
+vi.mock("@/lib/informe-pdf", () => ({
+  generarInformePdf: generarInformePdfMock,
+  nombreArchivoInforme: vi.fn(),
+  descargarInformePdf: vi.fn(),
+}));
 
 vi.mock("@/lib/session", () => ({
   SessionProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -31,58 +40,27 @@ vi.mock("@/lib/session", () => ({
   }),
 }));
 
-async function renderizarHistorial() {
+async function renderizarHistorial(entrada = "/historial") {
   const router = createRouter({
     routeTree,
     context: { queryClient: new QueryClient() },
-    history: createMemoryHistory({ initialEntries: ["/historial"] }),
+    history: createMemoryHistory({ initialEntries: [entrada] }),
   });
   await router.load();
   render(<RouterProvider router={router} />);
 }
 
-const finalizada = {
-  quote_id: "q-9",
-  title: null,
-  status: "closed" as const,
-  version: 4,
-  created_at: "2026-11-11T10:00:00Z",
-  updated_at: "2026-11-11T11:00:00Z",
-  report_number: 1,
-  report_label: "COT-000001",
-  finalized_at: "2026-11-11T11:00:00Z",
-  finalized_by: "u-1",
-  supplier_count: 2,
-  line_count: 5,
-};
-
-const informe = {
-  schema_version: 1,
-  quote_id: "q-9",
-  title: null,
-  number: 1,
-  label: "COT-000001",
-  finalized_at: "2026-11-11T11:00:00Z",
-  finalized_by: "u-1",
-  currency: "CLP",
-  suppliers: [],
-  items: [],
-  total: { amount: "8000.00", currency: "CLP" },
-  warnings: [],
-  release: { released: [], pending: [] },
-  note: null,
-};
-
 beforeEach(() => {
   listarCotizacionesMock.mockReset();
   listarCotizacionesMock.mockResolvedValue([]);
   obtenerInformeMock.mockReset();
+  generarInformePdfMock.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 describe("historial de cotizaciones", () => {
   it("pide solo finalizadas y no muestra el carrito activo", async () => {
-    listarCotizacionesMock.mockResolvedValue([finalizada]);
+    listarCotizacionesMock.mockResolvedValue([cotizacionFinalizada]);
 
     await renderizarHistorial();
 
@@ -90,26 +68,21 @@ describe("historial de cotizaciones", () => {
     expect(listarCotizacionesMock).toHaveBeenCalledWith({ finalized: true, limit: 50 });
     // Una sola fila de datos: la lista no incluye cotizaciones en preparación.
     expect(screen.getAllByRole("row")).toHaveLength(2);
-    expect(screen.getByText("Ver informe")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ver vista/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ver informe/ })).toBeInTheDocument();
   });
 
-  it("recupera el informe guardado al abrir el detalle", async () => {
-    listarCotizacionesMock.mockResolvedValue([finalizada]);
-    obtenerInformeMock.mockResolvedValue({
-      quote_id: "q-9",
-      report_number: 1,
-      report_label: "COT-000001",
-      finalized_at: "2026-11-11T11:00:00Z",
-      finalized_by: "u-1",
-      report: informe,
-    });
+  it("recupera el informe guardado al abrir la vista", async () => {
+    listarCotizacionesMock.mockResolvedValue([cotizacionFinalizada]);
+    obtenerInformeMock.mockResolvedValue(informeRecuperado);
 
     await renderizarHistorial();
-    fireEvent.click(await screen.findByText("Ver informe"));
+    fireEvent.click(await screen.findByRole("button", { name: /Ver vista/ }));
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(obtenerInformeMock).toHaveBeenCalledWith("q-9");
     expect(screen.getByText(/Informe COT-000001/)).toBeInTheDocument();
+    expect(generarInformePdfMock).not.toHaveBeenCalled();
   });
 
   it("muestra un estado vacío claro cuando no hay cotizaciones finalizadas", async () => {
@@ -118,5 +91,16 @@ describe("historial de cotizaciones", () => {
     await renderizarHistorial();
 
     expect(await screen.findByText(/Todavía no hay cotizaciones finalizadas/)).toBeInTheDocument();
+  });
+
+  it("abre automáticamente la vista indicada en la URL", async () => {
+    listarCotizacionesMock.mockResolvedValue([cotizacionFinalizada]);
+    obtenerInformeMock.mockResolvedValue(informeRecuperado);
+
+    await renderizarHistorial("/historial?informe=q-9");
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(obtenerInformeMock).toHaveBeenCalledWith("q-9");
+    expect(screen.getByText(/Informe COT-000001/)).toBeInTheDocument();
   });
 });

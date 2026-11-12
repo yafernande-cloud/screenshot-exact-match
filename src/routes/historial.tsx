@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, FileText, History, Loader2, Search } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AlertCircle, Download, Eye, FileDown, History, Loader2, Search } from "lucide-react";
 import { MenuPrincipal, EncabezadoPagina } from "@/components/MenuPrincipal";
 import { InformeCotizacion } from "@/components/InformeCotizacion";
 import {
@@ -17,6 +17,7 @@ import {
   type InformeCotizacion as Informe,
   type ResumenCotizacion,
 } from "@/lib/cotizacion-api";
+import { descargarInformePdf, generarInformePdf, nombreArchivoInforme } from "@/lib/informe-pdf";
 
 /**
  * Historial: solo cotizaciones finalizadas.
@@ -65,7 +66,21 @@ function Historial() {
   const [error, setError] = useState<string | null>(null);
   const [informe, setInforme] = useState<Informe | null>(null);
   const [cargandoInforme, setCargandoInforme] = useState<string | null>(null);
+  const [cargandoPdf, setCargandoPdf] = useState<string | null>(null);
+  const [pdfBloqueado, setPdfBloqueado] = useState<{
+    url: string;
+    nombre: string;
+    label: string;
+  } | null>(null);
   const [errorInforme, setErrorInforme] = useState<string | null>(null);
+  const pdfEnCurso = useRef(false);
+
+  // La URL del PDF de respaldo vive mientras el aviso de descarga esté visible.
+  useEffect(() => {
+    if (!pdfBloqueado) return;
+    const { url } = pdfBloqueado;
+    return () => URL.revokeObjectURL(url);
+  }, [pdfBloqueado]);
 
   const cargar = useCallback(async () => {
     setEstado("cargando");
@@ -97,9 +112,46 @@ function Historial() {
     }
   }, []);
 
-  const abrirInforme = async (cotizacion: ResumenCotizacion) => {
+  const abrirVista = async (cotizacion: ResumenCotizacion) => {
     if (cargandoInforme) return;
     await abrirInformePorId(cotizacion.quote_id);
+  };
+
+  /**
+   * Abre el PDF en una pestaña nueva. La pestaña se crea en el mismo clic (antes de esperar la
+   * red) para que el navegador no la bloquee; si aun así la bloquea, se ofrece una descarga
+   * explícita y nunca se inicia una descarga inesperada.
+   */
+  const abrirInformePdf = async (cotizacion: ResumenCotizacion) => {
+    if (pdfEnCurso.current) return;
+    pdfEnCurso.current = true;
+    setCargandoPdf(cotizacion.quote_id);
+    setErrorInforme(null);
+    setPdfBloqueado(null);
+
+    const ventana = window.open("", "_blank");
+    if (ventana) ventana.opener = null;
+
+    try {
+      // Solo se usa el informe congelado: el PDF no consulta ofertas ni precios actuales.
+      const recuperado = await obtenerInforme(cotizacion.quote_id);
+      const archivo = generarInformePdf(recuperado.report);
+      const url = URL.createObjectURL(archivo);
+      const nombre = nombreArchivoInforme(recuperado.report);
+
+      if (ventana && !ventana.closed) {
+        ventana.location.href = url;
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } else {
+        setPdfBloqueado({ url, nombre, label: recuperado.report.label });
+      }
+    } catch (err) {
+      ventana?.close();
+      setErrorInforme(mensajeDeErrorCotizacion(err));
+    } finally {
+      pdfEnCurso.current = false;
+      setCargandoPdf(null);
+    }
   };
 
   // El informe indicado en la URL se abre solo: es el que se acaba de generar al finalizar.
@@ -205,18 +257,32 @@ function Historial() {
                         </span>
                       </td>
                       <td className="py-3 text-right">
-                        <button
-                          onClick={() => void abrirInforme(c)}
-                          disabled={cargandoInforme === c.quote_id}
-                          className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium hover:bg-background disabled:opacity-60"
-                        >
-                          {cargandoInforme === c.quote_id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                          ) : (
-                            <FileText className="h-3.5 w-3.5" aria-hidden />
-                          )}
-                          Ver informe
-                        </button>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button
+                            onClick={() => void abrirVista(c)}
+                            disabled={cargandoInforme === c.quote_id}
+                            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium hover:bg-background disabled:opacity-60"
+                          >
+                            {cargandoInforme === c.quote_id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            ) : (
+                              <Eye className="h-3.5 w-3.5" aria-hidden />
+                            )}
+                            Ver vista
+                          </button>
+                          <button
+                            onClick={() => void abrirInformePdf(c)}
+                            disabled={cargandoPdf === c.quote_id}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-brand-blue px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-brand-blue/90 disabled:opacity-60"
+                          >
+                            {cargandoPdf === c.quote_id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            ) : (
+                              <FileDown className="h-3.5 w-3.5" aria-hidden />
+                            )}
+                            Ver informe
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -239,6 +305,31 @@ function Historial() {
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> {errorInforme}
             </p>
+          )}
+
+          {pdfBloqueado && (
+            <div
+              role="status"
+              className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-brand-blue/30 bg-brand-blue/5 px-4 py-3 text-sm"
+            >
+              <FileDown className="h-4 w-4 shrink-0 text-brand-blue" aria-hidden />
+              <span>
+                El navegador bloqueó la pestaña del informe {pdfBloqueado.label}. Puedes descargarlo
+                aquí.
+              </span>
+              <button
+                onClick={() => descargarInformePdf(pdfBloqueado.url, pdfBloqueado.nombre)}
+                className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-brand-blue px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-brand-blue/90"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden /> Descargar PDF
+              </button>
+              <button
+                onClick={() => setPdfBloqueado(null)}
+                className="rounded-full border px-3 py-1 text-xs font-medium hover:bg-background"
+              >
+                Cerrar
+              </button>
+            </div>
           )}
         </section>
       </main>
