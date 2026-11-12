@@ -69,7 +69,36 @@ describe("historial de cotizaciones", () => {
     // Una sola fila de datos: la lista no incluye cotizaciones en preparación.
     expect(screen.getAllByRole("row")).toHaveLength(2);
     expect(screen.getByRole("button", { name: /Ver vista/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Ver informe/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ver orden de compra/ })).toBeInTheDocument();
+  });
+
+  it("distingue referencias de productos distintos y muestra cantidades por unidad", async () => {
+    listarCotizacionesMock.mockResolvedValue([cotizacionFinalizada]);
+
+    await renderizarHistorial();
+
+    const fila = (await screen.findByText("COT-000001")).closest("tr")!;
+    // «Referencias» conserva line_count; los productos distintos se anuncian aparte.
+    expect(fila).toHaveTextContent("5");
+    expect(fila).toHaveTextContent("3 productos distintos");
+    // Las cantidades nunca se suman entre unidades comerciales distintas.
+    expect(fila).toHaveTextContent("6 cajas + 2 unidades");
+  });
+
+  it("sigue mostrando filas de un backend anterior, sin resumen de cantidades", async () => {
+    const {
+      distinct_product_count: _productos,
+      quantity_totals: _cantidades,
+      ...anteriores
+    } = cotizacionFinalizada;
+    listarCotizacionesMock.mockResolvedValue([anteriores]);
+
+    await renderizarHistorial();
+
+    const fila = (await screen.findByText("COT-000001")).closest("tr")!;
+    expect(fila).toHaveTextContent("5");
+    expect(fila).not.toHaveTextContent(/productos? distintos?/);
+    expect(fila).toHaveTextContent("—");
   });
 
   it("recupera el informe guardado al abrir la vista", async () => {
@@ -81,7 +110,7 @@ describe("historial de cotizaciones", () => {
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(obtenerInformeMock).toHaveBeenCalledWith("q-9");
-    expect(screen.getByText(/Informe COT-000001/)).toBeInTheDocument();
+    expect(screen.getByText(/Orden de compra COT-000001/)).toBeInTheDocument();
     expect(generarInformePdfMock).not.toHaveBeenCalled();
   });
 
@@ -101,6 +130,6 @@ describe("historial de cotizaciones", () => {
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(obtenerInformeMock).toHaveBeenCalledWith("q-9");
-    expect(screen.getByText(/Informe COT-000001/)).toBeInTheDocument();
+    expect(screen.getByText(/Orden de compra COT-000001/)).toBeInTheDocument();
   });
 });

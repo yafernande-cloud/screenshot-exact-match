@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  describirTotalUnidad,
   listarCotizaciones,
   mensajeDeErrorCotizacion,
   obtenerInforme,
@@ -36,12 +37,14 @@ export const Route = createFileRoute("/historial")({
       { title: "Historial de cotizaciones · Cotizador para farmacia" },
       {
         name: "description",
-        content: "Consulta las cotizaciones finalizadas y recupera el informe que se generó.",
+        content:
+          "Consulta las cotizaciones finalizadas y recupera la orden de compra que se generó.",
       },
       { property: "og:title", content: "Historial de cotizaciones · Cotizador para farmacia" },
       {
         property: "og:description",
-        content: "Consulta las cotizaciones finalizadas y recupera el informe que se generó.",
+        content:
+          "Consulta las cotizaciones finalizadas y recupera la orden de compra que se generó.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -172,7 +175,7 @@ function Historial() {
       <main className="mx-auto w-full max-w-[1760px] px-4 sm:px-6 lg:w-[90%] lg:px-0 pb-24">
         <EncabezadoPagina
           titulo="Historial de cotizaciones"
-          bajada="Solo cotizaciones finalizadas. Cada una conserva el informe con los precios que se eligieron."
+          bajada="Solo cotizaciones finalizadas. Cada una conserva la orden de compra con los precios que se eligieron."
         />
         <section className="rounded-3xl border bg-card p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -190,7 +193,7 @@ function Historial() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar por número de informe"
+                placeholder="Buscar por número de orden de compra"
                 aria-label="Buscar cotizaciones finalizadas"
                 className="bg-transparent text-sm outline-none"
               />
@@ -221,18 +224,19 @@ function Historial() {
             </p>
           ) : estado === "listo" && cotizaciones.length === 0 ? (
             <p className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-              Todavía no hay cotizaciones finalizadas. Cuando generes un informe desde «Cotizador»,
-              aparecerá aquí con sus precios guardados.
+              Todavía no hay cotizaciones finalizadas. Cuando generes una orden de compra desde
+              «Cotizador», aparecerá aquí con sus precios guardados.
             </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-muted-foreground">
                   <tr className="border-b">
-                    <th className="py-2 pr-4 font-medium">Informe</th>
+                    <th className="py-2 pr-4 font-medium">Orden de compra</th>
                     <th className="py-2 pr-4 font-medium">Finalizada</th>
                     <th className="py-2 pr-4 font-medium">Proveedores</th>
-                    <th className="py-2 pr-4 font-medium">Productos</th>
+                    <th className="py-2 pr-4 font-medium">Referencias</th>
+                    <th className="py-2 pr-4 font-medium">Cantidades</th>
                     <th className="py-2 pr-4 font-medium">Estado</th>
                     <th className="py-2 font-medium text-right">Detalle</th>
                   </tr>
@@ -250,7 +254,25 @@ function Historial() {
                       </td>
                       <td className="py-3 pr-4">{fechaDeFinalizacion(c.finalized_at)}</td>
                       <td className="py-3 pr-4">{c.supplier_count}</td>
-                      <td className="py-3 pr-4">{c.line_count}</td>
+                      <td className="py-3 pr-4">
+                        {c.line_count}
+                        {c.distinct_product_count != null &&
+                          c.distinct_product_count !== c.line_count && (
+                            <span className="block text-xs text-muted-foreground">
+                              {c.distinct_product_count}{" "}
+                              {c.distinct_product_count === 1
+                                ? "producto distinto"
+                                : "productos distintos"}
+                            </span>
+                          )}
+                      </td>
+                      <td className="py-3 pr-4">
+                        {c.quantity_totals && c.quantity_totals.length > 0 ? (
+                          c.quantity_totals.map(describirTotalUnidad).join(" + ")
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="py-3 pr-4">
                         <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-xs text-brand-green">
                           Finalizada
@@ -280,7 +302,7 @@ function Historial() {
                             ) : (
                               <FileDown className="h-3.5 w-3.5" aria-hidden />
                             )}
-                            Ver informe
+                            Ver orden de compra
                           </button>
                         </div>
                       </td>
@@ -288,7 +310,7 @@ function Historial() {
                   ))}
                   {filas.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                      <td colSpan={7} className="py-6 text-center text-muted-foreground">
                         Ninguna cotización finalizada coincide con «{q}».
                       </td>
                     </tr>
@@ -314,8 +336,8 @@ function Historial() {
             >
               <FileDown className="h-4 w-4 shrink-0 text-brand-blue" aria-hidden />
               <span>
-                El navegador bloqueó la pestaña del informe {pdfBloqueado.label}. Puedes descargarlo
-                aquí.
+                El navegador bloqueó la pestaña de la orden de compra {pdfBloqueado.label}. Puedes
+                descargarla aquí.
               </span>
               <button
                 onClick={() => descargarInformePdf(pdfBloqueado.url, pdfBloqueado.nombre)}
@@ -342,7 +364,7 @@ function Historial() {
       >
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Informe de cotización</DialogTitle>
+            <DialogTitle>Orden de compra</DialogTitle>
             <DialogDescription>
               Copia guardada al finalizar: no cambia aunque los proveedores actualicen sus precios.
             </DialogDescription>

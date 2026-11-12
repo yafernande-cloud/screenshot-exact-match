@@ -12,8 +12,12 @@ import { ShoppingCart, ChevronDown, Minus, Plus, Trash2, Clock, Loader2 } from "
 import { formatearDinero } from "@/lib/catalogo";
 import {
   carritosConLineas,
+  describirCantidades,
+  describirResumenReferencias,
   faltantesDelCarrito,
   mensajeDeErrorCotizacion,
+  resumenDeCarrito,
+  resumenDeCotizacion,
   subtotalDeCarrito,
   totalesDeCotizacion,
   type CarritoCotizacion,
@@ -70,6 +74,8 @@ export function SeccionCotizaciones({
 }) {
   const grupos = carritosConLineas(detalle);
   const r = totalesDeCotizacion(detalle);
+  const resumen = resumenDeCotizacion(detalle);
+  const cantidadesTotales = describirCantidades(resumen);
   const [cerrados, setCerrados] = useState<string[]>([]);
   const [vaciar, setVaciar] = useState<CarritoCotizacion | null>(null);
   // Finalizar genera el informe definitivo: nunca se ejecuta sin una confirmación explícita.
@@ -145,6 +151,7 @@ export function SeccionCotizaciones({
           const abierto = !cerrados.includes(carrito.cart_id);
           const sub = subtotalDeCarrito(carrito);
           const activas = carrito.lines.filter((linea) => linea.status === "active");
+          const resumenCarrito = describirResumenReferencias(resumenDeCarrito(carrito));
           const nombre = carrito.supplier_name ?? "Proveedor sin nombre";
           return (
             <div key={carrito.cart_id} className="rounded-2xl border bg-card">
@@ -165,7 +172,7 @@ export function SeccionCotizaciones({
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{nombre}</p>
                   <p className="text-xs text-muted-foreground">
-                    {activas.length} {activas.length === 1 ? "producto" : "productos"} ·{" "}
+                    {resumenCarrito ?? "Sin referencias"} ·{" "}
                     {sub !== null ? (
                       <span className="font-medium text-brand-green">
                         {formatearDinero({ amount: sub.toFixed(2), currency: "CLP" })}
@@ -251,11 +258,11 @@ export function SeccionCotizaciones({
             className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
           >
             {procesandoFinalizacion && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-            Generar informe y finalizar
+            Generar orden de compra y finalizar
           </button>
           <p className="max-w-sm text-xs text-muted-foreground">
-            Finalizar guarda el informe con los precios elegidos y libera los faltantes que quedaron
-            cubiertos. No registra una compra.
+            Finalizar guarda la orden de compra con los precios elegidos y libera los faltantes que
+            quedaron cubiertos. No registra una compra.
           </p>
         </div>
       </div>
@@ -273,7 +280,7 @@ export function SeccionCotizaciones({
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Se quitará del carrito de {porQuitar.proveedor}. Las demás líneas, sus cantidades y
-              precios no cambian, y los faltantes no se liberan hasta finalizar el informe.
+              precios no cambian, y los faltantes no se liberan hasta finalizar la orden de compra.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -355,7 +362,7 @@ export function SeccionCotizaciones({
               <dl className="grid grid-cols-3 gap-2 text-center">
                 <div>
                   <dt className="text-xs text-muted-foreground">
-                    {r.lineas === 1 ? "Producto" : "Productos"}
+                    {r.lineas === 1 ? "Referencia" : "Referencias"}
                   </dt>
                   <dd className="font-semibold">{r.lineas}</dd>
                 </div>
@@ -374,10 +381,17 @@ export function SeccionCotizaciones({
                   </dd>
                 </div>
               </dl>
+              <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">
+                Cantidades solicitadas:{" "}
+                <span className="font-medium text-foreground">
+                  {cantidadesTotales ?? "sin cantidades informadas"}
+                </span>
+                {resumen.porUnidad.length > 1 && " (por unidad; no se suman entre sí)"}
+              </p>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
-              Estás por generar el informe definitivo con los productos que tienes actualmente en el
-              carrito. ¿Quieres agregar más productos o generar el informe ahora?
+              Estás por generar la orden de compra definitiva con los productos que tienes
+              actualmente en el carrito. ¿Quieres agregar más productos o generarla ahora?
             </p>
             {faltantesAsociados > 0 && (
               <p className="mt-3 rounded-xl border border-brand-green/40 bg-brand-green/5 px-4 py-3 text-sm">
@@ -417,7 +431,7 @@ export function SeccionCotizaciones({
                 className="inline-flex items-center justify-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
               >
                 {procesandoFinalizacion && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-                Generar informe
+                Generar orden de compra
               </button>
             </div>
           </div>

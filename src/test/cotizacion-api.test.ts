@@ -20,6 +20,10 @@ import { ApiError } from "@/lib/api";
 import {
   agregarLinea,
   carritosConLineas,
+  describirCantidades,
+  describirResumenCantidades,
+  describirResumenReferencias,
+  describirTotalUnidad,
   faltantesDelCarrito,
   finalizarCotizacion,
   lineasActivas,
@@ -28,6 +32,9 @@ import {
   obtenerCotizacion,
   obtenerInforme,
   quitarLinea,
+  resumenDeCarrito,
+  resumenDeCotizacion,
+  resumenDeInforme,
   resultadoDesconocido,
   subtotalDeCarrito,
   totalesDeCotizacion,
@@ -37,6 +44,7 @@ import {
   cotizacionCerrada,
   type CarritoCotizacion,
   type DetalleCotizacion,
+  type InformeCotizacion,
   type LineaCotizacion,
 } from "@/lib/cotizacion-api";
 
@@ -475,5 +483,162 @@ describe("mensajes y reintentos", () => {
     expect(resultadoDesconocido(new ApiError(0, "NETWORK", "x"))).toBe(true);
     expect(resultadoDesconocido(new ApiError(503, "UPSTREAM_UNAVAILABLE", "x"))).toBe(true);
     expect(resultadoDesconocido(new ApiError(409, "QUOTE_ALREADY_FINALIZED", "x"))).toBe(false);
+  });
+});
+
+describe("resumen de referencias, productos y cantidades", () => {
+  it("un producto con cantidad 3 se informa como una referencia y 3 cajas", () => {
+    const resumen = resumenDeCarrito(carrito());
+
+    expect(resumen).toEqual({
+      referencias: 1,
+      productosDistintos: 1,
+      proveedores: 1,
+      porUnidad: [{ unit: "box", quantity: "3" }],
+      homogenea: true,
+    });
+    expect(describirResumenReferencias(resumen)).toBe("1 referencia · 3 cajas");
+    expect(describirResumenCantidades(resumen)).toBe("1 referencia · 3 cajas · 1 proveedor");
+  });
+
+  it("varios productos con cantidades distintas suman por unidad solo dentro de esa unidad", () => {
+    const detalleConDos = detalle([
+      carrito({
+        lines: [
+          linea({ line_id: "l-1", trade_item_id: "t-1", quantity: { value: "2", unit: "box" } }),
+          linea({ line_id: "l-2", trade_item_id: "t-2", quantity: { value: "4", unit: "box" } }),
+        ],
+      }),
+    ]);
+
+    const resumen = resumenDeCotizacion(detalleConDos);
+
+    expect(resumen.referencias).toBe(2);
+    expect(resumen.productosDistintos).toBe(2);
+    expect(resumen.porUnidad).toEqual([{ unit: "box", quantity: "6" }]);
+    expect(describirCantidades(resumen)).toBe("6 cajas");
+  });
+
+  it("nunca suma cantidades con unidades distintas ni convierte envases en unidades", () => {
+    const mixta = carrito({
+      lines: [
+        linea({ line_id: "l-1", trade_item_id: "t-1", quantity: { value: "2", unit: "box" } }),
+        linea({ line_id: "l-2", trade_item_id: "t-2", quantity: { value: "3", unit: "unit" } }),
+      ],
+    });
+
+    const resumen = resumenDeCarrito(mixta);
+
+    expect(resumen.homogenea).toBe(false);
+    expect(resumen.porUnidad).toEqual([
+      { unit: "box", quantity: "2" },
+      { unit: "unit", quantity: "3" },
+    ]);
+    expect(describirCantidades(resumen)).toBe("2 cajas + 3 unidades");
+  });
+
+  it("la unidad desconocida es su propio grupo y se declara como tal", () => {
+    const conDesconocida = carrito({
+      lines: [
+        linea({ line_id: "l-1", trade_item_id: "t-1", quantity: { value: "3", unit: "box" } }),
+        linea({ line_id: "l-2", trade_item_id: "t-2", quantity: { value: "7", unit: null } }),
+      ],
+    });
+
+    const resumen = resumenDeCarrito(conDesconocida);
+
+    expect(resumen.porUnidad).toEqual([
+      { unit: "box", quantity: "3" },
+      { unit: null, quantity: "7" },
+    ]);
+    expect(describirCantidades(resumen)).toBe("3 cajas + 7 sin unidad informada");
+    expect(describirTotalUnidad({ unit: null, quantity: "7" })).toBe("7 sin unidad informada");
+  });
+
+  it("el mismo producto en dos proveedores son dos referencias, no dos productos distintos", () => {
+    const dosProveedores = detalle([
+      carrito({
+        cart_id: "c-1",
+        supplier_id: "s-1",
+        lines: [linea({ line_id: "l-1", quote_cart_id: "c-1", trade_item_id: "t-1" })],
+      }),
+      carrito({
+        cart_id: "c-2",
+        supplier_id: "s-2",
+        supplier_name: "Proveedor Dos",
+        lines: [
+          linea({
+            line_id: "l-2",
+            quote_cart_id: "c-2",
+            supplier_id: "s-2",
+            trade_item_id: "t-1",
+            quantity: { value: "1", unit: "box" },
+          }),
+        ],
+      }),
+    ]);
+
+    const resumen = resumenDeCotizacion(dosProveedores);
+
+    expect(resumen.referencias).toBe(2);
+    expect(resumen.productosDistintos).toBe(1);
+    expect(resumen.proveedores).toBe(2);
+    expect(resumen.porUnidad).toEqual([{ unit: "box", quantity: "4" }]);
+    expect(describirResumenCantidades(resumen)).toBe("2 referencias · 4 cajas · 2 proveedores");
+  });
+
+  it("excluye líneas quitadas y carritos descartados", () => {
+    const conDescartes = detalle([
+      carrito({
+        lines: [
+          linea({ line_id: "l-1", trade_item_id: "t-1" }),
+          linea({
+            line_id: "l-2",
+            trade_item_id: "t-2",
+            status: "removed",
+            quantity: { value: "9", unit: "box" },
+          }),
+        ],
+      }),
+      carrito({
+        cart_id: "c-2",
+        status: "dismissed",
+        lines: [
+          linea({ line_id: "l-3", trade_item_id: "t-3", quantity: { value: "8", unit: "box" } }),
+        ],
+      }),
+    ]);
+
+    const resumen = resumenDeCotizacion(conDescartes);
+
+    expect(resumen.referencias).toBe(1);
+    expect(resumen.productosDistintos).toBe(1);
+    expect(resumen.proveedores).toBe(1);
+    expect(resumen.porUnidad).toEqual([{ unit: "box", quantity: "3" }]);
+  });
+
+  it("resume una orden congelada sin alterar sus líneas ni sus importes", () => {
+    const informe = {
+      items: [
+        { trade_item_id: "t-1", supplier_id: "s-1", quantity: { value: "2", unit: "box" } },
+        { trade_item_id: "t-1", supplier_id: "s-2", quantity: { value: "1", unit: "box" } },
+        { trade_item_id: "t-2", supplier_id: "s-2", quantity: { value: "4", unit: null } },
+      ],
+    } as unknown as InformeCotizacion;
+    const antes = structuredClone(informe);
+
+    const resumen = resumenDeInforme(informe);
+
+    expect(resumen).toEqual({
+      referencias: 3,
+      productosDistintos: 2,
+      proveedores: 2,
+      porUnidad: [
+        { unit: "box", quantity: "3" },
+        { unit: null, quantity: "4" },
+      ],
+      homogenea: false,
+    });
+    expect(informe).toEqual(antes);
   });
 });

@@ -178,6 +178,36 @@ describe("PDF del informe de cotización", () => {
   });
 
   it("usa un nombre de archivo estable y seguro", () => {
-    expect(nombreArchivoInforme(informe)).toBe("Informe-COT-000001.pdf");
+    expect(nombreArchivoInforme(informe)).toBe("Orden-de-Compra-COT-000001.pdf");
+  });
+
+  it("titula el documento como orden de compra y aclara que no es una factura", () => {
+    const crudo = construirInformePdf(informe).output() as string;
+
+    expect(crudo).toContain("ORDEN DE COMPRA");
+    expect(crudo).toContain("Orden de compra COT-000001");
+    expect(crudo).toContain("Orden de compra. No es una factura tributaria.");
+    expect(crudo).not.toContain("INFORME DE COTIZACION");
+  });
+
+  it("resume referencias, productos distintos y cantidades solicitadas", () => {
+    const crudo = construirInformePdf(informe).output() as string;
+
+    // L-1 y L-2 son el mismo producto (mismo trade_item) en dos proveedores: no son dos distintos.
+    expect(crudo).toContain("PRODUCTOS DISTINTOS");
+    expect(crudo).toContain("REFERENCIAS");
+    // La unidad nula no se suma con las cajas: cada grupo se anuncia por separado.
+    expect(crudo).toContain("Cantidades solicitadas: 4 cajas + 3 sin unidad informada");
+  });
+
+  it("un informe histórico sin cantidades informadas no muestra la línea de cantidades", () => {
+    const sinCantidades: InformeCotizacion = {
+      ...informe,
+      items: informe.items.map((linea) => ({ ...linea, quantity: { value: "", unit: null } })),
+    };
+
+    const crudo = construirInformePdf(sinCantidades).output() as string;
+
+    expect(crudo).not.toContain("Cantidades solicitadas");
   });
 });

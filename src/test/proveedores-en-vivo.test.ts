@@ -10,8 +10,10 @@ import {
   etiquetaRelacion,
   mensajeDeErrorProveedor,
   mensajeMotivo,
+  proveedorSinResultados,
   type OfertaEnVivo,
   type ProductoPublicadoEnVivo,
+  type ResultadoEnVivo,
 } from "@/lib/proveedores-en-vivo";
 
 /**
@@ -259,6 +261,44 @@ describe("búsqueda en vivo", () => {
       "No pudimos consultar al proveedor.",
     );
     expect(resultado.offers[0]).toMatchObject({ match_relation: "direct" });
+  });
+});
+
+describe("respaldo a la consulta corta", () => {
+  function resultado(over: Partial<ResultadoEnVivo> = {}): ResultadoEnVivo {
+    return {
+      search_id: "busq-1",
+      source_id: "src-1",
+      source_name: "Farmaloop API",
+      query: "Predual",
+      state: "connected",
+      reason: null,
+      outcome: "matches",
+      observed_at: "2026-11-10T01:20:56Z",
+      created_at: "2026-11-10T01:20:56Z",
+      expires_at: "2026-11-10T01:30:56Z",
+      cached: false,
+      profile_version: 1,
+      discarded: 0,
+      warnings: [],
+      offers: [],
+      published: [],
+      ...over,
+    };
+  }
+
+  it("reintenta solo cuando la fuente no encontró coincidencias o rechazó la consulta", () => {
+    expect(proveedorSinResultados(resultado({ outcome: "no_matches" }))).toBe(true);
+    expect(proveedorSinResultados(resultado({ outcome: null, reason: "query_rejected" }))).toBe(
+      true,
+    );
+    expect(proveedorSinResultados(resultado())).toBe(false);
+  });
+
+  it("un fallo del conector no se reintenta con otro texto", () => {
+    expect(proveedorSinResultados(resultado({ state: "error", reason: "timeout" }))).toBe(false);
+    expect(proveedorSinResultados(resultado({ state: "not_configured" }))).toBe(false);
+    expect(proveedorSinResultados(null)).toBe(false);
   });
 });
 

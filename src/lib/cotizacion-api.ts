@@ -13,6 +13,7 @@
  */
 
 import { apiRequest, ApiError } from "@/lib/api";
+import { etiquetaUnidad, formatearCantidad } from "@/lib/catalogo";
 
 export interface Dinero {
   amount: string;
@@ -97,6 +98,10 @@ export interface ResumenCotizacion {
   finalized_by: string | null;
   supplier_count: number;
   line_count: number;
+  /** Referencias activas; puede faltar en un backend anterior a esta ampliación. */
+  distinct_product_count?: number;
+  /** Cantidades solicitadas agrupadas por unidad; unidad `null` = no informada. */
+  quantity_totals?: TotalPorUnidad[];
 }
 
 /** Oferta viva tal como la publicó el conector. Sin precio no se puede cotizar. */
@@ -428,7 +433,7 @@ export async function obtenerInforme(quoteId: string): Promise<InformeRecuperado
   return apiRequest<InformeRecuperado>(
     `/api/v1/quotes/${quoteId}/report`,
     {},
-    "No pudimos cargar el informe de la cotización.",
+    "No pudimos cargar la orden de compra de la cotización.",
   );
 }
 
@@ -523,6 +528,161 @@ export function totalesDeCotizacion(detalle: DetalleCotizacion | null): TotalesC
     lineas: activas.length,
     proveedores: new Set(activas.map((linea) => linea.supplier_id)).size,
   };
+}
+
+/** Cantidad solicitada sumada dentro de una sola unidad comercial. */
+export interface TotalPorUnidad {
+  /** `null` = las líneas no informan unidad; nunca se mezcla con las conocidas. */
+  unit: string | null;
+  quantity: string;
+}
+
+/**
+ * Referencias, productos distintos y cantidades de lo que hay en el carrito.
+ *
+ * `referencias` cuenta líneas activas (no unidades) y `productosDistintos` cuenta artículos:
+ * el mismo producto en dos proveedores suma dos referencias y un solo producto. Las cantidades
+ * se agrupan por unidad comercial y jamás se suman entre unidades distintas.
+ */
+export interface ResumenCantidades {
+  referencias: number;
+  productosDistintos: number;
+  proveedores: number;
+  porUnidad: TotalPorUnidad[];
+  /** Un solo grupo de cantidad: se puede hablar de «total» sin ambigüedad. */
+  homogenea: boolean;
+}
+
+/**
+ * Convierte una cantidad decimal del backend a milésimas enteras.
+ *
+ * Sumar con `Number` puede arrastrar artefactos binarios (`0.1 + 0.2`); las cantidades viajan
+ * con hasta tres decimales, así que se suman como enteros y se vuelven a formatear.
+ */
+function aMilesimas(valor: string): bigint | null {
+  const limpio = valor.trim();
+  const partes = /^(-?)(\d+)(?:\.(\d{1,3}))?$/.exec(limpio);
+  if (!partes) return null;
+  const signo = partes[1] === "-" ? -1n : 1n;
+  const entero = BigInt(partes[2] ?? "0");
+  const decimal = BigInt((partes[3] ?? "").padEnd(3, "0"));
+  return signo * (entero * 1000n + decimal);
+}
+
+/** Vuelve a una cantidad decimal sin ceros de relleno: `6000n` → «6», `2500n` → «2.5». */
+function deMilesimas(valor: bigint): string {
+  const negativo = valor < 0n;
+  const absoluto = negativo ? -valor : valor;
+  const entero = absoluto / 1000n;
+  const resto = (absoluto % 1000n).toString().padStart(3, "0").replace(/0+$/, "");
+  return `${negativo ? "-" : ""}${entero}${resto ? `.${resto}` : ""}`;
+}
+
+function sumarPorUnidad(
+  lineas: ReadonlyArray<{ quantity: { value: string; unit: string | null } }>,
+): TotalPorUnidad[] {
+  const totales = new Map<string | null, bigint>();
+  for (const linea of lineas) {
+    const milesimas = aMilesimas(linea.quantity.value);
+    if (milesimas === null) continue;
+    const unidad = linea.quantity.unit;
+    totales.set(unidad, (totales.get(unidad) ?? 0n) + milesimas);
+  }
+  const conocidas = [...totales.keys()]
+    .filter((unidad): unidad is string => unidad !== null)
+    .sort((a, b) => a.localeCompare(b, "es"));
+  const ordenadas: Array<string | null> = totales.has(null) ? [...conocidas, null] : conocidas;
+  return ordenadas.map((unidad) => ({
+    unit: unidad,
+    quantity: deMilesimas(totales.get(unidad) ?? 0n),
+  }));
+}
+
+function resumenDeLineas(
+  lineas: ReadonlyArray<{
+    trade_item_id: string;
+    supplier_id: string;
+    quantity: { value: string; unit: string | null };
+  }>,
+): ResumenCantidades {
+  const porUnidad = sumarPorUnidad(lineas);
+  return {
+    referencias: lineas.length,
+    productosDistintos: new Set(lineas.map((linea) => linea.trade_item_id)).size,
+    proveedores: new Set(lineas.map((linea) => linea.supplier_id)).size,
+    porUnidad,
+    homogenea: porUnidad.length <= 1,
+  };
+}
+
+/** Resumen del carrito entero (todas las líneas activas de una cotización editable). */
+export function resumenDeCotizacion(detalle: DetalleCotizacion | null): ResumenCantidades {
+  if (!detalle || !carritoEditable(detalle)) return resumenDeLineas([]);
+  // Mismo filtro que el resumen del servidor: carritos y líneas activos.
+  return resumenDeLineas(
+    detalle.carts
+      .filter((cart) => cart.status === "active")
+      .flatMap((cart) => cart.lines.filter((line) => line.status === "active")),
+  );
+}
+
+/** Resumen de un carrito de proveedor. */
+export function resumenDeCarrito(carrito: CarritoCotizacion): ResumenCantidades {
+  return resumenDeLineas(carrito.lines.filter((linea) => linea.status === "active"));
+}
+
+/** Resumen de una orden de compra congelada, a partir de sus líneas guardadas. */
+export function resumenDeInforme(informe: InformeCotizacion): ResumenCantidades {
+  return resumenDeLineas(
+    informe.items.map((item) => ({
+      trade_item_id: item.trade_item_id,
+      supplier_id: item.supplier_id,
+      quantity: item.quantity,
+    })),
+  );
+}
+
+/**
+ * Un grupo de cantidad con su unidad. La unidad desconocida se declara como tal: no se presenta
+ * como «unidades» ni se lleva a cajas.
+ */
+export function describirTotalUnidad(total: TotalPorUnidad): string {
+  const cifra = formatearCantidad(total.quantity) ?? total.quantity;
+  if (total.unit) return `${cifra} ${etiquetaUnidad(total.unit, total.quantity)}`;
+  return `${cifra} sin unidad informada`;
+}
+
+/** «5 cajas + 2 unidades», o `null` cuando ninguna línea tiene cantidad sumable. */
+export function describirCantidades(resumen: ResumenCantidades): string | null {
+  if (resumen.porUnidad.length === 0) return null;
+  return resumen.porUnidad.map(describirTotalUnidad).join(" + ");
+}
+
+/**
+ * Línea corta de referencias y cantidades: «4 referencias · 5 cajas + 5 unidades».
+ *
+ * Se usa por proveedor, donde el número de proveedores es siempre uno.
+ */
+export function describirResumenReferencias(resumen: ResumenCantidades): string | null {
+  if (resumen.referencias === 0) return null;
+  return [
+    `${resumen.referencias} ${resumen.referencias === 1 ? "referencia" : "referencias"}`,
+    describirCantidades(resumen),
+  ]
+    .filter((parte): parte is string => Boolean(parte))
+    .join(" · ");
+}
+
+/**
+ * Línea corta para encabezados: «4 referencias · 5 cajas + 5 unidades · 2 proveedores».
+ *
+ * Nunca suma unidades distintas ni convierte envases en unidades sueltas: si hay varias, se
+ * enumeran. Un carrito vacío no produce texto.
+ */
+export function describirResumenCantidades(resumen: ResumenCantidades): string | null {
+  const base = describirResumenReferencias(resumen);
+  if (!base) return null;
+  return `${base} · ${resumen.proveedores} ${resumen.proveedores === 1 ? "proveedor" : "proveedores"}`;
 }
 
 export function subtotalDeCarrito(carrito: CarritoCotizacion): number | null {

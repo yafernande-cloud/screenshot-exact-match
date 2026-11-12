@@ -9,7 +9,11 @@
 import { FileText } from "lucide-react";
 
 import { formatearDinero } from "@/lib/catalogo";
-import type { InformeCotizacion as Informe } from "@/lib/cotizacion-api";
+import {
+  describirCantidades,
+  resumenDeInforme,
+  type InformeCotizacion as Informe,
+} from "@/lib/cotizacion-api";
 
 function fecha(iso: string | null): string {
   if (!iso) return "fecha no informada";
@@ -22,15 +26,24 @@ function fecha(iso: string | null): string {
 const unidad = (valor: string | null) => valor ?? "sin unidad";
 
 export function InformeCotizacion({ informe }: { informe: Informe }) {
+  const resumen = resumenDeInforme(informe);
+  const cantidades = describirCantidades(resumen);
   return (
-    <article className="space-y-4" aria-label={`Informe ${informe.label}`}>
+    <article className="space-y-4" aria-label={`Orden de compra ${informe.label}`}>
       <header className="flex flex-wrap items-start justify-between gap-2 border-b pb-3">
         <div>
           <p className="flex items-center gap-2 font-semibold">
-            <FileText className="h-4 w-4 text-brand-blue" aria-hidden /> Informe {informe.label}
+            <FileText className="h-4 w-4 text-brand-blue" aria-hidden /> Orden de compra{" "}
+            {informe.label}
           </p>
           <p className="text-xs text-muted-foreground">
             {informe.title ? `${informe.title} · ` : ""}Generado el {fecha(informe.finalized_at)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {resumen.referencias} {resumen.referencias === 1 ? "referencia" : "referencias"} ·{" "}
+            {resumen.productosDistintos}{" "}
+            {resumen.productosDistintos === 1 ? "producto distinto" : "productos distintos"}
+            {cantidades && ` · ${cantidades}`}
           </p>
         </div>
         <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-xs font-medium text-brand-green">
@@ -84,7 +97,7 @@ export function InformeCotizacion({ informe }: { informe: Informe }) {
           <div key={proveedor.supplier_id} className="flex justify-between gap-3">
             <span className="text-muted-foreground">
               {proveedor.supplier_name ?? "Proveedor sin nombre"} · {proveedor.line_count}{" "}
-              {proveedor.line_count === 1 ? "producto" : "productos"}
+              {proveedor.line_count === 1 ? "referencia" : "referencias"}
             </span>
             <span>{formatearDinero(proveedor.subtotal) ?? "Subtotal pendiente"}</span>
           </div>

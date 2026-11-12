@@ -72,6 +72,27 @@ export function consultaDeBusqueda(
   return encabezado || faltante.display_name.trim();
 }
 
+/** Tope del backend para la consulta de búsqueda (`SearchRequest.query`). */
+export const MAX_CONSULTA_BUSQUEDA = 200;
+
+/**
+ * Consulta ampliada que se escribe en el buscador al partir desde un faltante.
+ *
+ * Usa `search_query_full` (nombre más concentración, forma y presentación registrados). Si el
+ * backend es anterior y no lo entrega, cae a la consulta corta; nunca arma atributos por su
+ * cuenta. Se respeta el tope de 200 caracteres cortando por palabra.
+ */
+export function consultaCompletaDeBusqueda(
+  faltante: Pick<Faltante, "display_name" | "display_parts" | "search_query" | "search_query_full">,
+): string {
+  const completa = faltante.search_query_full?.trim();
+  if (!completa) return consultaDeBusqueda(faltante);
+  if (completa.length <= MAX_CONSULTA_BUSQUEDA) return completa;
+  const recortada = completa.slice(0, MAX_CONSULTA_BUSQUEDA);
+  const corte = recortada.lastIndexOf(" ");
+  return (corte > 0 ? recortada.slice(0, corte) : recortada).trim();
+}
+
 /** Unidades que acepta el comando de cantidad del backend (`QuantityUnit`). */
 export const UNIDADES_CANTIDAD = ["box", "package", "unit", "bottle"] as const;
 export type UnidadCantidad = (typeof UNIDADES_CANTIDAD)[number];

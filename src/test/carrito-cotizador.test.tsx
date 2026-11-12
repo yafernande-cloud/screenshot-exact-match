@@ -378,12 +378,14 @@ describe("carrito persistente en el cotizador", () => {
     expect(crearCotizacionActivaMock).not.toHaveBeenCalled();
   });
 
-  it("«Generar informe» finaliza y redirige al informe recién generado", async () => {
+  it("«Generar orden de compra» finaliza y redirige a la orden recién generada", async () => {
     responderFinalizacion();
 
     const router = await renderizarCotizador();
-    fireEvent.click(await screen.findByRole("button", { name: /Generar informe y finalizar/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Generar orden de compra y finalizar/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Generar orden de compra" }));
 
     await waitFor(() =>
       expect(finalizarCotizacionMock).toHaveBeenCalledWith("q-1", {
@@ -391,9 +393,11 @@ describe("carrito persistente en el cotizador", () => {
         clave: expect.any(String),
       }),
     );
-    // Ya no se queda en el carrito cerrado: el historial abre el informe recién generado.
+    // Ya no se queda en el carrito cerrado: el historial abre la orden recién generada.
     await waitFor(() => expect(router.state.location.pathname).toBe("/historial"));
     expect(router.state.location.search).toMatchObject({ informe: "q-1" });
-    expect(await screen.findByRole("article", { name: "Informe COT-000001" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("article", { name: "Orden de compra COT-000001" }),
+    ).toBeInTheDocument();
   });
 });

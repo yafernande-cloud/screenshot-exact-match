@@ -155,8 +155,10 @@ async function renderizarCotizador() {
 
 /** Abre el modal desde el botón principal y confirma una vez. */
 async function confirmarUnaVez() {
-  fireEvent.click(await screen.findByRole("button", { name: /Generar informe y finalizar/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Generar orden de compra y finalizar/ }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Generar orden de compra" }));
 }
 
 beforeEach(() => {
@@ -189,11 +191,11 @@ describe("reintento de la finalización", () => {
     expect(screen.getByText("Ibuprofeno 400 mg")).toBeInTheDocument();
     expect(toastMock).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialogo!).getByRole("button", { name: "Generar informe" }));
+    fireEvent.click(within(dialogo!).getByRole("button", { name: "Generar orden de compra" }));
 
     await waitFor(() => expect(finalizarCotizacionMock).toHaveBeenCalledTimes(2));
     const [primera, segunda] = finalizarCotizacionMock.mock.calls;
-    // El resultado anterior fue desconocido: el reintento no puede generar un segundo informe.
+    // El resultado anterior fue desconocido: el reintento no puede generar una segunda orden de compra.
     expect(primera?.[1]?.clave).toEqual(expect.any(String));
     expect(segunda?.[1]?.clave).toBe(primera?.[1]?.clave);
     // El modal sigue abierto tras el segundo fallo, con el carrito intacto para reintentar.
@@ -203,7 +205,7 @@ describe("reintento de la finalización", () => {
 
   it("si la cotización ya está finalizada actualiza el carrito y no deja reintentar", async () => {
     finalizarCotizacionMock.mockRejectedValue(
-      new ApiError(409, "QUOTE_ALREADY_FINALIZED", "La cotización ya generó su informe."),
+      new ApiError(409, "QUOTE_ALREADY_FINALIZED", "La cotización ya generó su orden de compra."),
     );
     // Tras el cierre, el servidor ya no devuelve un carrito activo.
     ultimaCotizacionMock.mockReset();
@@ -214,7 +216,7 @@ describe("reintento de la finalización", () => {
     await confirmarUnaVez();
 
     await waitFor(() =>
-      expect(toastMock).toHaveBeenCalledWith("La cotización ya tiene su informe guardado."),
+      expect(toastMock).toHaveBeenCalledWith("La cotización ya tiene su orden de compra guardada."),
     );
     await waitFor(() => expect(dialogoFinalizar()).toBeNull());
     // Una sola solicitud de finalización; el carrito se releyó y quedó vacío.

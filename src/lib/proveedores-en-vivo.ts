@@ -320,6 +320,17 @@ export function buscarProveedorEnVivo(
   );
 }
 
+/**
+ * ¿El proveedor respondió sin coincidencias (o rechazó la consulta)?
+ *
+ * Solo entonces se prueba la consulta corta como respaldo. Un error de red o una fuente no
+ * configurada no se reintentan con otro texto.
+ */
+export function proveedorSinResultados(resultado: ResultadoEnVivo | null): boolean {
+  if (!resultado) return false;
+  return resultado.outcome === "no_matches" || resultado.reason === "query_rejected";
+}
+
 /** `SupplierProductMappingOut`: vínculo explícito ya guardado entre la fuente y un artículo. */
 export interface VinculoProductoEnVivo {
   mapping_id: string;

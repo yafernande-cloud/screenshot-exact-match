@@ -1,10 +1,10 @@
 /**
  * Confirmación previa a finalizar la cotización.
  *
- * «Generar informe y finalizar» nunca llama al backend por sí solo: abre un modal con el resumen
+ * «Generar orden de compra y finalizar» nunca llama al backend por sí solo: abre un modal con el resumen
  * del carrito y la finalización se ejecuta únicamente al confirmarla. Aquí se prueba el carrito
  * como componente, con sus acciones dobladas; la prueba del flujo completo —finalizar, navegar al
- * historial y ver el informe— vive en `carrito-cotizador.test.tsx`.
+ * historial y ver la orden de compra— vive en `carrito-cotizador.test.tsx`.
  */
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -104,7 +104,7 @@ function renderizarCarrito(opciones?: {
 }
 
 const abrirModal = () =>
-  fireEvent.click(screen.getByRole("button", { name: /Generar informe y finalizar/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Generar orden de compra y finalizar/ }));
 
 const dialogoFinalizar = () =>
   screen.queryByRole("dialog", { name: "¿Finalizar esta cotización?" });
@@ -116,15 +116,17 @@ describe("confirmación antes de finalizar la cotización", () => {
 
     const dialogo = dialogoFinalizar();
     expect(dialogo).not.toBeNull();
-    // Resumen del carrito actual: productos, proveedores y total.
+    // Resumen del carrito actual: referencias, proveedores, cantidades y total.
     const resumen = within(dialogo!);
-    expect(resumen.getByText("Producto")).toBeInTheDocument();
+    expect(resumen.getByText("Referencia")).toBeInTheDocument();
     expect(resumen.getByText("Proveedor")).toBeInTheDocument();
     expect(resumen.getByText("Total")).toBeInTheDocument();
     expect(resumen.getAllByText("1")).toHaveLength(2);
     expect(resumen.getByText("$5.100")).toBeInTheDocument();
+    // La cantidad solicitada se muestra con su unidad comercial, sin inventar equivalencias.
+    expect(dialogo).toHaveTextContent("Cantidades solicitadas: 3 cajas");
     expect(dialogo).toHaveTextContent(
-      "Estás por generar el informe definitivo con los productos que tienes actualmente en el carrito. ¿Quieres agregar más productos o generar el informe ahora?",
+      "Estás por generar la orden de compra definitiva con los productos que tienes actualmente en el carrito. ¿Quieres agregar más productos o generarla ahora?",
     );
     // Sin faltantes de Telegram asociados la advertencia se omite.
     expect(dialogo).not.toHaveTextContent(/faltantes? de Telegram/);
@@ -155,10 +157,10 @@ describe("confirmación antes de finalizar la cotización", () => {
     expect(onFinalizar).not.toHaveBeenCalled();
   });
 
-  it("«Generar informe» recién ahí ejecuta la finalización", async () => {
+  it("«Generar orden de compra» recién ahí ejecuta la finalización", async () => {
     const { onFinalizar } = renderizarCarrito();
     abrirModal();
-    fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generar orden de compra" }));
 
     await waitFor(() => expect(onFinalizar).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(dialogoFinalizar()).toBeNull());
@@ -173,7 +175,7 @@ describe("confirmación antes de finalizar la cotización", () => {
         }),
     });
     abrirModal();
-    const confirmar = screen.getByRole("button", { name: "Generar informe" });
+    const confirmar = screen.getByRole("button", { name: "Generar orden de compra" });
     fireEvent.click(confirmar);
     fireEvent.click(confirmar);
 
@@ -196,7 +198,7 @@ describe("confirmación antes de finalizar la cotización", () => {
     renderizarCarrito({ onFinalizar });
     abrirModal();
 
-    fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generar orden de compra" }));
 
     // El modal sigue abierto con el error del intento; el carrito no se tocó.
     await waitFor(() =>
@@ -209,7 +211,7 @@ describe("confirmación antes de finalizar la cotización", () => {
     expect(screen.getByDisplayValue("3")).toBeInTheDocument();
 
     // Cada clic dispara una sola solicitud; el segundo intento recién cierra al confirmarse.
-    fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generar orden de compra" }));
     await waitFor(() => expect(onFinalizar).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(dialogoFinalizar()).toBeNull());
     expect(screen.queryByRole("alert")).toBeNull();
@@ -222,12 +224,12 @@ describe("confirmación antes de finalizar la cotización", () => {
       },
     });
     abrirModal();
-    fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generar orden de compra" }));
 
     await waitFor(() => expect(onFinalizar).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("alert")).toHaveTextContent("No se pudo finalizar la cotización.");
     expect(dialogoFinalizar()).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Generar informe" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Generar orden de compra" })).toBeEnabled();
   });
 
   it("si la cotización cambió de estado cierra el modal sin dejar reintentar", async () => {
@@ -237,7 +239,7 @@ describe("confirmación antes de finalizar la cotización", () => {
     renderizarCarrito({ onFinalizar });
     abrirModal();
 
-    fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generar orden de compra" }));
 
     await waitFor(() => expect(dialogoFinalizar()).toBeNull());
     expect(onFinalizar).toHaveBeenCalledTimes(1);

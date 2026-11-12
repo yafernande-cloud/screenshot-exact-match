@@ -6,8 +6,10 @@ import {
   aplicarCambioCantidad,
   cantidadDeReferencia,
   consultaDeBusqueda,
+  consultaCompletaDeBusqueda,
   etiquetaEstadoFaltante,
   fusionarFaltantes,
+  MAX_CONSULTA_BUSQUEDA,
   partesDelFaltante,
   pendientes,
   resolverSolicitud,
@@ -232,6 +234,60 @@ describe("consulta enviada a las cadenas", () => {
   it("ignora un search_query vacío y no inventa una consulta", () => {
     const f = faltante({ search_query: "   " });
     expect(consultaDeBusqueda(f)).toBe("Omeprazol 20 mg");
+  });
+});
+
+describe("consulta completa con respaldo corto", () => {
+  const conNombreLargo = faltante({
+    display_name: "Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido x 30",
+    display_parts: {
+      name: "Tramadol clorhidrato paracetamol",
+      details: ["37.5 mg", "325 mg", "comprimido", "x 30"],
+    },
+    search_query: "Tramadol",
+  });
+
+  it("prefiere search_query_full y conserva los datos registrados", () => {
+    const f = {
+      ...conNombreLargo,
+      search_query_full: "Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido 30",
+    };
+    expect(consultaCompletaDeBusqueda(f)).toBe(
+      "Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido 30",
+    );
+    // La consulta corta no cambia: sigue siendo el respaldo por fuente.
+    expect(consultaDeBusqueda(f)).toBe("Tramadol");
+  });
+
+  it("cae a la consulta corta si un backend anterior no envía search_query_full", () => {
+    expect(consultaCompletaDeBusqueda(conNombreLargo)).toBe("Tramadol");
+    expect(consultaCompletaDeBusqueda({ ...conNombreLargo, search_query_full: "   " })).toBe(
+      "Tramadol",
+    );
+  });
+
+  it("recorta por palabra al límite aceptado sin dejar consultas a medias", () => {
+    // Cada tramo mide 12 caracteres: el corte cae exactamente en un espacio.
+    const palabra = "ibuprofeno40";
+    const larga = Array.from({ length: 30 }, () => palabra).join(" ");
+    const consulta = consultaCompletaDeBusqueda({
+      ...conNombreLargo,
+      search_query_full: larga,
+    });
+
+    expect(consulta.length).toBeLessThanOrEqual(MAX_CONSULTA_BUSQUEDA);
+    expect(consulta).toBe(consulta.trimEnd());
+    expect(consulta.split(" ")).toHaveLength(
+      Math.floor((MAX_CONSULTA_BUSQUEDA + 1) / (palabra.length + 1)),
+    );
+    expect(larga.startsWith(consulta)).toBe(true);
+  });
+
+  it("corta seco cuando no hay espacios para recortar", () => {
+    const sinEspacios = "x".repeat(MAX_CONSULTA_BUSQUEDA + 50);
+    expect(consultaCompletaDeBusqueda({ ...conNombreLargo, search_query_full: sinEspacios })).toBe(
+      "x".repeat(MAX_CONSULTA_BUSQUEDA),
+    );
   });
 });
 

@@ -30,6 +30,11 @@ export interface Faltante {
    * Puede faltar en un backend anterior: el frontend cae a `display_parts.name` o `display_name`.
    */
   search_query?: string | null;
+  /**
+   * Consulta ampliada con nombre, concentración, forma y presentación ya registrados.
+   * Puede faltar en un backend anterior: entonces se usa `search_query`.
+   */
+  search_query_full?: string | null;
   ingredient: string | null;
   status: string;
   version: number;

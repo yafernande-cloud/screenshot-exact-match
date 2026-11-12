@@ -8,7 +8,7 @@ import { routeTree } from "@/routeTree.gen";
 import { cotizacionFinalizada, informeRecuperado } from "@/test/historial-fixtures";
 
 /**
- * Flujo del botón «Ver informe»: usa el informe congelado y abre un PDF en otra pestaña. La
+ * Flujo del botón «Ver orden de compra»: usa el informe congelado y abre un PDF en otra pestaña. La
  * generación real de jsPDF se prueba en informe-pdf.test.ts; aquí se dobla para aislar la UI.
  */
 const listarCotizacionesMock = vi.hoisted(() => vi.fn());
@@ -71,7 +71,7 @@ beforeEach(() => {
   generarInformePdfMock.mockReset();
   generarInformePdfMock.mockReturnValue(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
   nombreArchivoInformeMock.mockReset();
-  nombreArchivoInformeMock.mockReturnValue("Informe-COT-000001.pdf");
+  nombreArchivoInformeMock.mockReturnValue("Orden-de-Compra-COT-000001.pdf");
   descargarInformePdfMock.mockReset();
   Object.defineProperty(URL, "createObjectURL", {
     configurable: true,
@@ -94,7 +94,7 @@ describe("PDF del historial", () => {
     vi.spyOn(window, "open").mockReturnValue(ventana);
 
     await renderizarHistorial();
-    fireEvent.click(await screen.findByRole("button", { name: /Ver informe/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Ver orden de compra/ }));
 
     await waitFor(() =>
       expect(generarInformePdfMock).toHaveBeenCalledWith(informeRecuperado.report),
@@ -109,10 +109,10 @@ describe("PDF del historial", () => {
     vi.spyOn(window, "open").mockReturnValue(null);
 
     await renderizarHistorial();
-    fireEvent.click(await screen.findByRole("button", { name: /Ver informe/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Ver orden de compra/ }));
 
     expect(
-      await screen.findByText(/bloqueó la pestaña del informe COT-000001/),
+      await screen.findByText(/bloqueó la pestaña de la orden de compra COT-000001/),
     ).toBeInTheDocument();
     expect(descargarInformePdfMock).not.toHaveBeenCalled();
 
@@ -120,15 +120,15 @@ describe("PDF del historial", () => {
 
     expect(descargarInformePdfMock).toHaveBeenCalledWith(
       "blob:informe-cot-000001",
-      "Informe-COT-000001.pdf",
+      "Orden-de-Compra-COT-000001.pdf",
     );
   });
 
-  it("un doble clic en Ver informe ejecuta una sola generación", async () => {
+  it("un doble clic en Ver orden de compra ejecuta una sola generación", async () => {
     vi.spyOn(window, "open").mockReturnValue(ventanaDePrueba());
 
     await renderizarHistorial();
-    const boton = await screen.findByRole("button", { name: /Ver informe/ });
+    const boton = await screen.findByRole("button", { name: /Ver orden de compra/ });
     fireEvent.click(boton);
     fireEvent.click(boton);
 
@@ -145,7 +145,7 @@ describe("PDF del historial", () => {
     });
 
     await renderizarHistorial();
-    fireEvent.click(await screen.findByRole("button", { name: /Ver informe/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Ver orden de compra/ }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo generar el PDF.");
     expect(ventana.close).toHaveBeenCalled();

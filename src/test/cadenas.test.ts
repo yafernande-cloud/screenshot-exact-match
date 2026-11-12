@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { estadoFuenteAhumada, type ChainResult, type ChainSource } from "@/lib/cadenas";
+import {
+  cadenaSinResultados,
+  estadoFuenteAhumada,
+  type ChainResult,
+  type ChainSource,
+} from "@/lib/cadenas";
 
 const producto: ChainResult = {
   chain_item_id: "84574",
@@ -90,5 +95,23 @@ describe("estado de la tarjeta de Farmacias Ahumada", () => {
   it("un fallo de red se muestra como error con su mensaje", () => {
     const estado = estadoFuenteAhumada("error", null, "No pudimos contactar el servidor.");
     expect(estado).toEqual({ tipo: "error", mensaje: "No pudimos contactar el servidor." });
+  });
+});
+
+describe("respaldo a la consulta corta", () => {
+  it("solo reintenta cuando la cadena respondió sin coincidencias o rechazó la consulta", () => {
+    expect(cadenaSinResultados(fuente({ outcome: "no_matches", results: [] }))).toBe(true);
+    expect(cadenaSinResultados(fuente({ outcome: null, reason: "query_rejected" }))).toBe(true);
+    expect(cadenaSinResultados(fuente({ outcome: "matches" }))).toBe(false);
+  });
+
+  it("no gasta una segunda consulta en fallas de conexión ni fuentes no configuradas", () => {
+    expect(cadenaSinResultados(fuente({ state: "failed", reason: "timeout" }))).toBe(false);
+    expect(
+      cadenaSinResultados(
+        fuente({ state: "not_configured", reason: "not_configured", results: [] }),
+      ),
+    ).toBe(false);
+    expect(cadenaSinResultados(null)).toBe(false);
   });
 });

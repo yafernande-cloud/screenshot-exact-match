@@ -557,6 +557,124 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
   });
 });
 
+const CATALOGO_VACIO: SearchResponse = {
+  ...CATALOGO,
+  search_id: "busq-vacio",
+  results: [],
+};
+
+const CONSULTA_LARGA = "Tramadol clorhidrato paracetamol 37.5 mg 325 mg comprimido 30";
+
+/** Faltante con el nombre registrado completo y la consulta corta que el backend ya conocía. */
+const FALTANTE_TRAMADOL: Faltante = {
+  ...FALTANTE,
+  id: "f-tramadol",
+  display_name: CONSULTA_LARGA,
+  display_parts: {
+    name: "Tramadol clorhidrato paracetamol",
+    details: ["37.5 mg", "325 mg", "comprimido", "x 30"],
+  },
+  search_query: "Tramadol",
+  search_query_full: CONSULTA_LARGA,
+};
+
+describe("consulta completa desde un faltante, con respaldo corto", () => {
+  it("usa la consulta ampliada y prueba una sola vez la corta por fuente", async () => {
+    listarFaltantesMock.mockResolvedValue([FALTANTE_TRAMADOL]);
+    buscarCatalogoMock.mockImplementation(async (consulta: string) =>
+      consulta === CONSULTA_LARGA ? CATALOGO_VACIO : CATALOGO,
+    );
+    buscarAhumadaMock.mockImplementation(async (consulta: string) =>
+      consulta === CONSULTA_LARGA
+        ? { ...cadena("ahumada", "Predual Ahumada"), outcome: "no_matches", results: [] }
+        : cadena("ahumada", "Predual Ahumada"),
+    );
+    buscarSalcobrandMock.mockImplementation(async (consulta: string) =>
+      consulta === CONSULTA_LARGA
+        ? { ...cadena("salcobrand", "Predual Salcobrand"), outcome: "no_matches", results: [] }
+        : cadena("salcobrand", "Predual Salcobrand"),
+    );
+    buscarCruzVerdeMock.mockImplementation(async (consulta: string) =>
+      consulta === CONSULTA_LARGA
+        ? { ...cadena("cruz_verde", "Predual Cruz Verde"), outcome: "no_matches", results: [] }
+        : cadena("cruz_verde", "Predual Cruz Verde"),
+    );
+    buscarEnVivoMock.mockImplementation(async (_fuente: string, consulta: string) =>
+      consulta === CONSULTA_LARGA
+        ? resultado({ query: consulta, outcome: "no_matches", offers: [] })
+        : resultado(),
+    );
+
+    await renderizarPantalla();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: `Buscar ${CONSULTA_LARGA} en proveedores`,
+      }),
+    );
+
+    // El buscador editable queda con la consulta ampliada, no con la corta.
+    const caja = screen.getByRole("textbox", { name: "Buscar producto" });
+    await waitFor(() => expect(caja).toHaveValue(CONSULTA_LARGA));
+
+    // Cada fuente se consulta primero completa; solo al no encontrar nada prueba la corta.
+    await waitFor(() => expect(buscarEnVivoMock).toHaveBeenCalledTimes(2));
+    expect(buscarCatalogoMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
+    expect(buscarAhumadaMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
+    expect(buscarSalcobrandMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
+    expect(buscarCruzVerdeMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
+    expect(buscarEnVivoMock.mock.calls).toEqual([
+      ["src-farmaloop", CONSULTA_LARGA],
+      ["src-farmaloop", "Tramadol"],
+    ]);
+    // Los resultados del respaldo reemplazan a los vacíos: no se mezclan dos búsquedas.
+    expect(await screen.findByText("Predual 30 mg")).toBeInTheDocument();
+    expect(await screen.findByText("Predual Ahumada")).toBeInTheDocument();
+  });
+
+  it("una búsqueda manual no reintenta la consulta corta aunque no encuentre nada", async () => {
+    buscarCatalogoMock.mockResolvedValue(CATALOGO_VACIO);
+    buscarAhumadaMock.mockResolvedValue({
+      ...cadena("ahumada", "Predual Ahumada"),
+      outcome: "no_matches",
+      results: [],
+    });
+    buscarEnVivoMock.mockResolvedValue(
+      resultado({ query: "Predual", outcome: "no_matches", offers: [] }),
+    );
+
+    await renderizarPantalla();
+    await buscar("Predual");
+
+    await waitFor(() => expect(buscarEnVivoMock).toHaveBeenCalledTimes(1));
+    expect(buscarCatalogoMock.mock.calls).toEqual([["Predual"]]);
+    expect(buscarAhumadaMock.mock.calls).toEqual([["Predual"]]);
+    expect(buscarSalcobrandMock.mock.calls).toEqual([["Predual"]]);
+    expect(buscarCruzVerdeMock.mock.calls).toEqual([["Predual"]]);
+    expect(buscarEnVivoMock.mock.calls).toEqual([["src-farmaloop", "Predual"]]);
+  });
+
+  it("un fallo del catálogo no dispara el respaldo; el de una cadena tampoco", async () => {
+    listarFaltantesMock.mockResolvedValue([FALTANTE_TRAMADOL]);
+    buscarCatalogoMock.mockResolvedValue({ ...CATALOGO_VACIO, status: "failed" });
+    buscarAhumadaMock.mockRejectedValue({ status: 503 });
+    buscarEnVivoMock.mockResolvedValue(resultado());
+
+    await renderizarPantalla();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: `Buscar ${CONSULTA_LARGA} en proveedores`,
+      }),
+    );
+
+    expect(
+      await screen.findByText(/No pudimos completar la búsqueda en el catálogo/),
+    ).toBeInTheDocument();
+    // Un fallo técnico no se reintenta con otro texto ni en catálogo ni en la cadena.
+    expect(buscarCatalogoMock.mock.calls).toEqual([[CONSULTA_LARGA]]);
+    expect(buscarAhumadaMock.mock.calls).toEqual([[CONSULTA_LARGA]]);
+  });
+});
+
 const OFERTA_SALONPAS = {
   external_id: "FL-2990",
   trade_item_id: null,

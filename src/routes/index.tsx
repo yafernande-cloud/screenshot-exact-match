@@ -21,15 +21,16 @@ import {
   agregarLinea,
   cambiarCantidadLinea,
   cantidadParaCotizar,
-  carritosConLineas,
   cotizacionCerrada,
   crearCotizacionActiva,
+  describirResumenCantidades,
   finalizarCotizacion,
   lineasActivas,
   mensajeDeErrorCotizacion,
   nuevaClaveIdempotencia,
   obtenerCotizacion,
   quitarLinea,
+  resumenDeCotizacion,
   resultadoDesconocido,
   totalesDeCotizacion,
   ultimaCotizacionEnPreparacion,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/cotizacion-api";
 import {
   aplicarCambioCantidad,
+  consultaCompletaDeBusqueda,
   consultaDeBusqueda,
   etiquetaEstadoFaltante,
   fusionarFaltantes,
@@ -81,6 +83,7 @@ import {
   buscarCadenasAhumada,
   buscarCadenasCruzVerde,
   buscarCadenasSalcobrand,
+  cadenaSinResultados,
   estadoFuenteAhumada,
   estadoFuenteCruzVerde,
   estadoFuenteSalcobrand,
@@ -103,6 +106,7 @@ import {
   buscarProveedorEnVivo,
   descubrirProveedoresEnVivo,
   mensajeDeErrorProveedor,
+  proveedorSinResultados,
   type EstadoFuenteEnVivo,
   type FuenteEnVivo,
   type ItemEnVivo,
@@ -687,7 +691,7 @@ function Index() {
       // La asociación al faltante era de esta cotización: el siguiente carrito se arma aparte.
       setFaltanteBuscado(null);
       setEstadoCotizacion("listo");
-      toast(`Informe ${resultado.report.label} generado y guardado.`);
+      toast(`Orden de compra ${resultado.report.label} generada y guardada.`);
       if (resultado.pending.length > 0) {
         toast(
           `${resultado.pending.length} ${
@@ -706,7 +710,7 @@ function Index() {
     } catch (error) {
       if (yaFinalizada(error)) {
         claveFinalizacion.current = null;
-        toast("La cotización ya tiene su informe guardado.");
+        toast("La cotización ya tiene su orden de compra guardada.");
         await cargarCotizacion(true);
         return { estado: "estado_cambiado" };
       }
@@ -729,10 +733,14 @@ function Index() {
 
   // E15 corre en paralelo con la búsqueda de proveedores: si una cadena falla, las demás siguen.
   // Cada cadena usa su propia solicitud E15 para que un fallo o una demora de Salcobrand no
-  // retrase ni altere el resultado de Ahumada.
-  const ejecutarAhumada = async (texto: string, seq: number) => {
+  // retrase ni altere el resultado de Ahumada. `respaldo` es la consulta corta del faltante: se
+  // prueba una sola vez y solo si esta fuente respondió sin coincidencias o rechazó el texto.
+  const ejecutarAhumada = async (texto: string, seq: number, respaldo?: string) => {
     try {
-      const fuente = await buscarCadenasAhumada(texto);
+      let fuente = await buscarCadenasAhumada(texto);
+      if (respaldo && cadenaSinResultados(fuente)) {
+        fuente = await buscarCadenasAhumada(respaldo);
+      }
       if (seq !== busquedaSeq.current) return;
       setFuenteAhumada(fuente);
       setEstadoCadenas("listo");
@@ -744,9 +752,12 @@ function Index() {
     }
   };
 
-  const ejecutarSalcobrand = async (texto: string, seq: number) => {
+  const ejecutarSalcobrand = async (texto: string, seq: number, respaldo?: string) => {
     try {
-      const fuente = await buscarCadenasSalcobrand(texto);
+      let fuente = await buscarCadenasSalcobrand(texto);
+      if (respaldo && cadenaSinResultados(fuente)) {
+        fuente = await buscarCadenasSalcobrand(respaldo);
+      }
       if (seq !== busquedaSeq.current) return;
       setFuenteSalcobrand(fuente);
       setEstadoCadenasSalcobrand("listo");
@@ -758,9 +769,12 @@ function Index() {
     }
   };
 
-  const ejecutarCruzVerde = async (texto: string, seq: number) => {
+  const ejecutarCruzVerde = async (texto: string, seq: number, respaldo?: string) => {
     try {
-      const fuente = await buscarCadenasCruzVerde(texto);
+      let fuente = await buscarCadenasCruzVerde(texto);
+      if (respaldo && cadenaSinResultados(fuente)) {
+        fuente = await buscarCadenasCruzVerde(respaldo);
+      }
       if (seq !== busquedaSeq.current) return;
       setFuenteCruzVerde(fuente);
       setEstadoCadenasCruzVerde("listo");
@@ -772,7 +786,7 @@ function Index() {
     }
   };
 
-  const ejecutarProveedoresEnVivo = async (texto: string, seq: number) => {
+  const ejecutarProveedoresEnVivo = async (texto: string, seq: number, respaldo?: string) => {
     setDescubriendoVivo(true);
     setEstadosVivo([]);
     setErrorVivo(null);
@@ -803,7 +817,11 @@ function Index() {
               );
             };
             try {
-              const resultado = await buscarProveedorEnVivo(fuente.sourceId, texto);
+              let resultado = await buscarProveedorEnVivo(fuente.sourceId, texto);
+              if (respaldo && proveedorSinResultados(resultado)) {
+                // Un único respaldo por fuente: la consulta corta del faltante.
+                resultado = await buscarProveedorEnVivo(fuente.sourceId, respaldo);
+              }
               if (seq !== busquedaSeq.current) return;
               actualizar({ resultado, error: null });
             } catch (error) {
@@ -863,8 +881,17 @@ function Index() {
     }
   };
 
-  const ejecutarBusqueda = async (texto: string) => {
+  /**
+   * Ejecuta la búsqueda completa en catálogo, cadenas y proveedores en vivo.
+   *
+   * `respaldo` es la consulta corta cuando la búsqueda nació de un faltante de Telegram. Cada
+   * fuente la prueba **una sola vez** si la consulta ampliada no encuentra coincidencias o es
+   * rechazada; los resultados se reemplazan, nunca se mezclan con los de la consulta ampliada.
+   * Una búsqueda manual no lleva respaldo y su comportamiento no cambia.
+   */
+  const ejecutarBusqueda = async (texto: string, respaldo?: string) => {
     const t = texto.trim();
+    const corto = respaldo && respaldo.trim() !== t ? respaldo.trim() : undefined;
     const seq = ++busquedaSeq.current;
     setQ(t);
     setConsulta(t);
@@ -913,16 +940,24 @@ function Index() {
     const iniciarCadena = () => {
       if (cadenaIniciada) return;
       cadenaIniciada = true;
-      void ejecutarAhumada(t, seq);
-      void ejecutarSalcobrand(t, seq);
-      void ejecutarCruzVerde(t, seq);
-      void ejecutarProveedoresEnVivo(t, seq);
+      void ejecutarAhumada(t, seq, corto);
+      void ejecutarSalcobrand(t, seq, corto);
+      void ejecutarCruzVerde(t, seq, corto);
+      void ejecutarProveedoresEnVivo(t, seq, corto);
     };
     try {
-      const data = await buscarCatalogo(t);
+      let data = await buscarCatalogo(t);
       iniciarCadena();
       if (seq !== busquedaSeq.current) return;
       setResultados(data.results);
+
+      // La consulta ampliada puede traer atributos que el catálogo no reconoce: si no encontró
+      // nada, se prueba una sola vez la consulta corta y se reemplazan los resultados.
+      if (corto && data.status !== "failed" && data.results.length === 0) {
+        data = await buscarCatalogo(corto);
+        if (seq !== busquedaSeq.current) return;
+        setResultados(data.results);
+      }
 
       if (data.status === "failed") {
         setEstadoBusqueda("error");
@@ -1225,10 +1260,12 @@ function Index() {
                   onEliminar={() => void retirarFaltante(f)}
                   onBuscar={() => {
                     // Nombre comercial corto si el backend lo identificó («Predual»); nunca la
-                    // descripción farmacológica larga cuando existe uno.
+                    // descripción farmacológica larga cuando existe uno. El buscador editable se
+                    // completa con la consulta ampliada y la corta queda como respaldo por fuente.
                     const consulta = consultaDeBusqueda(f);
+                    const completa = consultaCompletaDeBusqueda(f);
                     setFaltanteBuscado({ id: f.id, nombre: consulta });
-                    void ejecutarBusqueda(consulta);
+                    void ejecutarBusqueda(completa, consulta);
                     document
                       .getElementById("grandes-farmacias")
                       ?.scrollIntoView({ behavior: "smooth" });
@@ -1362,7 +1399,7 @@ function Index() {
       >
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Informe de cotización</DialogTitle>
+            <DialogTitle>Orden de compra</DialogTitle>
             <DialogDescription>
               Copia guardada al finalizar: no cambia aunque los proveedores actualicen sus precios.
             </DialogDescription>
@@ -1692,8 +1729,8 @@ function Carrito({
   acciones: AccionesCotizacion;
   onReintentar: () => void;
 }) {
-  const activas = lineasActivas(detalle);
-  const proveedores = carritosConLineas(detalle).length;
+  const resumen = resumenDeCotizacion(detalle);
+  const textoResumen = describirResumenCantidades(resumen);
   const cargando = estado === "cargando" && detalle === null;
 
   return (
@@ -1701,17 +1738,16 @@ function Carrito({
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <ShoppingCart className="h-5 w-5 text-brand-green" />
         <h2 className="text-lg font-semibold">Carrito</h2>
-        {activas.length > 0 && (
+        {textoResumen && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {activas.length} {activas.length === 1 ? "producto" : "productos"} · {proveedores}{" "}
-            {proveedores === 1 ? "proveedor" : "proveedores"}
+            {textoResumen}
           </span>
         )}
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
         La cotización se guarda en el servidor y se recupera al recargar. Cada oferta conserva el
         precio con que la elegiste. Agregar o quitar productos no libera faltantes: eso ocurre solo
-        al finalizar el informe, y finalizar no registra una compra.
+        al finalizar la orden de compra, y finalizar no registra una compra.
       </p>
 
       {error && (

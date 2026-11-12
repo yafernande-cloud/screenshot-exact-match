@@ -235,6 +235,17 @@ export async function buscarCadenasAhumada(query: string): Promise<ChainSource> 
   return buscarCadena(query, "ahumada", "Farmacias Ahumada");
 }
 
+/**
+ * ¿La cadena respondió sin resultados (o rechazó la consulta)?
+ *
+ * Solo en ese caso tiene sentido el respaldo a la consulta corta: un fallo de conexión o una
+ * fuente no configurada no se reintentan con otro texto.
+ */
+export function cadenaSinResultados(fuente: ChainSource | null): boolean {
+  if (!fuente) return false;
+  return fuente.outcome === "no_matches" || fuente.reason === "query_rejected";
+}
+
 /** Inicia E15 para Salcobrand; no consulta Ahumada ni ninguna otra cadena. */
 export async function buscarCadenasSalcobrand(query: string): Promise<ChainSource> {
   return buscarCadena(query, "salcobrand", "Farmacias Salcobrand");

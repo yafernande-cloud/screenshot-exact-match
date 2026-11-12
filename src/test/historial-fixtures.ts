@@ -14,6 +14,19 @@ export const cotizacionFinalizada: ResumenCotizacion = {
   finalized_by: "u-1",
   supplier_count: 2,
   line_count: 5,
+  distinct_product_count: 3,
+  quantity_totals: [
+    { unit: "box", quantity: "6" },
+    { unit: "unit", quantity: "2" },
+  ],
+};
+
+const producto = {
+  name: "Ibuprofeno 400 mg",
+  laboratory: "ASCEND",
+  brand: null,
+  presentation: "Caja de 20 comprimidos",
+  code: "IBU-400",
 };
 
 export const informeFinalizado: InformeCotizacion = {
@@ -25,8 +38,38 @@ export const informeFinalizado: InformeCotizacion = {
   finalized_at: "2026-11-11T11:00:00Z",
   finalized_by: "u-1",
   currency: "CLP",
-  suppliers: [],
-  items: [],
+  suppliers: [
+    { supplier_id: "s-1", supplier_name: "Proveedor Uno", line_count: 1, subtotal: null },
+    { supplier_id: "s-2", supplier_name: "Proveedor Dos", line_count: 1, subtotal: null },
+  ],
+  items: [
+    {
+      line_id: "l-1",
+      supplier_id: "s-1",
+      supplier_name: "Proveedor Uno",
+      product: producto,
+      trade_item_id: "t-1",
+      quantity: { value: "2", unit: "box" },
+      unit_price: null,
+      subtotal: null,
+      price_state: "pending",
+      causes: [],
+      demand_allocations: [],
+    },
+    {
+      line_id: "l-2",
+      supplier_id: "s-2",
+      supplier_name: "Proveedor Dos",
+      product: producto,
+      trade_item_id: "t-1",
+      quantity: { value: "1", unit: "box" },
+      unit_price: null,
+      subtotal: null,
+      price_state: "pending",
+      causes: [],
+      demand_allocations: [],
+    },
+  ],
   total: { amount: "8000.00", currency: "CLP" },
   warnings: [],
   release: { released: [], pending: [] },

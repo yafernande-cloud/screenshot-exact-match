@@ -1,7 +1,7 @@
 /**
- * Informe de cotización en PDF.
+ * Orden de compra en PDF.
  *
- * El documento se construye solo con el informe congelado que devuelve el backend al finalizar:
+ * El documento se construye solo con la orden congelada que devuelve el backend al finalizar:
  * no consulta ofertas actuales, no recalcula precios y no modifica ninguna cotización. Las
  * funciones de agrupación y formato son puras para poder probarlas sin abrir una ventana.
  */
@@ -10,11 +10,13 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 import { describirCantidad, formatearCantidad, formatearDinero } from "@/lib/catalogo";
-import type {
-  Dinero,
-  InformeCotizacion,
-  ItemInforme,
-  ProveedorInforme,
+import {
+  describirCantidades,
+  resumenDeInforme,
+  type Dinero,
+  type InformeCotizacion,
+  type ItemInforme,
+  type ProveedorInforme,
 } from "@/lib/cotizacion-api";
 
 const VERDE: [number, number, number] = [23, 132, 95]; // #17845F
@@ -137,14 +139,14 @@ function textoAviso(aviso: unknown): string {
           .map((causa) => (typeof causa === "string" ? causa : String(causa)))
           .join(", ")
       : "";
-    return [estado, causas].filter(Boolean).join(" · ") || "Aviso del informe";
+    return [estado, causas].filter(Boolean).join(" · ") || "Aviso de la orden de compra";
   }
   return String(aviso);
 }
 
 export function nombreArchivoInforme(informe: InformeCotizacion): string {
   const etiqueta = informe.label?.trim() || `COT-${String(informe.number).padStart(6, "0")}`;
-  return `Informe-${etiqueta.replace(/[^a-zA-Z0-9._-]+/g, "-")}.pdf`;
+  return `Orden-de-Compra-${etiqueta.replace(/[^a-zA-Z0-9._-]+/g, "-")}.pdf`;
 }
 
 function asegurarEspacio(doc: jsPDF, y: number, necesario: number): number {
@@ -200,17 +202,17 @@ function dibujarCabecera(doc: jsPDF, informe: InformeCotizacion, ancho: number):
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(...AZUL);
-  doc.text("INFORME DE COTIZACIÓN", MARGEN, 17);
+  doc.text("ORDEN DE COMPRA", MARGEN, 17);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(92, 104, 108);
-  doc.text("Documento de cotización. No es una factura tributaria.", MARGEN, 22.5);
+  doc.text("Orden de compra. No es una factura tributaria.", MARGEN, 22.5);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(...VERDE);
-  doc.text(`Informe ${informe.label}`, ancho - MARGEN, 17, { align: "right" });
+  doc.text(`Orden de compra ${informe.label}`, ancho - MARGEN, 17, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
@@ -239,13 +241,15 @@ function dibujarCabecera(doc: jsPDF, informe: InformeCotizacion, ancho: number):
   doc.setFillColor(...SUAVE);
   doc.roundedRect(MARGEN, yResumen, anchoUtil, 14, 2, 2, "F");
 
+  const resumen = resumenDeInforme(informe);
   const columnas: Array<[string, string]> = [
     ["PROVEEDORES", String(informe.suppliers.length)],
-    ["PRODUCTOS", String(informe.items.length)],
+    ["REFERENCIAS", String(resumen.referencias)],
+    ["PRODUCTOS DISTINTOS", String(resumen.productosDistintos)],
     ["MONEDA", informe.currency || "No informada"],
   ];
   columnas.forEach(([rotulo, valor], indice) => {
-    const x = MARGEN + 5 + indice * (anchoUtil / 3);
+    const x = MARGEN + 5 + indice * (anchoUtil / 4);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(105, 118, 122);
@@ -256,6 +260,15 @@ function dibujarCabecera(doc: jsPDF, informe: InformeCotizacion, ancho: number):
     doc.text(valor, x, yResumen + 10.5);
   });
 
+  // Cantidades por unidad comercial: se enumeran cuando hay más de una y nunca se suman entre sí.
+  const cantidades = describirCantidades(resumen);
+  if (cantidades) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(92, 104, 108);
+    doc.text(`Cantidades solicitadas: ${cantidades}`, MARGEN, yResumen + 19);
+    return yResumen + 24;
+  }
   return yResumen + 20;
 }
 
@@ -284,7 +297,7 @@ function dibujarEncabezadoProveedor(
   const cantidad = grupo.items.length;
   const subtotal = formatearDinero(grupo.supplier.subtotal) ?? "Subtotal pendiente";
   doc.text(
-    `${cantidad} ${cantidad === 1 ? "producto" : "productos"} · ${subtotal}`,
+    `${cantidad} ${cantidad === 1 ? "referencia" : "referencias"} · ${subtotal}`,
     ancho - MARGEN - 4,
     y + 6,
     { align: "right" },
@@ -349,7 +362,7 @@ function dibujarPies(doc: jsPDF, informe: InformeCotizacion, ancho: number): voi
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(...AZUL);
-      doc.text(`Informe ${informe.label}`, MARGEN, 11);
+      doc.text(`Orden de compra ${informe.label}`, MARGEN, 11);
       doc.setTextColor(105, 118, 122);
       doc.text(fechaCorta(informe.finalized_at), ancho - MARGEN, 11, { align: "right" });
       doc.setDrawColor(...BORDE);
@@ -363,7 +376,7 @@ function dibujarPies(doc: jsPDF, informe: InformeCotizacion, ancho: number): voi
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(120, 130, 134);
-    doc.text("Documento de cotización. No es una factura tributaria.", MARGEN, alto - 10);
+    doc.text("Orden de compra. No es una factura tributaria.", MARGEN, alto - 10);
     doc.text(`Página ${pagina} de ${totalPaginas}`, ancho - MARGEN, alto - 10, {
       align: "right",
     });
@@ -381,7 +394,13 @@ export function construirInformePdf(informe: InformeCotizacion): jsPDF {
   const grupos = agruparLineasPorProveedor(informe);
 
   if (grupos.length === 0) {
-    y = dibujarSeccion(doc, y, "Productos", ["El informe no contiene productos."], anchoUtil);
+    y = dibujarSeccion(
+      doc,
+      y,
+      "Referencias",
+      ["La orden de compra no contiene productos."],
+      anchoUtil,
+    );
   } else {
     for (const grupo of grupos) {
       y = asegurarEspacio(doc, y, 30);
@@ -488,7 +507,7 @@ export function construirInformePdf(informe: InformeCotizacion): jsPDF {
 
   const avisos = (informe.warnings ?? []).map(textoAviso).filter(Boolean);
   if (avisos.length > 0) {
-    y = dibujarSeccion(doc, y, "Avisos del informe", avisos, anchoUtil);
+    y = dibujarSeccion(doc, y, "Avisos de la orden de compra", avisos, anchoUtil);
   }
 
   if (informe.note?.trim()) {
