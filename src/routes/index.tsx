@@ -585,6 +585,8 @@ function Index() {
         version: linea.version,
       });
       await refrescarDetalle(detalle.quote_id);
+      // D-155: en una relación 1:1 la cantidad del faltante sigue a la línea; la bandeja la muestra.
+      void cargarFaltantes(true, true);
     } catch (error) {
       toast(mensajeDeErrorCotizacion(error));
       await cargarCotizacion(true);

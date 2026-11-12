@@ -178,6 +178,19 @@ describe("carrito persistente en el cotizador", () => {
     );
   });
 
+  it("refresca la bandeja cuando cambia la cantidad de una línea", async () => {
+    cambiarCantidadMock.mockResolvedValue({ line: lineaCotizada, cart: {}, warnings: [] });
+
+    await renderizarCotizador();
+    expect(await screen.findByText("Ibuprofeno 400 mg")).toBeInTheDocument();
+    listarFaltantesMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Aumentar" }));
+
+    // D-155: la cantidad operativa del faltante sigue a la línea; la bandeja se vuelve a leer.
+    await waitFor(() => expect(listarFaltantesMock).toHaveBeenCalled());
+  });
+
   it("quita una línea de forma lógica sin tocar los faltantes", async () => {
     quitarLineaMock.mockResolvedValue({ ...lineaCotizada, status: "removed" });
 
