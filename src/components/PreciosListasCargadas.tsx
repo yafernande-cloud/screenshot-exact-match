@@ -46,6 +46,27 @@ function precio(oferta: OfertaImportada): string {
   );
 }
 
+/**
+ * Un precio de lista es cotizable si es un monto positivo con su moneda. Un precio en cero o sin
+ * moneda no es un precio: no se puede sumar a la cotización ni se completa por suposición.
+ */
+function precioValido(oferta: OfertaImportada): boolean {
+  const monto = Number(oferta.price_amount);
+  return Number.isFinite(monto) && monto > 0 && /^[A-Z]{3}$/.test(oferta.currency ?? "");
+}
+
+/**
+ * Stock confirmado en cero es un impedimento real. El stock no informado no bloquea: la lista no
+ * declaró que no haya, y no se inventa una existencia ni una falta.
+ */
+function sinStockConfirmado(oferta: OfertaImportada): boolean {
+  if (oferta.stock_status !== "known") return false;
+  const texto = (oferta.stock_quantity ?? "").trim();
+  if (texto === "") return false;
+  const cantidad = Number(texto);
+  return Number.isFinite(cantidad) && cantidad <= 0;
+}
+
 type EstadoIdentidad = "published" | "extracted" | "unconfirmed";
 
 /**
@@ -108,6 +129,9 @@ export function TarjetaPrecioLista({
   agregando?: boolean;
 }) {
   const pendiente = oferta.review_status === "needs_review";
+  // Se agrega lo que la lista declara como comprable: precio válido y, si informó stock, con
+  // existencias. Un stock no informado no impide agregar; un precio en cero o inválido, sí.
+  const bloqueada = !precioValido(oferta) || sinStockConfirmado(oferta) || !onAgregar;
   return (
     <article
       className="@container rounded-2xl border bg-background p-4"
@@ -142,7 +166,7 @@ export function TarjetaPrecioLista({
           </div>
           <button
             type="button"
-            disabled={agregando}
+            disabled={agregando || bloqueada}
             onClick={onAgregar}
             className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
           >
@@ -153,9 +177,15 @@ export function TarjetaPrecioLista({
             )}{" "}
             Agregar a cotización
           </button>
-          <p className="max-w-xs text-xs text-muted-foreground">
-            Se agrega con el precio de esta lista; no se vuelve a consultar al proveedor.
-          </p>
+          {bloqueada ? (
+            <p className="max-w-xs text-xs text-muted-foreground">
+              No disponible para agregar a la cotización.
+            </p>
+          ) : (
+            <p className="max-w-xs text-xs text-muted-foreground">
+              Se agrega con el precio de esta lista; no se vuelve a consultar al proveedor.
+            </p>
+          )}
           <EnsenarALaIa
             articuloId={oferta.trade_item_id}
             ofertaId={oferta.offer_id}

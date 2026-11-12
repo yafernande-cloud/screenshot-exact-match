@@ -70,6 +70,20 @@ vi.mock("@/lib/faltantes-api", () => ({
   mensajeDeErrorFaltantes: () => "No pudimos cargar los faltantes.",
 }));
 
+// El carrito es del backend: aquí solo se comprueba qué se le envía al agregar una oferta viva.
+const ultimaCotizacionMock = vi.hoisted(() => vi.fn());
+const crearCotizacionMock = vi.hoisted(() => vi.fn());
+const agregarLineaMock = vi.hoisted(() => vi.fn());
+const obtenerCotizacionMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/cotizacion-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/cotizacion-api")>()),
+  ultimaCotizacionEnPreparacion: ultimaCotizacionMock,
+  crearCotizacion: crearCotizacionMock,
+  agregarLinea: agregarLineaMock,
+  obtenerCotizacion: obtenerCotizacionMock,
+}));
+
 vi.mock("@/lib/session", () => ({
   SessionProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useSession: () => ({
@@ -377,6 +391,24 @@ const CATALOGO_CON_LISTA: SearchResponse = {
   results: [RESULTADO_PARACETAMOL],
 };
 
+const DETALLE_VACIO = {
+  quote_id: "q-viva",
+  title: null,
+  status: "draft",
+  version: 1,
+  created_at: "2026-11-12T10:00:00Z",
+  updated_at: "2026-11-12T10:00:00Z",
+  report_number: null,
+  report_label: null,
+  finalized_at: null,
+  finalized_by: null,
+  data_origin: "captured",
+  derived_state: "draft",
+  carts: [],
+  coverage: [],
+  estimated_total: {},
+};
+
 function renderizarPantalla() {
   const router = createRouter({
     routeTree,
@@ -407,6 +439,10 @@ beforeEach(() => {
   listarFuentesMock.mockResolvedValue([]);
   listarOfertasMock.mockResolvedValue([]);
   obtenerBusquedaMock.mockRejectedValue(new Error("sin páginas adicionales"));
+  ultimaCotizacionMock.mockResolvedValue(null);
+  crearCotizacionMock.mockResolvedValue(DETALLE_VACIO);
+  obtenerCotizacionMock.mockResolvedValue(DETALLE_VACIO);
+  agregarLineaMock.mockResolvedValue({ deduplicated: false, warnings: [] });
 });
 
 describe("búsqueda de Predual con proveedores en vivo", () => {
@@ -488,6 +524,58 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     expect(screen.getByText(/Falta configurar la conexión/)).toBeInTheDocument();
     expect(buscarEnVivoMock).toHaveBeenCalledTimes(1);
     expect(buscarEnVivoMock).toHaveBeenCalledWith("src-farmaloop", "Predual");
+  });
+});
+
+describe("oferta viva sin unidad de venta ni base del precio", () => {
+  it("la agrega con unidad nula, sin inventar caja ni base", async () => {
+    buscarEnVivoMock.mockResolvedValue(
+      resultado({
+        offers: [
+          {
+            external_id: "FL-2990",
+            trade_item_id: null,
+            name: "Salónpas 10 parches",
+            laboratory: null,
+            presentation: null,
+            price: { amount: "2990", currency: "CLP" },
+            price_basis: null,
+            sale_unit: null,
+            stock_status: "in_stock",
+            stock_quantity: "5",
+            stock_unit: null,
+            image_url: null,
+            product_url: null,
+            ean: null,
+            match_relation: "direct",
+            match_reasons: ["all_query_terms_in_name"],
+            cart_eligible: true,
+            cart_blockers: [],
+          },
+        ],
+      }),
+    );
+
+    await renderizarPantalla();
+    await buscar("Salónpas");
+    const tarjeta = await screen.findByRole("article", { name: /Salónpas 10 parches/ });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    await waitFor(() =>
+      expect(agregarLineaMock).toHaveBeenCalledWith("q-viva", {
+        supplierId: "sup-farmaloop",
+        offer: expect.objectContaining({
+          source_id: "src-farmaloop",
+          external_id: "FL-2990",
+          supplier_id: "sup-farmaloop",
+          price: { amount: "2990", currency: "CLP" },
+          price_basis: null,
+          sale_unit: null,
+        }),
+        quantity: "1",
+        unit: null,
+      }),
+    );
   });
 });
 

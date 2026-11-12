@@ -429,11 +429,9 @@ function Index() {
       return;
     }
     const { oferta } = item;
+    // La unidad puede no estar informada: la cantidad se cuenta en ofertas seleccionadas y la
+    // línea lo declara. Nunca se completa con «caja» ni «unidad» por suposición.
     const unidad = oferta.sale_unit;
-    if (!unidad) {
-      toast("La unidad de venta del proveedor no está confirmada.");
-      return;
-    }
     const vinculable = unidadVinculable(faltanteParaVincular, unidad);
     const ofertaParaCotizar: OfertaParaCotizar = {
       source_id: fuente.sourceId,

@@ -215,6 +215,24 @@ describe("proveedores en vivo en la pantalla principal", () => {
     expect(agregar).toHaveBeenCalledWith(ofertaElegible);
   });
 
+  it("habilita la acción de una oferta sin unidad ni base cuando el backend la autoriza", () => {
+    const agregar = vi.fn();
+    const sinTerminos = oferta({
+      stock_status: "in_stock",
+      price_basis: null,
+      sale_unit: null,
+      cart_eligible: true,
+      cart_blockers: [],
+    });
+    render(<FichaOfertaEnVivo oferta={sinTerminos} proveedor="Farmaloop" onAgregar={agregar} />);
+
+    const boton = screen.getByRole("button", { name: /Agregar a cotización/ });
+    expect(boton).toBeEnabled();
+    expect(screen.queryByText("No disponible para agregar a la cotización.")).toBeNull();
+    boton.click();
+    expect(agregar).toHaveBeenCalledWith(sinTerminos);
+  });
+
   it("el contenedor no habilita el carrito sin una acción conectada", () => {
     renderizar([
       estado({

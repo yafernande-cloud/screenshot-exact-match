@@ -207,6 +207,38 @@ describe("cliente de la cotización persistente", () => {
     });
   });
 
+  it("agrega una oferta viva sin unidad de venta enviando la unidad nula", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ line: linea(), cart: {}, deduplicated: false, warnings: [] }, 201),
+    );
+    const oferta = {
+      source_id: "src-1",
+      external_id: "FL-2990",
+      name: "Salónpas 10 parches",
+      supplier_id: "s-1",
+      laboratory: null,
+      presentation: null,
+      price: { amount: "2990", currency: "CLP" },
+      price_basis: null,
+      sale_unit: null,
+      stock_status: "in_stock" as const,
+      stock_quantity: "5",
+      stock_unit: null,
+      ean: null,
+      product_url: null,
+      image_url: null,
+    };
+
+    await agregarLinea("q-1", { supplierId: "s-1", offer: oferta, quantity: "1", unit: null });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      supplier_id: "s-1",
+      quantity: { value: "1", unit: null },
+      offer: oferta,
+    });
+  });
+
   it("finaliza con la clave recibida y devuelve el informe congelado", async () => {
     const informe = {
       schema_version: 1,

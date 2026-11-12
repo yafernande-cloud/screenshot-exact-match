@@ -37,7 +37,7 @@ export interface LineaCotizacion {
   product: ProductoDeLinea;
   unit_price: (Dinero & { basis: string | null; sale_unit: string | null }) | null;
   subtotal: Dinero | null;
-  quantity: { value: string; unit: string };
+  quantity: { value: string; unit: string | null };
   status: "active" | "removed";
   removed_at: string | null;
   removed_by: string | null;
@@ -141,7 +141,7 @@ export interface ItemInforme {
   supplier_name: string | null;
   product: ProductoDeLinea;
   trade_item_id: string;
-  quantity: { value: string; unit: string };
+  quantity: { value: string; unit: string | null };
   unit_price: Dinero | null;
   subtotal: Dinero | null;
   price_state: string;
@@ -306,7 +306,8 @@ export interface AltaDeLinea {
   /** Oferta viva del conector: se registra al agregarla y el precio queda anclado. */
   offer?: OfertaParaCotizar;
   quantity: string;
-  unit: string;
+  /** `null` cuando la oferta no informa su unidad: la cantidad se cuenta en ofertas. */
+  unit: string | null;
   /** Faltante al que se asocia la selección, cuando la unidad coincide. */
   demandItemId?: string;
 }
@@ -315,7 +316,7 @@ export interface AltaDeLinea {
 export async function agregarLinea(quoteId: string, alta: AltaDeLinea): Promise<LineaAgregada> {
   const body: {
     supplier_id: string;
-    quantity: { value: string; unit: string };
+    quantity: { value: string; unit: string | null };
     offer_snapshot_id?: string;
     offer?: OfertaParaCotizar;
     demand_item_id?: string;
@@ -344,7 +345,7 @@ export async function agregarLinea(quoteId: string, alta: AltaDeLinea): Promise<
 export async function cambiarCantidadLinea(
   quoteId: string,
   lineId: string,
-  cambio: { quantity: string; unit?: string; version: number },
+  cambio: { quantity: string; unit?: string | null; version: number },
 ): Promise<LineaAgregada> {
   return apiRequest<LineaAgregada>(
     `/api/v1/quotes/${quoteId}/lines/${lineId}`,
@@ -353,7 +354,7 @@ export async function cambiarCantidadLinea(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         version: cambio.version,
-        quantity: { value: cambio.quantity, unit: cambio.unit },
+        quantity: { value: cambio.quantity, unit: cambio.unit ?? undefined },
         ...(cambio.unit ? { quantity_unit: cambio.unit } : {}),
       }),
     },

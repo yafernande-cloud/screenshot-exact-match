@@ -160,9 +160,8 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
     // Precio arriba; debajo, en este orden: agregar, su mensaje y enseñar a la IA.
     expect(hijos[0]).toHaveTextContent("$12.990");
     expect(hijos[1]).toHaveTextContent("Agregar a cotización");
-    expect(hijos[2]).toHaveTextContent(
-      "Se agrega con el precio de esta lista; no se vuelve a consultar al proveedor.",
-    );
+    // Sin una acción de carrito conectada, la tarjeta informa que no se puede agregar.
+    expect(hijos[2]).toHaveTextContent("No disponible para agregar a la cotización.");
     expect(hijos[3]).toHaveTextContent("Enseñar a la IA");
     // Los datos del producto no forman parte de la columna de acciones.
     expect(columna).not.toContainElement(

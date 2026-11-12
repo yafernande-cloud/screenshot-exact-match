@@ -184,6 +184,32 @@ describe("carrito persistente en el cotizador", () => {
     expect(listarFaltantesMock).toHaveBeenCalled();
   });
 
+  it("declara la base del precio no confirmada y envía la unidad nula", async () => {
+    const lineaSinTerminos = {
+      ...lineaCotizada,
+      unit_price: { ...lineaCotizada.unit_price, basis: null, sale_unit: null },
+      quantity: { value: "2", unit: null },
+    };
+    obtenerCotizacionMock.mockResolvedValue({
+      ...detalleGuardado,
+      carts: [{ ...detalleGuardado.carts[0], lines: [lineaSinTerminos] }],
+    });
+    cambiarCantidadMock.mockResolvedValue({ line: lineaSinTerminos, cart: {}, warnings: [] });
+
+    await renderizarCotizador();
+    expect(await screen.findByText("Base del precio no confirmada")).toBeInTheDocument();
+    expect(screen.queryByText(/por unidad comercial/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Aumentar" }));
+    await waitFor(() =>
+      expect(cambiarCantidadMock).toHaveBeenCalledWith("q-1", "l-1", {
+        quantity: "3",
+        unit: null,
+        version: 1,
+      }),
+    );
+  });
+
   it("finaliza con la versión y la clave de idempotencia, y muestra el informe", async () => {
     finalizarCotizacionMock.mockResolvedValue({
       quote: {

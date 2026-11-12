@@ -315,6 +315,11 @@ function LineaItem({
           {motivoPendiente(linea)}
         </p>
       )}
+      {linea.unit_price && !linea.unit_price.basis && (
+        // El proveedor publicó un precio sin declarar si es por unidad comercial o por unidad
+        // base. El subtotal lo usa igual, pero no se presenta la base como confirmada.
+        <p className="text-xs text-muted-foreground">Base del precio no confirmada</p>
+      )}
     </li>
   );
 }
