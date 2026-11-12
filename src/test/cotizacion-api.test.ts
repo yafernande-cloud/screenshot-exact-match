@@ -33,6 +33,7 @@ import {
   ultimaCotizacionEnPreparacion,
   cantidadParaCotizar,
   yaFinalizada,
+  cotizacionCerrada,
   type CarritoCotizacion,
   type DetalleCotizacion,
   type LineaCotizacion,
@@ -136,7 +137,7 @@ afterEach(() => {
 });
 
 describe("cliente de la cotización persistente", () => {
-  it("recupera el borrador más reciente con el filtro finalizado explícito", async () => {
+  it("pide el carrito activo con la regla del servidor", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ quotes: [], next_cursor: null }));
 
     await expect(ultimaCotizacionEnPreparacion()).resolves.toBeNull();
@@ -144,9 +145,11 @@ describe("cliente de la cotización persistente", () => {
     const [url] = fetchMock.mock.calls[0] ?? [];
     const params = new URL(String(url)).searchParams;
     expect(String(url)).toContain("/api/v1/quotes?");
-    expect(params.get("finalized")).toBe("false");
-    expect(params.get("status")).toBe("draft");
+    // Un borrador anterior al último cierre no es carrito activo: esa decisión es del backend.
+    expect(params.get("active")).toBe("true");
     expect(params.get("limit")).toBe("1");
+    expect(params.get("finalized")).toBeNull();
+    expect(params.get("status")).toBeNull();
   });
 
   it("pide el historial solo con cotizaciones finalizadas", async () => {
@@ -334,6 +337,25 @@ describe("reglas de lectura del carrito", () => {
     expect(lineasActivas(null)).toEqual([]);
   });
 
+  it("una cotización finalizada conserva sus líneas pero no se presenta como carrito", () => {
+    const finalizada = detalle([carrito()], {
+      status: "closed",
+      finalized_at: "2026-11-11T14:38:00Z",
+      report_number: 1,
+      report_label: "COT-000001",
+    });
+
+    expect(lineasActivas(finalizada)).toEqual([]);
+    expect(carritosConLineas(finalizada)).toEqual([]);
+    expect(totalesDeCotizacion(finalizada)).toEqual({
+      confirmado: 0,
+      pendientes: 0,
+      total: null,
+      lineas: 0,
+      proveedores: 0,
+    });
+  });
+
   it("suma subtotales completos y declara pendiente el total si falta uno", () => {
     const completo = detalle([carrito()]);
     expect(totalesDeCotizacion(completo)).toEqual({
@@ -396,6 +418,10 @@ describe("mensajes y reintentos", () => {
   it("reconoce una finalización ya hecha y un resultado desconocido", () => {
     expect(yaFinalizada(new ApiError(409, "QUOTE_ALREADY_FINALIZED", "x"))).toBe(true);
     expect(yaFinalizada(new ApiError(409, "QUOTE_EMPTY", "x"))).toBe(false);
+    // Un carrito que dejó de ser editable obliga a releerlo, no a reintentar el alta.
+    expect(cotizacionCerrada(new ApiError(409, "QUOTE_CLOSED", "x"))).toBe(true);
+    expect(cotizacionCerrada(new ApiError(409, "QUOTE_ALREADY_FINALIZED", "x"))).toBe(true);
+    expect(cotizacionCerrada(new ApiError(409, "QUOTE_EMPTY", "x"))).toBe(false);
 
     // Reintentar con la misma clave solo es obligatorio cuando no se conoce el resultado.
     expect(resultadoDesconocido(new ApiError(0, "NETWORK", "x"))).toBe(true);

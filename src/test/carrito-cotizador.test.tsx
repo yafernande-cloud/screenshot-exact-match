@@ -12,6 +12,7 @@ import { routeTree } from "@/routeTree.gen";
  * cliente HTTP para comprobar el contrato que se envía y lo que se muestra.
  */
 const ultimaCotizacionMock = vi.hoisted(() => vi.fn());
+const crearCotizacionActivaMock = vi.hoisted(() => vi.fn());
 const obtenerCotizacionMock = vi.hoisted(() => vi.fn());
 const finalizarCotizacionMock = vi.hoisted(() => vi.fn());
 const cambiarCantidadMock = vi.hoisted(() => vi.fn());
@@ -33,6 +34,7 @@ vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
     ultimaCotizacionEnPreparacion: ultimaCotizacionMock,
     obtenerCotizacion: obtenerCotizacionMock,
     crearCotizacion: vi.fn(),
+    crearCotizacionActiva: crearCotizacionActivaMock,
     agregarLinea: vi.fn(),
     cambiarCantidadLinea: cambiarCantidadMock,
     quitarLinea: quitarLineaMock,
@@ -149,6 +151,7 @@ beforeEach(() => {
   obtenerInformeMock.mockReset();
   ultimaCotizacionMock.mockReset();
   ultimaCotizacionMock.mockResolvedValue({ quote_id: "q-1" });
+  crearCotizacionActivaMock.mockReset();
   obtenerCotizacionMock.mockReset();
   obtenerCotizacionMock.mockResolvedValue(detalleGuardado);
   cambiarCantidadMock.mockReset();
@@ -292,6 +295,38 @@ describe("carrito persistente en el cotizador", () => {
         version: 1,
       }),
     );
+  });
+
+  it("un error de red al releer el carrito no borra las líneas ya mostradas", async () => {
+    cambiarCantidadMock.mockRejectedValue(new Error("sin conexión"));
+    // Primera lectura (al montar) bien; la relectura posterior falla por red.
+    obtenerCotizacionMock.mockResolvedValueOnce(detalleGuardado);
+    obtenerCotizacionMock.mockRejectedValueOnce(new Error("sin conexión"));
+
+    await renderizarCotizador();
+    expect(await screen.findByText("Ibuprofeno 400 mg")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Aumentar" }));
+
+    await waitFor(() => expect(obtenerCotizacionMock).toHaveBeenCalledTimes(2));
+    // El fallo de relectura no vacía la cotización: lo mostrado se conserva.
+    expect(screen.getByText("Ibuprofeno 400 mg")).toBeInTheDocument();
+    expect(screen.queryByText(/Tu carrito está vacío/)).toBeNull();
+  });
+
+  it("sin carrito activo el cotizador queda vacío y no crea un borrador por cargar", async () => {
+    // Esto es lo que ve la pantalla al recargar después de finalizar: el borrador anterior al
+    // último cierre no es el carrito vigente y el servidor no devuelve ninguno.
+    ultimaCotizacionMock.mockReset();
+    ultimaCotizacionMock.mockResolvedValue(null);
+
+    await renderizarCotizador();
+
+    expect(await screen.findByText(/Tu carrito está vacío/)).toBeInTheDocument();
+    expect(screen.queryByText("Ibuprofeno 400 mg")).toBeNull();
+    expect(obtenerCotizacionMock).not.toHaveBeenCalled();
+    // El borrador se crea recién al agregar el primer producto.
+    expect(crearCotizacionActivaMock).not.toHaveBeenCalled();
   });
 
   it("finaliza con versión y clave, y redirige al informe recién generado", async () => {

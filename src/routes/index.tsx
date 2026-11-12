@@ -22,7 +22,8 @@ import {
   cambiarCantidadLinea,
   cantidadParaCotizar,
   carritosConLineas,
-  crearCotizacion,
+  cotizacionCerrada,
+  crearCotizacionActiva,
   finalizarCotizacion,
   lineasActivas,
   mensajeDeErrorCotizacion,
@@ -227,6 +228,10 @@ function Index() {
   // Carrito persistente: la única fuente es el backend. `detalle` es la cotización en borrador
   // más reciente y se recupera al recargar o al volver a iniciar sesión.
   const [detalle, setDetalle] = useState<DetalleCotizacion | null>(null);
+  // El ref refleja el mismo detalle sin esperar al re-render: dos altas simultáneas no deben
+  // crear dos borradores por leer un estado todavía vacío.
+  const detalleRef = useRef<DetalleCotizacion | null>(null);
+  const creacionEnVuelo = useRef<Promise<DetalleCotizacion> | null>(null);
   const [estadoCotizacion, setEstadoCotizacion] = useState<"cargando" | "listo" | "error">(
     "cargando",
   );
@@ -343,38 +348,59 @@ function Index() {
     }
   };
 
-  const cargarCotizacion = useCallback(async (silencioso: boolean) => {
-    if (cotizacionEnVuelo.current) return;
-    cotizacionEnVuelo.current = true;
-    if (!silencioso) setEstadoCotizacion("cargando");
-    try {
-      const ultima = await ultimaCotizacionEnPreparacion();
-      setDetalle(ultima ? await obtenerCotizacion(ultima.quote_id) : null);
-      setEstadoCotizacion("listo");
-      setErrorCotizacion(null);
-    } catch (error) {
-      setErrorCotizacion(mensajeDeErrorCotizacion(error));
-      // Un fallo de actualización no borra lo que ya se está mostrando.
-      setEstadoCotizacion((previo) => (previo === "listo" ? "listo" : "error"));
-    } finally {
-      cotizacionEnVuelo.current = false;
-    }
+  const aplicarDetalle = useCallback((siguiente: DetalleCotizacion | null) => {
+    detalleRef.current = siguiente;
+    setDetalle(siguiente);
   }, []);
+
+  const cargarCotizacion = useCallback(
+    async (silencioso: boolean) => {
+      if (cotizacionEnVuelo.current) return;
+      cotizacionEnVuelo.current = true;
+      if (!silencioso) setEstadoCotizacion("cargando");
+      try {
+        const ultima = await ultimaCotizacionEnPreparacion();
+        aplicarDetalle(ultima ? await obtenerCotizacion(ultima.quote_id) : null);
+        setEstadoCotizacion("listo");
+        setErrorCotizacion(null);
+      } catch (error) {
+        setErrorCotizacion(mensajeDeErrorCotizacion(error));
+        // Un fallo de actualización no borra lo que ya se está mostrando.
+        setEstadoCotizacion((previo) => (previo === "listo" ? "listo" : "error"));
+      } finally {
+        cotizacionEnVuelo.current = false;
+      }
+    },
+    [aplicarDetalle],
+  );
 
   useEffect(() => {
     void cargarCotizacion(false);
   }, [cargarCotizacion]);
 
-  /** El borrador se crea recién al agregar la primera oferta; antes no existe. */
+  /**
+   * El borrador se crea recién al agregar la primera oferta; antes no existe. La creación es
+   * única en vuelo: dos altas simultáneas comparten la misma solicitud y el backend además
+   * devuelve el carrito vigente en vez de duplicarlo entre pestañas.
+   */
   const asegurarCotizacion = async (): Promise<DetalleCotizacion> => {
-    if (detalle) return detalle;
-    const creada = await crearCotizacion();
-    setDetalle(creada);
-    return creada;
+    const actual = detalleRef.current;
+    if (actual) return actual;
+    if (!creacionEnVuelo.current) {
+      creacionEnVuelo.current = crearCotizacionActiva()
+        .then((creada) => {
+          aplicarDetalle(creada);
+          return creada;
+        })
+        .finally(() => {
+          creacionEnVuelo.current = null;
+        });
+    }
+    return creacionEnVuelo.current;
   };
 
   const refrescarDetalle = async (quoteId: string) => {
-    setDetalle(await obtenerCotizacion(quoteId));
+    aplicarDetalle(await obtenerCotizacion(quoteId));
     setEstadoCotizacion("listo");
     setErrorCotizacion(null);
   };
@@ -499,6 +525,9 @@ function Index() {
     } catch (error) {
       if (fijada) await revertirCantidadFijada(fijada);
       toast(mensajeDeErrorCotizacion(error));
+      // La cotización se cerró o finalizó (quizá en otra pestaña): se vuelve a leer el carrito
+      // activo en vez de seguir mostrando uno que ya no admite líneas.
+      if (cotizacionCerrada(error)) void cargarCotizacion(true);
       return false;
     } finally {
       setAgregando(null);
@@ -646,7 +675,9 @@ function Index() {
       });
       claveFinalizacion.current = null;
       setInforme(resultado.report);
-      setDetalle(null);
+      aplicarDetalle(null);
+      // La asociación al faltante era de esta cotización: el siguiente carrito se arma aparte.
+      setFaltanteBuscado(null);
       setEstadoCotizacion("listo");
       toast(`Informe ${resultado.report.label} generado y guardado.`);
       if (resultado.pending.length > 0) {
@@ -1049,6 +1080,9 @@ function Index() {
             className="relative w-full max-w-5xl"
             onSubmit={(e) => {
               e.preventDefault();
+              // Búsqueda independiente: deja de asociar el alta a un faltante de Telegram. La
+              // búsqueda que se inicia desde un faltante sí conserva el vínculo (ver `onBuscar`).
+              setFaltanteBuscado(null);
               void ejecutarBusqueda(q);
             }}
           >
@@ -1444,6 +1478,7 @@ function FilaFaltante({
         </button>
         <button
           onClick={onBuscar}
+          aria-label={`Buscar ${faltante.display_name} en proveedores`}
           className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-brand-green/90"
         >
           <Search className="h-3.5 w-3.5" /> Buscar

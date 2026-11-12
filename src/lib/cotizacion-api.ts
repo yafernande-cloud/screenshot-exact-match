@@ -244,6 +244,18 @@ export function yaFinalizada(error: unknown): boolean {
 }
 
 /**
+ * La cotización dejó de admitir cambios porque se cerró o finalizó —quizá en otra pestaña—.
+ * Quien reciba este error debe volver a leer el carrito activo en vez de seguir mostrando uno
+ * que ya no es editable.
+ */
+export function cotizacionCerrada(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    (error.code === "QUOTE_CLOSED" || error.code === "QUOTE_ALREADY_FINALIZED")
+  );
+}
+
+/**
  * El resultado del cierre no llegó a conocerse (sin conexión o error del servidor): el reintento
  * debe enviar la misma clave para recibir el informe original en vez de generar otro.
  */
@@ -258,11 +270,18 @@ interface ListaCotizaciones {
 
 /** Cotizaciones finalizadas (historial) o en preparación, nunca ambas a la vez. */
 export async function listarCotizaciones(
-  opciones: { finalized?: boolean; status?: "draft" | "closed"; limit?: number; q?: string } = {},
+  opciones: {
+    finalized?: boolean;
+    status?: "draft" | "closed";
+    active?: boolean;
+    limit?: number;
+    q?: string;
+  } = {},
 ): Promise<ResumenCotizacion[]> {
   const params = new URLSearchParams();
   if (opciones.finalized !== undefined) params.set("finalized", String(opciones.finalized));
   if (opciones.status) params.set("status", opciones.status);
+  if (opciones.active) params.set("active", "true");
   params.set("limit", String(opciones.limit ?? 20));
   if (opciones.q) params.set("q", opciones.q);
   const data = await apiRequest<ListaCotizaciones>(
@@ -273,9 +292,12 @@ export async function listarCotizaciones(
   return data.quotes;
 }
 
-/** La cotización en borrador más reciente: es el carrito activo que se recupera al recargar. */
+/**
+ * El carrito activo: el único borrador vigente de la organización. El servidor decide cuál es
+ * (un borrador anterior al último cierre no se recupera solo), así que la regla no se repite aquí.
+ */
 export async function ultimaCotizacionEnPreparacion(): Promise<ResumenCotizacion | null> {
-  const [primera] = await listarCotizaciones({ finalized: false, status: "draft", limit: 1 });
+  const [primera] = await listarCotizaciones({ active: true, limit: 1 });
   return primera ?? null;
 }
 
@@ -287,6 +309,18 @@ export async function crearCotizacion(title?: string): Promise<DetalleCotizacion
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(title ? { title } : {}),
     },
+    MENSAJE_GENERICO,
+  );
+}
+
+/**
+ * Recupera el carrito activo o crea uno nuevo, sin duplicar borradores: dos pestañas que agregan
+ * a la vez reciben el mismo carrito. Es la operación que usa el cotizador al agregar la primera línea.
+ */
+export async function crearCotizacionActiva(): Promise<DetalleCotizacion> {
+  return apiRequest<DetalleCotizacion>(
+    "/api/v1/quotes/active",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
     MENSAJE_GENERICO,
   );
 }
@@ -400,15 +434,24 @@ export async function obtenerInforme(quoteId: string): Promise<InformeRecuperado
 
 // --------------------------------------------------------------------------- lectura del detalle
 
+/**
+ * Un detalle solo es un carrito editable mientras la cotización siga en borrador. Una cotización
+ * finalizada conserva sus líneas para cobertura e historial, pero no se presenta como carrito: se
+ * lee en el informe.
+ */
+export function carritoEditable(detalle: DetalleCotizacion | null): boolean {
+  return !!detalle && detalle.status === "draft" && detalle.finalized_at === null;
+}
+
 /** Líneas activas de todos los carritos, en el orden en que las entregó el servidor. */
 export function lineasActivas(detalle: DetalleCotizacion | null): LineaCotizacion[] {
-  if (!detalle) return [];
+  if (!detalle || !carritoEditable(detalle)) return [];
   return detalle.carts.flatMap((cart) => cart.lines.filter((line) => line.status === "active"));
 }
 
 /** Carritos con al menos una línea activa: lo que la persona ve como su cotización. */
 export function carritosConLineas(detalle: DetalleCotizacion | null): CarritoCotizacion[] {
-  if (!detalle) return [];
+  if (!detalle || !carritoEditable(detalle)) return [];
   return detalle.carts.filter((cart) => cart.lines.some((line) => line.status === "active"));
 }
 

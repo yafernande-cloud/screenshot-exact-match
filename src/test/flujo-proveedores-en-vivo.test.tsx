@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routeTree } from "@/routeTree.gen";
 import type { ChainSource } from "@/lib/cadenas";
 import type { Article, ArticleDetail, Offer, SearchResponse, SearchResult } from "@/lib/catalogo";
+import type { Faltante } from "@/lib/faltantes-api";
 import type { Fuente, OfertaImportada } from "@/lib/proveedores-api";
 import type { FuenteEnVivo, ResultadoEnVivo } from "@/lib/proveedores-en-vivo";
 
@@ -72,14 +73,14 @@ vi.mock("@/lib/faltantes-api", () => ({
 
 // El carrito es del backend: aquí solo se comprueba qué se le envía al agregar una oferta viva.
 const ultimaCotizacionMock = vi.hoisted(() => vi.fn());
-const crearCotizacionMock = vi.hoisted(() => vi.fn());
+const crearCotizacionActivaMock = vi.hoisted(() => vi.fn());
 const agregarLineaMock = vi.hoisted(() => vi.fn());
 const obtenerCotizacionMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/cotizacion-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/cotizacion-api")>()),
   ultimaCotizacionEnPreparacion: ultimaCotizacionMock,
-  crearCotizacion: crearCotizacionMock,
+  crearCotizacionActiva: crearCotizacionActivaMock,
   agregarLinea: agregarLineaMock,
   obtenerCotizacion: obtenerCotizacionMock,
 }));
@@ -391,6 +392,33 @@ const CATALOGO_CON_LISTA: SearchResponse = {
   results: [RESULTADO_PARACETAMOL],
 };
 
+const FALTANTE: Faltante = {
+  id: "f-omeprazol",
+  display_name: "Omeprazol 20 mg",
+  ingredient: "omeprazol",
+  status: "active",
+  version: 1,
+  observation_count: 1,
+  reporters: ["Pato"],
+  data_origin: "captured",
+  created_at: "2026-11-12T09:00:00Z",
+  reported_by: "u-1",
+  reported_by_name: "Pato",
+  branch_label: "Parque Lantaño",
+  declared_quantity: "2",
+  declared_unit: "box",
+  requested_quantity: "2",
+  requested_unit: "box",
+  requested_quantity_origin: "explicit",
+  target_quantity: "2",
+  quantity_unit: "box",
+  quantity_status: "defined",
+  needs_quantity: false,
+  reported_at: "2026-11-12T09:00:00Z",
+  cancelled_at: null,
+  last_raw_text: null,
+};
+
 const DETALLE_VACIO = {
   quote_id: "q-viva",
   title: null,
@@ -427,6 +455,8 @@ async function buscar(texto: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // jsdom no implementa el desplazamiento suave que usa «Buscar» en un faltante.
+  Element.prototype.scrollIntoView = vi.fn();
   listarFaltantesMock.mockResolvedValue([]);
   buscarCatalogoMock.mockResolvedValue(CATALOGO);
   obtenerArticuloMock.mockResolvedValue(DETALLE_CATALOGO);
@@ -440,7 +470,7 @@ beforeEach(() => {
   listarOfertasMock.mockResolvedValue([]);
   obtenerBusquedaMock.mockRejectedValue(new Error("sin páginas adicionales"));
   ultimaCotizacionMock.mockResolvedValue(null);
-  crearCotizacionMock.mockResolvedValue(DETALLE_VACIO);
+  crearCotizacionActivaMock.mockResolvedValue(DETALLE_VACIO);
   obtenerCotizacionMock.mockResolvedValue(DETALLE_VACIO);
   agregarLineaMock.mockResolvedValue({ deduplicated: false, warnings: [] });
 });
@@ -527,34 +557,30 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
   });
 });
 
+const OFERTA_SALONPAS = {
+  external_id: "FL-2990",
+  trade_item_id: null,
+  name: "Salónpas 10 parches",
+  laboratory: null,
+  presentation: null,
+  price: { amount: "2990", currency: "CLP" },
+  price_basis: null,
+  sale_unit: null,
+  stock_status: "in_stock" as const,
+  stock_quantity: "5",
+  stock_unit: null,
+  image_url: null,
+  product_url: null,
+  ean: null,
+  match_relation: "direct",
+  match_reasons: ["all_query_terms_in_name"],
+  cart_eligible: true,
+  cart_blockers: [],
+};
+
 describe("oferta viva sin unidad de venta ni base del precio", () => {
   it("la agrega con unidad nula, sin inventar caja ni base", async () => {
-    buscarEnVivoMock.mockResolvedValue(
-      resultado({
-        offers: [
-          {
-            external_id: "FL-2990",
-            trade_item_id: null,
-            name: "Salónpas 10 parches",
-            laboratory: null,
-            presentation: null,
-            price: { amount: "2990", currency: "CLP" },
-            price_basis: null,
-            sale_unit: null,
-            stock_status: "in_stock",
-            stock_quantity: "5",
-            stock_unit: null,
-            image_url: null,
-            product_url: null,
-            ean: null,
-            match_relation: "direct",
-            match_reasons: ["all_query_terms_in_name"],
-            cart_eligible: true,
-            cart_blockers: [],
-          },
-        ],
-      }),
-    );
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_SALONPAS] }));
 
     await renderizarPantalla();
     await buscar("Salónpas");
@@ -575,6 +601,44 @@ describe("oferta viva sin unidad de venta ni base del precio", () => {
         quantity: "1",
         unit: null,
       }),
+    );
+  });
+  it("un error de red al crear el carrito no pierde la oferta y el reintento reusa el activo", async () => {
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_SALONPAS] }));
+    crearCotizacionActivaMock.mockRejectedValueOnce(new Error("sin conexión"));
+
+    await renderizarPantalla();
+    await buscar("Salónpas");
+    const tarjeta = await screen.findByRole("article", { name: /Salónpas 10 parches/ });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    await waitFor(() => expect(crearCotizacionActivaMock).toHaveBeenCalledTimes(1));
+    // Sin la cotización no se agregó nada: la oferta sigue disponible en la tarjeta.
+    expect(agregarLineaMock).not.toHaveBeenCalled();
+    expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeEnabled();
+
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    await waitFor(() => expect(agregarLineaMock).toHaveBeenCalledWith("q-viva", expect.anything()));
+    // El reintento vuelve a pedir el carrito activo: si el primero sí llegó al servidor, el
+    // backend devuelve ese mismo borrador en vez de crear otro.
+    expect(crearCotizacionActivaMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("una búsqueda manual independiente deja de asociar el alta al faltante", async () => {
+    listarFaltantesMock.mockResolvedValue([FALTANTE]);
+
+    await renderizarPantalla();
+    // La búsqueda que parte del faltante conserva la referencia de forma explícita.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Buscar Omeprazol 20 mg en proveedores" }),
+    );
+    expect(await screen.findByText(/Búsqueda iniciada desde el faltante/)).toBeInTheDocument();
+
+    // Una búsqueda nueva desde el buscador principal es independiente: ya no asocia.
+    await buscar("Ibuprofeno");
+    await waitFor(() =>
+      expect(screen.queryByText(/Búsqueda iniciada desde el faltante/)).toBeNull(),
     );
   });
 });

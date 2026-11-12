@@ -27,6 +27,7 @@ vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
     ultimaCotizacionEnPreparacion: ultimaCotizacionMock,
     obtenerCotizacion: vi.fn(),
     crearCotizacion: vi.fn(),
+    crearCotizacionActiva: vi.fn(),
     agregarLinea: vi.fn(),
     cambiarCantidadLinea: vi.fn(),
     quitarLinea: vi.fn(),
