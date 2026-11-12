@@ -232,6 +232,7 @@ function Index() {
   );
   const [errorCotizacion, setErrorCotizacion] = useState<string | null>(null);
   const [lineasOcupadas, setLineasOcupadas] = useState<Set<string>>(new Set());
+  const lineasOcupadasRef = useRef(new Set<string>());
   const [agregando, setAgregando] = useState<string | null>(null);
   const [finalizando, setFinalizando] = useState(false);
   const [informe, setInforme] = useState<Informe | null>(null);
@@ -379,6 +380,10 @@ function Index() {
   };
 
   const marcarLineaOcupada = (lineId: string, activo: boolean) => {
+    // El ref evita que un doble clic dispare dos veces la misma acción antes de que React
+    // vuelva a renderizar; el estado es el que deshabilita los controles en pantalla.
+    if (activo) lineasOcupadasRef.current.add(lineId);
+    else lineasOcupadasRef.current.delete(lineId);
     setLineasOcupadas((previas) => {
       const siguiente = new Set(previas);
       if (activo) siguiente.add(lineId);
@@ -596,7 +601,7 @@ function Index() {
   };
 
   const quitarDeCotizacion = async (linea: LineaCotizacion) => {
-    if (!detalle) return;
+    if (!detalle || lineasOcupadasRef.current.has(linea.line_id)) return;
     marcarLineaOcupada(linea.line_id, true);
     try {
       await quitarLinea(detalle.quote_id, linea.line_id);

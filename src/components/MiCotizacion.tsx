@@ -58,6 +58,11 @@ export function SeccionCotizaciones({
   const r = totalesDeCotizacion(detalle);
   const [cerrados, setCerrados] = useState<string[]>([]);
   const [vaciar, setVaciar] = useState<CarritoCotizacion | null>(null);
+  // Quitar una línea es irreversible en el carrito: se confirma con el nombre real del producto.
+  const [porQuitar, setPorQuitar] = useState<{
+    linea: LineaCotizacion;
+    proveedor: string;
+  } | null>(null);
 
   if (grupos.length === 0) {
     return (
@@ -119,6 +124,7 @@ export function SeccionCotizaciones({
                         linea={linea}
                         proveedor={nombre}
                         acciones={acciones}
+                        onQuitar={() => setPorQuitar({ linea, proveedor: nombre })}
                       />
                     ))}
                   </ul>
@@ -190,6 +196,44 @@ export function SeccionCotizaciones({
         </div>
       </div>
 
+      {porQuitar && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Confirmar quitar ${nombreProducto(porQuitar.linea)}`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-soft">
+            <h3 className="font-semibold">
+              ¿Quitar «{nombreProducto(porQuitar.linea)}» de la cotización?
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Se quitará del carrito de {porQuitar.proveedor}. Las demás líneas, sus cantidades y
+              precios no cambian, y los faltantes no se liberan hasta finalizar el informe.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setPorQuitar(null)}
+                className="rounded-full border px-3 py-1.5 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const linea = porQuitar.linea;
+                  setPorQuitar(null);
+                  acciones.onQuitar(linea);
+                }}
+                disabled={acciones.ocupadas.has(porQuitar.linea.line_id)}
+                className="rounded-full bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground disabled:opacity-60"
+              >
+                Sí, quitar producto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {vaciar && (
         <div
           role="dialog"
@@ -232,10 +276,12 @@ function LineaItem({
   linea,
   proveedor,
   acciones,
+  onQuitar,
 }: {
   linea: LineaCotizacion;
   proveedor: string;
   acciones: AccionesCotizacion;
+  onQuitar: () => void;
 }) {
   const ocupada = acciones.ocupadas.has(linea.line_id);
   const cantidad = Number.parseInt(linea.quantity.value, 10) || 1;
@@ -263,7 +309,7 @@ function LineaItem({
           )}
         </div>
         <button
-          onClick={() => acciones.onQuitar(linea)}
+          onClick={onQuitar}
           disabled={ocupada}
           aria-label={`Quitar ${nombre} de ${proveedor}`}
           className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"

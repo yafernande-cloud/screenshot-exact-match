@@ -19,6 +19,12 @@ const quitarLineaMock = vi.hoisted(() => vi.fn());
 const listarFaltantesMock = vi.hoisted(() => vi.fn());
 const listarCotizacionesMock = vi.hoisted(() => vi.fn());
 const obtenerInformeMock = vi.hoisted(() => vi.fn());
+const toastMock = vi.hoisted(() => vi.fn());
+
+vi.mock("sonner", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("sonner")>();
+  return { ...actual, toast: toastMock };
+});
 
 vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/cotizacion-api")>();
@@ -148,6 +154,7 @@ beforeEach(() => {
   cambiarCantidadMock.mockReset();
   quitarLineaMock.mockReset();
   finalizarCotizacionMock.mockReset();
+  toastMock.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -191,16 +198,74 @@ describe("carrito persistente en el cotizador", () => {
     await waitFor(() => expect(listarFaltantesMock).toHaveBeenCalled());
   });
 
-  it("quita una línea de forma lógica sin tocar los faltantes", async () => {
+  it("pide confirmación con el nombre real antes de quitar una línea", async () => {
+    await renderizarCotizador();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Quitar Ibuprofeno 400 mg de Proveedor Uno" }),
+    );
+
+    const dialogo = screen.getByRole("dialog", { name: "Confirmar quitar Ibuprofeno 400 mg" });
+    expect(dialogo).toHaveTextContent("¿Quitar «Ibuprofeno 400 mg» de la cotización?");
+    expect(dialogo).toHaveTextContent("Se quitará del carrito de Proveedor Uno.");
+    expect(quitarLineaMock).not.toHaveBeenCalled();
+  });
+
+  it("cancelar cierra el diálogo sin modificar la cotización", async () => {
+    await renderizarCotizador();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Quitar Ibuprofeno 400 mg de Proveedor Uno" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.queryByRole("dialog", { name: "Confirmar quitar Ibuprofeno 400 mg" })).toBeNull();
+    expect(quitarLineaMock).not.toHaveBeenCalled();
+    expect(obtenerCotizacionMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Ibuprofeno 400 mg")).toBeInTheDocument();
+  });
+
+  it("confirmar quita solo la línea seleccionada y refresca los faltantes", async () => {
     quitarLineaMock.mockResolvedValue({ ...lineaCotizada, status: "removed" });
 
     await renderizarCotizador();
     fireEvent.click(
       await screen.findByRole("button", { name: "Quitar Ibuprofeno 400 mg de Proveedor Uno" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Sí, quitar producto" }));
 
     await waitFor(() => expect(quitarLineaMock).toHaveBeenCalledWith("q-1", "l-1"));
+    expect(screen.queryByRole("dialog", { name: "Confirmar quitar Ibuprofeno 400 mg" })).toBeNull();
     expect(listarFaltantesMock).toHaveBeenCalled();
+    expect(cambiarCantidadMock).not.toHaveBeenCalled();
+    expect(finalizarCotizacionMock).not.toHaveBeenCalled();
+  });
+
+  it("un doble clic en confirmar ejecuta la eliminación una sola vez", async () => {
+    quitarLineaMock.mockResolvedValue({ ...lineaCotizada, status: "removed" });
+
+    await renderizarCotizador();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Quitar Ibuprofeno 400 mg de Proveedor Uno" }),
+    );
+    const confirmar = screen.getByRole("button", { name: "Sí, quitar producto" });
+    fireEvent.click(confirmar);
+    fireEvent.click(confirmar);
+
+    await waitFor(() => expect(quitarLineaMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("si la eliminación falla muestra el error y conserva la cotización", async () => {
+    quitarLineaMock.mockRejectedValue(new Error("No se pudo quitar la línea."));
+
+    await renderizarCotizador();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Quitar Ibuprofeno 400 mg de Proveedor Uno" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sí, quitar producto" }));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith("No se pudo quitar la línea."));
+    // Se vuelve a leer el carrito del servidor: la línea sigue en su lugar.
+    await waitFor(() => expect(obtenerCotizacionMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Ibuprofeno 400 mg")).toBeInTheDocument();
   });
 
   it("declara la base del precio no confirmada y envía la unidad nula", async () => {
