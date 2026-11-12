@@ -101,7 +101,8 @@ export interface Offer {
   external_id_kind: string;
   price: Price;
   price_per_base_unit: (Money & { base_unit: string | null }) | null;
-  sale_unit: { code: string; original_text: string | null };
+  // `code` nulo = la fuente no declaró unidad de venta (FarmaLoop); nunca se supone.
+  sale_unit: { code: string | null; original_text: string | null };
   pack: {
     units_per_commercial_unit: string;
     base_unit: string | null;

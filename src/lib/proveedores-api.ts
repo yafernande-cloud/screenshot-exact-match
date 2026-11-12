@@ -365,8 +365,9 @@ export interface OfertaImportada {
   trade_item_name: string;
   price_amount: string;
   currency: string;
-  price_basis: string;
-  sale_unit: string;
+  // NULL = la fuente no declaró base del precio ni unidad de venta (FarmaLoop). No se inventan.
+  price_basis: string | null;
+  sale_unit: string | null;
   sale_unit_text: string | null;
   pack_units_per_commercial_unit: string | null;
   pack_base_unit: string | null;
@@ -888,12 +889,15 @@ export function etiquetaUnidad(unidad: string | null | undefined): string {
   return UNIDADES_VENTA.find((u) => u.value === unidad)?.label ?? unidad;
 }
 
-export function etiquetaBasePrecio(base: string): string {
+export function etiquetaBasePrecio(base: string | null | undefined): string {
   switch (base) {
     case "per_commercial_unit":
       return "por unidad de venta";
     case "per_base_unit":
       return "por unidad base";
+    case null:
+    case undefined:
+      return "base no confirmada";
     default:
       return base;
   }
