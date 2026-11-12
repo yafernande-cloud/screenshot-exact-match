@@ -7,8 +7,12 @@
  * lista (su observación inmutable en el servidor), no una consulta nueva al proveedor.
  */
 
-import { AlertCircle, FileSpreadsheet, Loader2, ShoppingCart } from "lucide-react";
+import { AlertCircle, FileSpreadsheet } from "lucide-react";
 
+import {
+  BotonAgregarACotizacion,
+  type ResultadoDeAlta,
+} from "@/components/BotonAgregarACotizacion";
 import { Badge } from "@/components/ui/badge";
 import { EnsenarALaIa } from "@/components/EnsenarALaIa";
 import { describirCantidad, formatearDinero } from "@/lib/catalogo";
@@ -125,7 +129,7 @@ export function TarjetaPrecioLista({
   proveedorId: string;
   onActualizar?: ((articuloId: string) => void | Promise<void>) | undefined;
   /** Alta en la cotización persistente de esta oferta publicada. */
-  onAgregar?: (() => void) | undefined;
+  onAgregar?: (() => ResultadoDeAlta) | undefined;
   agregando?: boolean;
 }) {
   const pendiente = oferta.review_status === "needs_review";
@@ -164,19 +168,11 @@ export function TarjetaPrecioLista({
             <p className="text-2xl font-semibold text-brand-green">{precio(oferta)}</p>
             <p className="text-xs text-muted-foreground">Precio de lista</p>
           </div>
-          <button
-            type="button"
-            disabled={agregando || bloqueada}
-            onClick={onAgregar}
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
-          >
-            {agregando ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <ShoppingCart className="h-3.5 w-3.5" />
-            )}{" "}
-            Agregar a cotización
-          </button>
+          <BotonAgregarACotizacion
+            disponible={!bloqueada}
+            onAgregar={onAgregar}
+            agregando={agregando}
+          />
           {bloqueada ? (
             <p className="max-w-xs text-xs text-muted-foreground">
               No disponible para agregar a la cotización.

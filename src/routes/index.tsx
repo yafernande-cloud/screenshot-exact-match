@@ -386,8 +386,15 @@ function Index() {
     ? (faltantes.find((f) => f.id === faltanteBuscado.id) ?? null)
     : null;
 
-  const altaEnCotizacion = async (clave: string, alta: Parameters<typeof agregarLinea>[1]) => {
-    if (agregando === clave) return;
+  /**
+   * Alta en la cotización con una sola notificación de error. Devuelve si la API confirmó el alta:
+   * la tarjeta que llama solo muestra «Agregado» cuando la operación terminó bien.
+   */
+  const altaEnCotizacion = async (
+    clave: string,
+    alta: Parameters<typeof agregarLinea>[1],
+  ): Promise<boolean> => {
+    if (agregando === clave) return false;
     setAgregando(clave);
     try {
       const cotizacion = await asegurarCotizacion();
@@ -398,14 +405,16 @@ function Index() {
           ? "Esa oferta ya estaba en tu cotización."
           : "Producto agregado a la cotización.",
       );
+      return true;
     } catch (error) {
       toast(mensajeDeErrorCotizacion(error));
+      return false;
     } finally {
       setAgregando(null);
     }
   };
 
-  const agregarDesdeOfertaViva = async (item: ItemEnVivo) => {
+  const agregarDesdeOfertaViva = async (item: ItemEnVivo): Promise<boolean> => {
     // El contenedor entrega el ítem tal como salió de la fuente: se busca su origen por identidad.
     let fuente: FuenteEnVivo | null = null;
     for (const estado of estadosVivo) {
@@ -422,11 +431,11 @@ function Index() {
     }
     if (!fuente?.supplierId) {
       toast("Esta fuente no tiene un proveedor configurado para cotizar.");
-      return;
+      return false;
     }
     if (item.tipo === "publicado") {
       toast("Este producto no tiene un precio vigente; no se puede cotizar.");
-      return;
+      return false;
     }
     const { oferta } = item;
     // La unidad puede no estar informada: la cantidad se cuenta en ofertas seleccionadas y la
@@ -450,7 +459,7 @@ function Index() {
       product_url: oferta.product_url,
       image_url: oferta.image_url,
     };
-    await altaEnCotizacion(`viva:${fuente.sourceId}:${oferta.external_id}`, {
+    return altaEnCotizacion(`viva:${fuente.sourceId}:${oferta.external_id}`, {
       supplierId: fuente.supplierId,
       offer: ofertaParaCotizar,
       quantity: "1",
@@ -459,9 +468,12 @@ function Index() {
     });
   };
 
-  const agregarDesdeLista = async (oferta: OfertaImportada, proveedorId: string) => {
+  const agregarDesdeLista = async (
+    oferta: OfertaImportada,
+    proveedorId: string,
+  ): Promise<boolean> => {
     const vinculable = unidadVinculable(faltanteParaVincular, oferta.sale_unit);
-    await altaEnCotizacion(`lista:${oferta.source_id}:${oferta.external_id}`, {
+    return altaEnCotizacion(`lista:${oferta.source_id}:${oferta.external_id}`, {
       supplierId: proveedorId,
       offerSnapshotId: oferta.offer_id,
       quantity: "1",
@@ -1139,8 +1151,8 @@ function Index() {
             paginasRestantes={paginasRestantesListas}
             hayFuentesLista={hayFuentesLista}
             onActualizar={actualizarTrasEnsenar}
-            onAgregarViva={(item) => void agregarDesdeOfertaViva(item)}
-            onAgregarLista={(oferta, proveedorId) => void agregarDesdeLista(oferta, proveedorId)}
+            onAgregarViva={(item) => agregarDesdeOfertaViva(item)}
+            onAgregarLista={(oferta, proveedorId) => agregarDesdeLista(oferta, proveedorId)}
             agregando={agregando}
           />
 

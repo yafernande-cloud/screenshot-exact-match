@@ -10,8 +10,11 @@
  */
 
 import { useState } from "react";
-import { ShoppingCart } from "lucide-react";
 
+import {
+  BotonAgregarACotizacion,
+  type ResultadoDeAlta,
+} from "@/components/BotonAgregarACotizacion";
 import { EnsenarALaIaEnVivo } from "@/components/EnsenarALaIaEnVivo";
 import { formatearDinero } from "@/lib/catalogo";
 import type { OfertaEnVivo } from "@/lib/proveedores-en-vivo";
@@ -54,7 +57,7 @@ export function FichaOfertaEnVivo({
   oferta: OfertaEnVivo;
   proveedor: string;
   /** Acción real del carrito. Sin ella el botón nunca se habilita, aunque el backend autorice. */
-  onAgregar?: ((oferta: OfertaEnVivo) => void) | undefined;
+  onAgregar?: ((oferta: OfertaEnVivo) => ResultadoDeAlta) | undefined;
   /** Fuente de la que salió la oferta; sin ella no se puede enseñar. */
   sourceId?: string | undefined;
   supplierId?: string | null | undefined;
@@ -106,14 +109,10 @@ export function FichaOfertaEnVivo({
             </p>
             <p className="text-xs text-muted-foreground">Precio</p>
           </div>
-          <button
-            type="button"
-            disabled={!puedeAgregar}
-            onClick={() => onAgregar?.(oferta)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
-          >
-            <ShoppingCart className="h-3.5 w-3.5" /> Agregar a cotización
-          </button>
+          <BotonAgregarACotizacion
+            disponible={oferta.cart_eligible}
+            onAgregar={onAgregar ? () => onAgregar(oferta) : undefined}
+          />
           {!puedeAgregar && (
             <p className="max-w-xs text-xs text-muted-foreground">
               No disponible para agregar a la cotización.

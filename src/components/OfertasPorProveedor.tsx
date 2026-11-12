@@ -11,6 +11,7 @@
 
 import { AlertCircle, FileSpreadsheet, Loader2, Truck } from "lucide-react";
 
+import type { ResultadoDeAlta } from "@/components/BotonAgregarACotizacion";
 import { Badge } from "@/components/ui/badge";
 import { BloqueFuente } from "@/components/OfertasProveedorEnVivo";
 import { TarjetaPrecioLista } from "@/components/PreciosListasCargadas";
@@ -100,9 +101,9 @@ export function OfertasPorProveedor({
   hayFuentesLista: boolean;
   onActualizar?: ((articuloId: string) => void | Promise<void>) | undefined;
   /** Oferta en vivo elegida por la persona; la IA solo ordena, nunca selecciona. */
-  onAgregarViva?: ((item: ItemEnVivo) => void) | undefined;
+  onAgregarViva?: ((item: ItemEnVivo) => ResultadoDeAlta) | undefined;
   /** Precio de una lista cargada: ya tiene su observación inmutable en el servidor. */
-  onAgregarLista?: ((oferta: OfertaImportada, proveedorId: string) => void) | undefined;
+  onAgregarLista?: ((oferta: OfertaImportada, proveedorId: string) => ResultadoDeAlta) | undefined;
   /** Clave de la oferta en curso de alta: deshabilita solo ese botón. */
   agregando?: string | null;
 }) {

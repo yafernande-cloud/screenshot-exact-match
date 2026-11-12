@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 import { AlertCircle, Loader2, Truck } from "lucide-react";
 
+import type { ResultadoDeAlta } from "@/components/BotonAgregarACotizacion";
 import { FichaOfertaEnVivo } from "@/components/FichaOfertaEnVivo";
 import { FichaProductoPublicadoEnVivo } from "@/components/FichaProductoPublicadoEnVivo";
 import {
@@ -80,7 +81,7 @@ function ListaResultados({
   items: ItemEnVivo[];
   fuente: EstadoFuenteEnVivo["fuente"];
   consulta: string | null;
-  onAgregar?: ((item: ItemEnVivo) => void) | undefined;
+  onAgregar?: ((item: ItemEnVivo) => ResultadoDeAlta) | undefined;
   onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
   return (
@@ -122,7 +123,7 @@ export function BloqueFuente({
 }: {
   estado: EstadoFuenteEnVivo;
   consulta: string | null;
-  onAgregar?: ((item: ItemEnVivo) => void) | undefined;
+  onAgregar?: ((item: ItemEnVivo) => ResultadoDeAlta) | undefined;
   onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
   /** Dentro de una sección de proveedor se muestra el nombre de la fuente, no el del proveedor. */
   titulo?: string | undefined;
@@ -227,7 +228,7 @@ export function OfertasProveedorEnVivo({
    * Acción real de agregar al carrito. Mientras no exista, «Agregar a cotización» queda deshabilitado
    * aunque el backend marque el producto como elegible.
    */
-  onAgregar?: ((item: ItemEnVivo) => void) | undefined;
+  onAgregar?: ((item: ItemEnVivo) => ResultadoDeAlta) | undefined;
   onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
 }) {
   if (!descubriendo && !error && estados.length === 0) return null;

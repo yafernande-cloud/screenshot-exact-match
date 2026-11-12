@@ -150,11 +150,19 @@ describe("agregar a la cotización desde una lista cargada", () => {
   });
 
   it("deshabilita el botón mientras la oferta se está agregando", () => {
-    const { boton } = renderizar(
-      { stock_status: "known", stock_quantity: "5.000" },
-      { agregando: true },
+    render(
+      <TarjetaPrecioLista
+        oferta={ofertaLista({ stock_status: "known", stock_quantity: "5.000" })}
+        proveedor="Distribuidora Andes"
+        proveedorId="sup-andes"
+        onAgregar={vi.fn()}
+        agregando
+      />,
     );
 
+    // La solicitud en curso se informa con el indicador girando y el texto «Agregando…».
+    const boton = screen.getByRole("button", { name: /Agregando…/ });
     expect(boton).toBeDisabled();
+    expect(boton).toHaveAttribute("aria-busy", "true");
   });
 });
