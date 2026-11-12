@@ -26,6 +26,10 @@ import {
  * proveedores.
  */
 export const Route = createFileRoute("/historial")({
+  // Tras finalizar, el Cotizador redirige aquí con el informe recién generado.
+  validateSearch: (search: Record<string, unknown>) => ({
+    informe: typeof search["informe"] === "string" ? search["informe"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Historial de cotizaciones · Cotizador para farmacia" },
@@ -54,6 +58,7 @@ function fechaDeFinalizacion(iso: string | null): string {
 }
 
 function Historial() {
+  const { informe: informeSolicitado } = Route.useSearch();
   const [q, setQ] = useState("");
   const [cotizaciones, setCotizaciones] = useState<ResumenCotizacion[]>([]);
   const [estado, setEstado] = useState<"cargando" | "listo" | "error">("cargando");
@@ -79,19 +84,28 @@ function Historial() {
     void cargar();
   }, [cargar]);
 
-  const abrirInforme = async (cotizacion: ResumenCotizacion) => {
-    if (cargandoInforme) return;
-    setCargandoInforme(cotizacion.quote_id);
+  const abrirInformePorId = useCallback(async (quoteId: string) => {
+    setCargandoInforme(quoteId);
     setErrorInforme(null);
     try {
-      const recuperado = await obtenerInforme(cotizacion.quote_id);
+      const recuperado = await obtenerInforme(quoteId);
       setInforme(recuperado.report);
     } catch (err) {
       setErrorInforme(mensajeDeErrorCotizacion(err));
     } finally {
       setCargandoInforme(null);
     }
+  }, []);
+
+  const abrirInforme = async (cotizacion: ResumenCotizacion) => {
+    if (cargandoInforme) return;
+    await abrirInformePorId(cotizacion.quote_id);
   };
+
+  // El informe indicado en la URL se abre solo: es el que se acaba de generar al finalizar.
+  useEffect(() => {
+    if (informeSolicitado) void abrirInformePorId(informeSolicitado);
+  }, [informeSolicitado, abrirInformePorId]);
 
   const texto = q.trim().toLowerCase();
   const filas = texto

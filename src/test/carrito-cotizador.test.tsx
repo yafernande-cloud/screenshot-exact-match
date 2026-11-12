@@ -17,6 +17,8 @@ const finalizarCotizacionMock = vi.hoisted(() => vi.fn());
 const cambiarCantidadMock = vi.hoisted(() => vi.fn());
 const quitarLineaMock = vi.hoisted(() => vi.fn());
 const listarFaltantesMock = vi.hoisted(() => vi.fn());
+const listarCotizacionesMock = vi.hoisted(() => vi.fn());
+const obtenerInformeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/cotizacion-api")>();
@@ -29,8 +31,8 @@ vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
     cambiarCantidadLinea: cambiarCantidadMock,
     quitarLinea: quitarLineaMock,
     finalizarCotizacion: finalizarCotizacionMock,
-    listarCotizaciones: vi.fn(),
-    obtenerInforme: vi.fn(),
+    listarCotizaciones: listarCotizacionesMock,
+    obtenerInforme: obtenerInformeMock,
   };
 });
 
@@ -130,11 +132,15 @@ async function renderizarCotizador() {
   });
   await router.load();
   render(<RouterProvider router={router} />);
+  return router;
 }
 
 beforeEach(() => {
   listarFaltantesMock.mockReset();
   listarFaltantesMock.mockResolvedValue([]);
+  listarCotizacionesMock.mockReset();
+  listarCotizacionesMock.mockResolvedValue([]);
+  obtenerInformeMock.mockReset();
   ultimaCotizacionMock.mockReset();
   ultimaCotizacionMock.mockResolvedValue({ quote_id: "q-1" });
   obtenerCotizacionMock.mockReset();
@@ -210,7 +216,30 @@ describe("carrito persistente en el cotizador", () => {
     );
   });
 
-  it("finaliza con la versión y la clave de idempotencia, y muestra el informe", async () => {
+  it("finaliza con versión y clave, y redirige al informe recién generado", async () => {
+    const informe = {
+      schema_version: 1,
+      quote_id: "q-1",
+      title: null,
+      number: 1,
+      label: "COT-000001",
+      finalized_at: "2026-11-11T12:00:00Z",
+      finalized_by: "u-1",
+      currency: "CLP",
+      suppliers: [
+        {
+          supplier_id: "s-1",
+          supplier_name: "Proveedor Uno",
+          line_count: 1,
+          subtotal: { amount: "5100.00", currency: "CLP" },
+        },
+      ],
+      items: [],
+      total: { amount: "5100.00", currency: "CLP" },
+      warnings: [],
+      release: { released: [], pending: [] },
+      note: null,
+    };
     finalizarCotizacionMock.mockResolvedValue({
       quote: {
         quote_id: "q-1",
@@ -219,35 +248,21 @@ describe("carrito persistente en el cotizador", () => {
         report_number: 1,
         report_label: "COT-000001",
       },
-      report: {
-        schema_version: 1,
-        quote_id: "q-1",
-        title: null,
-        number: 1,
-        label: "COT-000001",
-        finalized_at: "2026-11-11T12:00:00Z",
-        finalized_by: "u-1",
-        currency: "CLP",
-        suppliers: [
-          {
-            supplier_id: "s-1",
-            supplier_name: "Proveedor Uno",
-            line_count: 1,
-            subtotal: { amount: "5100.00", currency: "CLP" },
-          },
-        ],
-        items: [],
-        total: { amount: "5100.00", currency: "CLP" },
-        warnings: [],
-        release: { released: [], pending: [] },
-        note: null,
-      },
+      report: informe,
       released: [],
       pending: [],
       deduplicated: false,
     });
+    obtenerInformeMock.mockResolvedValue({
+      quote_id: "q-1",
+      report_number: 1,
+      report_label: "COT-000001",
+      finalized_at: "2026-11-11T12:00:00Z",
+      finalized_by: "u-1",
+      report: informe,
+    });
 
-    await renderizarCotizador();
+    const router = await renderizarCotizador();
     fireEvent.click(await screen.findByRole("button", { name: /Generar informe y finalizar/ }));
 
     await waitFor(() =>
@@ -256,7 +271,9 @@ describe("carrito persistente en el cotizador", () => {
         clave: expect.any(String),
       }),
     );
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("article", { name: "Informe COT-000001" })).toBeInTheDocument();
+    // Ya no se queda en el carrito cerrado: el historial abre el informe recién generado.
+    await waitFor(() => expect(router.state.location.pathname).toBe("/historial"));
+    expect(router.state.location.search).toMatchObject({ informe: "q-1" });
+    expect(await screen.findByRole("article", { name: "Informe COT-000001" })).toBeInTheDocument();
   });
 });

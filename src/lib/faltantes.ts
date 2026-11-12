@@ -93,6 +93,44 @@ export function unidadDeAjuste(
   return null;
 }
 
+/**
+ * Unidad con la que se fija 1 al asociar una oferta a un reporte sin cantidad objetivo.
+ *
+ * Respeta la unidad que el reporte ya declara. Si no declara ninguna y la oferta tampoco, usa la
+ * unidad genérica `unit` (D-147): cuenta piezas y no inventa caja ni botella. Devuelve `null`
+ * cuando el reporte y la oferta no comparten unidad, porque asociarlos exigiría suponer una
+ * equivalencia comercial que nadie declaró.
+ */
+export function unidadParaAsociar(
+  faltante: Pick<Faltante, "quantity_unit" | "requested_unit" | "declared_unit">,
+  unidadOferta: string | null,
+): UnidadCantidad | null {
+  const declarada = unidadDeAjuste(faltante);
+  if (unidadOferta === null) {
+    return declarada === null || declarada === "unit" ? "unit" : null;
+  }
+  return declarada === unidadOferta ? declarada : null;
+}
+
+/**
+ * ¿El faltante ya está cubierto por una línea activa de un carrito en preparación?
+ *
+ * La cobertura la calcula el backend (`replenishment_state = in_quote`, §12); la bandeja solo la
+ * presenta. Un backend anterior sin esos campos no oculta nada: nunca se supone una cobertura.
+ */
+export function estaEnCarrito(
+  faltante: Pick<Faltante, "replenishment_state" | "quoted_quantity">,
+): boolean {
+  if (faltante.replenishment_state) return faltante.replenishment_state === "in_quote";
+  const cotizado = Number(faltante.quoted_quantity ?? "0");
+  return Number.isFinite(cotizado) && cotizado > 0;
+}
+
+/** Filas de «Faltantes por cotizar»: las que todavía no están en el carrito. */
+export function visiblesEnBandeja(faltantes: readonly Faltante[]): Faltante[] {
+  return faltantes.filter((f) => !estaEnCarrito(f));
+}
+
 function numero(valor: string | null | undefined): number | null {
   if (valor === null || valor === undefined || valor === "") return null;
   const n = Number(valor);

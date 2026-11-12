@@ -460,14 +460,17 @@ export function subtotalDeCarrito(carrito: CarritoCotizacion): number | null {
 }
 
 /**
- * Un faltante se asocia a la línea solo cuando su unidad es la misma que la que se cotiza. Si no
- * coincide, la oferta se agrega igual y el vínculo queda para el backend, nunca inventado aquí.
+ * Cantidad con la que se cotiza el faltante explícitamente seleccionado.
+ *
+ * Se respeta la cantidad a cotizar ya definida; si todavía no existe, se cotiza 1 por defecto
+ * (D-147), que la pantalla fija antes mediante el comando SET auditado. Nunca inventa una unidad
+ * ni una cantidad comercial: la interpretación comercial la resuelve el backend.
  */
-export function unidadVinculable(
-  faltante: { target_quantity: string | null; quantity_unit: string | null } | null,
-  unidad: string | null,
-): string | null {
-  if (!faltante || !faltante.target_quantity || !faltante.quantity_unit) return null;
-  if (!unidad || faltante.quantity_unit !== unidad) return null;
-  return faltante.quantity_unit;
+export function cantidadParaCotizar(faltante: { target_quantity: string | null } | null): string {
+  const definida = faltante?.target_quantity?.trim();
+  if (!definida) return "1";
+  const numero = Number(definida);
+  // La cantidad de una línea de cotización es un entero positivo; una cantidad fraccionaria no
+  // se redondea ni se inventa: se cotiza 1 y la cobertura queda explícitamente parcial.
+  return Number.isInteger(numero) && numero > 0 ? definida : "1";
 }

@@ -28,6 +28,7 @@ import {
   cargarFotografia,
   esConflictoDeVersion,
   fijarCantidad,
+  limpiarCantidad,
   listarFaltantes,
   type Faltante,
 } from "@/lib/faltantes-api";
@@ -148,6 +149,40 @@ describe("comandos reales de la bandeja", () => {
       value: "3",
       unit: "box",
     });
+  });
+
+  it("revierte el 1 por defecto con CLEAR, sin valor ni unidad", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        replayed: false,
+        previous_quantity: "1",
+        previous_unit: "unit",
+        item: faltante({ target_quantity: null, quantity_unit: null, version: 5 }),
+        event: {
+          id: "e-2",
+          operation: "CLEAR",
+          value: null,
+          unit: null,
+          before_value: "1",
+          before_unit: "unit",
+          after_value: null,
+          after_unit: null,
+          version_after: 5,
+          actor: "Pao",
+          reason: null,
+          created_at: "2026-11-05T10:06:00Z",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const resultado = await limpiarCantidad(faltante({ target_quantity: "1", version: 4 }));
+
+    expect(resultado.item.target_quantity).toBeNull();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/demand-items/f-1/quantity-commands");
+    expect((init.headers as Record<string, string>)["If-Match"]).toBe('"4"');
+    expect(JSON.parse(String(init.body))).toEqual({ operation: "CLEAR" });
   });
 
   it("retira con la cancelación lógica del backend, sin borrar historial", async () => {

@@ -13,6 +13,8 @@ import {
   resolverSolicitud,
   siguienteCantidad,
   unidadDeAjuste,
+  unidadParaAsociar,
+  visiblesEnBandeja,
 } from "@/lib/faltantes";
 import type { Faltante } from "@/lib/faltantes-api";
 import { buscarProducto, totalCarrito } from "@/lib/cotizacion";
@@ -106,6 +108,18 @@ describe("bandeja real de faltantes", () => {
     ).toBeNull();
   });
 
+  it("fija 1 con la unidad genérica solo cuando nadie declaró una unidad comercial", () => {
+    const sinUnidad = faltante({ quantity_unit: null, requested_unit: null, declared_unit: null });
+    // Reporte sin cantidad ni unidad + oferta sin unidad (FarmaLoop): 1 `unit`, no una caja supuesta.
+    expect(unidadParaAsociar(sinUnidad, null)).toBe("unit");
+    expect(unidadParaAsociar({ ...sinUnidad, quantity_unit: "unit" }, null)).toBe("unit");
+    // Una unidad comercial solo se usa si el reporte la declaró y la oferta coincide.
+    expect(unidadParaAsociar({ ...sinUnidad, requested_unit: "box" }, "box")).toBe("box");
+    expect(unidadParaAsociar({ ...sinUnidad, quantity_unit: "unit" }, "box")).toBeNull();
+    expect(unidadParaAsociar({ ...sinUnidad, requested_unit: "box" }, null)).toBeNull();
+    expect(unidadParaAsociar(sinUnidad, "box")).toBeNull();
+  });
+
   it("el sondeo no pisa una fila más nueva que la respuesta recibida", () => {
     const previo = faltante({ version: 5, target_quantity: "3", quantity_unit: "box" });
     const recibido = faltante({ version: 4, target_quantity: "1", quantity_unit: "box" });
@@ -118,6 +132,22 @@ describe("bandeja real de faltantes", () => {
     const fusion = fusionarFaltantes([previo], [recibido], new Set(["f-1"]));
     expect(fusion[0]?.target_quantity).toBeNull();
     expect(fusion[0]?.version).toBe(3);
+  });
+
+  it("oculta de la bandeja solo lo que el backend declara cubierto por un carrito activo", () => {
+    const pendiente = faltante({ id: "f-1", replenishment_state: "pending", quoted_quantity: "0" });
+    const enCarrito = faltante({
+      id: "f-2",
+      replenishment_state: "in_quote",
+      quoted_quantity: "1",
+    });
+    const sinDatos = faltante({ id: "f-3" });
+    expect(visiblesEnBandeja([pendiente, enCarrito, sinDatos]).map((f) => f.id)).toEqual([
+      "f-1",
+      "f-3",
+    ]);
+    // Si el backend antiguo no envía el estado, la cantidad cotizada decide; sin dato, se muestra.
+    expect(visiblesEnBandeja([faltante({ quoted_quantity: "2" })])).toHaveLength(0);
   });
 
   it("aplica la cantidad guardada sin perder autor ni sucursal", () => {

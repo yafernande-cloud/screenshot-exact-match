@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
@@ -20,6 +20,7 @@ import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
   agregarLinea,
   cambiarCantidadLinea,
+  cantidadParaCotizar,
   carritosConLineas,
   crearCotizacion,
   finalizarCotizacion,
@@ -31,7 +32,6 @@ import {
   resultadoDesconocido,
   totalesDeCotizacion,
   ultimaCotizacionEnPreparacion,
-  unidadVinculable,
   yaFinalizada,
   type DetalleCotizacion,
   type InformeCotizacion as Informe,
@@ -46,12 +46,15 @@ import {
   partesDelFaltante,
   siguienteCantidad,
   unidadDeAjuste,
+  unidadParaAsociar,
+  visiblesEnBandeja,
 } from "@/lib/faltantes";
 import {
   cancelarFaltante,
   cargarFotografia,
   esConflictoDeVersion,
   fijarCantidad,
+  limpiarCantidad,
   listarFaltantes,
   mensajeDeErrorFaltantes,
   type Faltante,
@@ -162,6 +165,7 @@ interface OfertaConArticulo {
 }
 
 function Index() {
+  const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [consulta, setConsulta] = useState("");
   const [resultados, setResultados] = useState<SearchResult[]>([]);
@@ -242,7 +246,7 @@ function Index() {
   const fuentesListasRef = useRef<FuenteDeLista[]>([]);
   // Sondeo de faltantes: una sola solicitud a la vez y una respuesta vieja nunca pisa a la nueva.
   const faltantesSeq = useRef(0);
-  const faltantesEnVuelo = useRef(false);
+  const faltantesEnVuelo = useRef(0);
   const mutandoRef = useRef<Set<string>>(new Set());
 
   const marcarMutando = useCallback((id: string, activo: boolean) => {
@@ -253,10 +257,12 @@ function Index() {
     setMutandoFaltantes(new Set(siguiente));
   }, []);
 
-  const cargarFaltantes = useCallback(async (silencioso: boolean) => {
-    // Evita solicitudes duplicadas (sondeo + reintento + cambio de pestaña).
-    if (faltantesEnVuelo.current) return;
-    faltantesEnVuelo.current = true;
+  const cargarFaltantes = useCallback(async (silencioso: boolean, forzar = false) => {
+    // Evita solicitudes duplicadas (sondeo + reintento + cambio de pestaña). Una actualización
+    // forzada tras agregar, retirar o finalizar sí se envía aunque haya un sondeo en curso: cada
+    // respuesta lleva su número y solo la última pinta.
+    if (faltantesEnVuelo.current > 0 && !forzar) return;
+    faltantesEnVuelo.current += 1;
     const seq = ++faltantesSeq.current;
     if (!silencioso) setEstadoFaltantes("cargando");
     try {
@@ -271,7 +277,7 @@ function Index() {
       // Un fallo de actualización no borra lo que ya se está mostrando.
       setEstadoFaltantes((previo) => (previo === "listo" ? "listo" : "error"));
     } finally {
-      faltantesEnVuelo.current = false;
+      faltantesEnVuelo.current = Math.max(0, faltantesEnVuelo.current - 1);
     }
   }, []);
 
@@ -381,14 +387,78 @@ function Index() {
     });
   };
 
-  /** Faltante desde el que se inició la búsqueda: solo se vincula si la unidad coincide. */
+  /** Faltante seleccionado explícitamente: el vínculo siempre lo decide el backend, no el nombre. */
   const faltanteParaVincular = faltanteBuscado
     ? (faltantes.find((f) => f.id === faltanteBuscado.id) ?? null)
     : null;
 
+  // La bandeja oculta los reportes ya cubiertos por un carrito activo (`in_quote`). El reporte
+  // sigue activo y vuelve a mostrarse en cuanto su cobertura deje de existir.
+  const faltantesVisibles = visiblesEnBandeja(faltantes);
+
+  /**
+   * Asegura la cantidad a cotizar antes de asociar: respeta la definida o fija 1 con el comando
+   * SET auditado (D-147). Devuelve la cantidad y, si el SET se ejecutó ahora, la fila actualizada
+   * para poder revertirlo si el alta no se confirma.
+   */
+  const prepararCantidadParaAsociar = async (
+    faltante: Faltante,
+    unidadOferta: string | null,
+  ): Promise<{ cantidad: string; fijada: Faltante | null } | null> => {
+    if (faltante.target_quantity !== null) {
+      return { cantidad: cantidadParaCotizar(faltante), fijada: null };
+    }
+    const unidad = unidadParaAsociar(faltante, unidadOferta);
+    if (unidad === null) {
+      toast(
+        "La oferta y el faltante no comparten unidad de venta y la cantidad no está definida. " +
+          "Defínela en el faltante antes de asociar: no se supone la equivalencia.",
+      );
+      return null;
+    }
+    try {
+      const resultado = await fijarCantidad(faltante, 1, unidad);
+      setFaltantes((previos) =>
+        previos.map((f) => (f.id === faltante.id ? aplicarCambioCantidad(f, resultado.item) : f)),
+      );
+      toast("A cotizar: 1 (por defecto). Queda registrado en el historial del reporte.");
+      return { cantidad: "1", fijada: resultado.item };
+    } catch (error) {
+      if (esConflictoDeVersion(error)) {
+        toast("La lista cambió mientras asociabas. Actualizamos los datos.");
+        await cargarFaltantes(true, true);
+      } else {
+        toast(mensajeDeErrorFaltantes(error));
+      }
+      return null;
+    }
+  };
+
+  /**
+   * Reversión explícita y acotada: si el alta no se confirmó, se deja la cantidad como estaba
+   * (sin definir) con CLEAR. Si la reversión tampoco es posible, el cambio queda visible y
+   * auditado; nunca se oculta ni se reintenta a ciegas.
+   */
+  const revertirCantidadFijada = async (faltante: Faltante) => {
+    try {
+      const resultado = await limpiarCantidad(faltante);
+      setFaltantes((previos) =>
+        previos.map((f) => (f.id === faltante.id ? aplicarCambioCantidad(f, resultado.item) : f)),
+      );
+      toast("La cantidad por cotizar volvió a quedar sin definir.");
+    } catch {
+      await cargarFaltantes(true, true);
+      toast("La cantidad por cotizar quedó fijada en 1; puedes ajustarla o reintentar el alta.");
+    }
+  };
+
   /**
    * Alta en la cotización con una sola notificación de error. Devuelve si la API confirmó el alta:
    * la tarjeta que llama solo muestra «Agregado» cuando la operación terminó bien.
+   *
+   * Cuando hay un faltante seleccionado, la asociación se envía siempre y de forma explícita: el
+   * backend decide si la oferta puede cubrirlo (excepción de FarmaLoop incluida) y el error se
+   * muestra; aquí no se descarta el vínculo en silencio.
    */
   const altaEnCotizacion = async (
     clave: string,
@@ -396,17 +466,33 @@ function Index() {
   ): Promise<boolean> => {
     if (agregando === clave) return false;
     setAgregando(clave);
+    let fijada: Faltante | null = null;
     try {
+      let altaFinal = alta;
+      if (faltanteParaVincular) {
+        const preparada = await prepararCantidadParaAsociar(faltanteParaVincular, alta.unit);
+        if (!preparada) return false;
+        fijada = preparada.fijada;
+        altaFinal = {
+          ...alta,
+          quantity: preparada.cantidad,
+          demandItemId: faltanteParaVincular.id,
+        };
+      }
       const cotizacion = await asegurarCotizacion();
-      const resultado = await agregarLinea(cotizacion.quote_id, alta);
+      const resultado = await agregarLinea(cotizacion.quote_id, altaFinal);
       await refrescarDetalle(cotizacion.quote_id);
+      void cargarFaltantes(true, true);
       toast(
         resultado.deduplicated
           ? "Esa oferta ya estaba en tu cotización."
-          : "Producto agregado a la cotización.",
+          : faltanteParaVincular
+            ? "Producto agregado y asociado al faltante."
+            : "Producto agregado a la cotización.",
       );
       return true;
     } catch (error) {
+      if (fijada) await revertirCantidadFijada(fijada);
       toast(mensajeDeErrorCotizacion(error));
       return false;
     } finally {
@@ -441,7 +527,6 @@ function Index() {
     // La unidad puede no estar informada: la cantidad se cuenta en ofertas seleccionadas y la
     // línea lo declara. Nunca se completa con «caja» ni «unidad» por suposición.
     const unidad = oferta.sale_unit;
-    const vinculable = unidadVinculable(faltanteParaVincular, unidad);
     const ofertaParaCotizar: OfertaParaCotizar = {
       source_id: fuente.sourceId,
       external_id: oferta.external_id,
@@ -462,9 +547,8 @@ function Index() {
     return altaEnCotizacion(`viva:${fuente.sourceId}:${oferta.external_id}`, {
       supplierId: fuente.supplierId,
       offer: ofertaParaCotizar,
-      quantity: "1",
+      quantity: cantidadParaCotizar(faltanteParaVincular),
       unit: unidad,
-      ...(vinculable && faltanteParaVincular ? { demandItemId: faltanteParaVincular.id } : {}),
     });
   };
 
@@ -472,25 +556,21 @@ function Index() {
     oferta: OfertaImportada,
     proveedorId: string,
   ): Promise<boolean> => {
-    const vinculable = unidadVinculable(faltanteParaVincular, oferta.sale_unit);
     return altaEnCotizacion(`lista:${oferta.source_id}:${oferta.external_id}`, {
       supplierId: proveedorId,
       offerSnapshotId: oferta.offer_id,
-      quantity: "1",
+      quantity: cantidadParaCotizar(faltanteParaVincular),
       unit: oferta.sale_unit,
-      ...(vinculable && faltanteParaVincular ? { demandItemId: faltanteParaVincular.id } : {}),
     });
   };
 
   const agregarDesdeCatalogo = async (oferta: Offer, cantidad: number) => {
     const unidad = oferta.sale_unit.code;
-    const vinculable = unidadVinculable(faltanteParaVincular, unidad);
     await altaEnCotizacion(`catalogo:${oferta.offer_id}`, {
       supplierId: oferta.supplier.supplier_id,
       offerSnapshotId: oferta.offer_id,
       quantity: String(Math.max(1, cantidad)),
       unit: unidad,
-      ...(vinculable && faltanteParaVincular ? { demandItemId: faltanteParaVincular.id } : {}),
     });
   };
 
@@ -519,6 +599,7 @@ function Index() {
     try {
       await quitarLinea(detalle.quote_id, linea.line_id);
       await refrescarDetalle(detalle.quote_id);
+      void cargarFaltantes(true, true);
       toast("Producto quitado de la cotización. Los faltantes no se liberan hasta finalizar.");
     } catch (error) {
       toast(mensajeDeErrorCotizacion(error));
@@ -538,6 +619,7 @@ function Index() {
         await quitarLinea(detalle.quote_id, linea.line_id);
       }
       await refrescarDetalle(detalle.quote_id);
+      void cargarFaltantes(true, true);
       toast("Carrito vaciado. Los demás proveedores no cambian.");
     } catch (error) {
       toast(mensajeDeErrorCotizacion(error));
@@ -568,6 +650,12 @@ function Index() {
         );
       }
       void cargarCotizacion(true);
+      void cargarFaltantes(true, true);
+      // La cotización ya está en el historial: se abre el informe recién generado.
+      void navigate({
+        to: "/historial",
+        search: { informe: resultado.quote.quote_id },
+      });
     } catch (error) {
       if (yaFinalizada(error)) {
         claveFinalizacion.current = null;
@@ -1017,14 +1105,14 @@ function Index() {
             <ClipboardList className="h-5 w-5 text-brand-green" />
             <h2 className="text-lg font-semibold">Faltantes por cotizar</h2>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {faltantes.length} {faltantes.length === 1 ? "reporte" : "reportes"}
+              {faltantesVisibles.length} {faltantesVisibles.length === 1 ? "reporte" : "reportes"}
             </span>
           </div>
           <p className="mb-4 text-sm text-muted-foreground">
             Reportes enviados por los auxiliares por Telegram. Cada reporte se ajusta por separado.
           </p>
 
-          {estadoFaltantes === "cargando" && faltantes.length === 0 && (
+          {estadoFaltantes === "cargando" && faltantesVisibles.length === 0 && (
             <p
               role="status"
               className="flex items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-sm text-muted-foreground"
@@ -1033,7 +1121,7 @@ function Index() {
             </p>
           )}
 
-          {estadoFaltantes === "error" && faltantes.length === 0 && (
+          {estadoFaltantes === "error" && faltantesVisibles.length === 0 && (
             <div
               role="alert"
               className="flex flex-col items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
@@ -1060,16 +1148,16 @@ function Index() {
             </p>
           )}
 
-          {estadoFaltantes === "listo" && faltantes.length === 0 && (
+          {estadoFaltantes === "listo" && faltantesVisibles.length === 0 && (
             <p className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
               No hay faltantes pendientes. Los reportes enviados por Telegram aparecerán aquí
               automáticamente.
             </p>
           )}
 
-          {faltantes.length > 0 && (
+          {faltantesVisibles.length > 0 && (
             <ul className="space-y-3">
-              {faltantes.map((f) => (
+              {faltantesVisibles.map((f) => (
                 <FilaFaltante
                   key={f.id}
                   faltante={f}

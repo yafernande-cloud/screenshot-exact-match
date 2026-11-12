@@ -31,7 +31,7 @@ import {
   subtotalDeCarrito,
   totalesDeCotizacion,
   ultimaCotizacionEnPreparacion,
-  unidadVinculable,
+  cantidadParaCotizar,
   yaFinalizada,
   type CarritoCotizacion,
   type DetalleCotizacion,
@@ -372,12 +372,15 @@ describe("reglas de lectura del carrito", () => {
     expect(subtotalDeCarrito(carrito({ lines: [] }))).toBeNull();
   });
 
-  it("un faltante solo se vincula cuando su unidad coincide con la que se cotiza", () => {
-    const faltante = { target_quantity: "10", quantity_unit: "box" };
-    expect(unidadVinculable(faltante, "box")).toBe("box");
-    expect(unidadVinculable(faltante, "unit")).toBeNull();
-    expect(unidadVinculable({ target_quantity: null, quantity_unit: "box" }, "box")).toBeNull();
-    expect(unidadVinculable(null, "box")).toBeNull();
+  it("cotiza la cantidad definida del faltante o 1 por defecto, sin inventar unidades", () => {
+    expect(cantidadParaCotizar({ target_quantity: "10" })).toBe("10");
+    // Una cantidad fraccionaria no se redondea: se cotiza 1 y la cobertura queda parcial.
+    expect(cantidadParaCotizar({ target_quantity: "2.5" })).toBe("1");
+    // «A cotizar: sin definir»: el alta usa 1 por defecto y la pantalla lo fija con SET.
+    expect(cantidadParaCotizar({ target_quantity: null })).toBe("1");
+    expect(cantidadParaCotizar({ target_quantity: "0" })).toBe("1");
+    expect(cantidadParaCotizar({ target_quantity: "  " })).toBe("1");
+    expect(cantidadParaCotizar(null)).toBe("1");
   });
 });
 

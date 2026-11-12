@@ -56,6 +56,18 @@ export interface Faltante {
   reported_at: string | null;
   cancelled_at: string | null;
   last_raw_text: string | null;
+  /**
+   * Cobertura derivada por el backend (§12). Puede faltar en un backend anterior: la bandeja
+   * entonces no oculta nada y muestra lo que la API entregue.
+   */
+  coverage_quantity?: string | null;
+  quoted_quantity?: string | null;
+  purchased_quantity?: string | null;
+  pending_quantity?: string | null;
+  pending_purchase_quantity?: string | null;
+  is_pending?: boolean;
+  replenishment_state?:
+    "cancelled" | "fulfilled" | "released" | "purchased" | "in_quote" | "pending" | null;
 }
 
 export interface PaginaFaltantes {
@@ -167,6 +179,22 @@ export function fijarCantidad(
         unit: unidad,
         ...(motivo ? { reason: motivo } : {}),
       }),
+    },
+    CANTIDAD_FALLBACK,
+  );
+}
+
+/**
+ * Deja la cantidad a cotizar sin definir (CLEAR). Se usa solo para revertir el 1 por defecto que
+ * se fijó en el mismo alta cuando el agregado al carrito no llegó a confirmarse.
+ */
+export function limpiarCantidad(faltante: Faltante): Promise<ResultadoCantidad> {
+  return apiRequest<ResultadoCantidad>(
+    `/api/v1/demand-items/${encodeURIComponent(faltante.id)}/quantity-commands`,
+    {
+      method: "POST",
+      headers: cabecerasMutacion(faltante.version, nuevaClaveIdempotencia()),
+      body: JSON.stringify({ operation: "CLEAR" }),
     },
     CANTIDAD_FALLBACK,
   );
