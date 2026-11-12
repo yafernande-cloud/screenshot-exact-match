@@ -6,12 +6,14 @@
  * reglas propias: usa los subtotales que el servidor puede verificar y declara pendiente lo que no.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ShoppingCart, ChevronDown, Minus, Plus, Trash2, Clock, Loader2 } from "lucide-react";
 
 import { formatearDinero } from "@/lib/catalogo";
 import {
   carritosConLineas,
+  faltantesDelCarrito,
+  mensajeDeErrorCotizacion,
   subtotalDeCarrito,
   totalesDeCotizacion,
   type CarritoCotizacion,
@@ -19,11 +21,23 @@ import {
   type LineaCotizacion,
 } from "@/lib/cotizacion-api";
 
+/**
+ * Veredicto del intento de finalización, tal como lo informa el cotizador al modal.
+ *
+ * - `finalizada`: el informe quedó guardado y la pantalla ya navegó al historial.
+ * - `estado_cambiado`: la cotización se cerró o cambió en el servidor; el carrito ya se actualizó
+ *   y reintentar con estos datos sería incorrecto.
+ * - `error`: falla recuperable. El carrito sigue intacto y se puede reintentar.
+ */
+export type ResultadoFinalizar =
+  { estado: "finalizada" } | { estado: "estado_cambiado" } | { estado: "error"; mensaje: string };
+
 export interface AccionesCotizacion {
   onCantidad: (linea: LineaCotizacion, cantidad: number) => void;
   onQuitar: (linea: LineaCotizacion) => void;
   onVaciar: (carrito: CarritoCotizacion) => void;
-  onFinalizar: () => void;
+  /** Finaliza de verdad: solo se invoca tras confirmar en el modal, nunca al abrirlo. */
+  onFinalizar: () => Promise<ResultadoFinalizar>;
   /** Líneas con una operación en curso: sus controles se bloquean mientras tanto. */
   ocupadas: Set<string>;
   finalizando: boolean;
@@ -58,11 +72,61 @@ export function SeccionCotizaciones({
   const r = totalesDeCotizacion(detalle);
   const [cerrados, setCerrados] = useState<string[]>([]);
   const [vaciar, setVaciar] = useState<CarritoCotizacion | null>(null);
+  // Finalizar genera el informe definitivo: nunca se ejecuta sin una confirmación explícita.
+  const [porFinalizar, setPorFinalizar] = useState(false);
+  const [enviandoFinalizacion, setEnviandoFinalizacion] = useState(false);
+  // Un error recuperable se muestra dentro del modal para reintentar sin perder el carrito.
+  const [errorFinalizacion, setErrorFinalizacion] = useState<string | null>(null);
+  // El ref corta un doble clic antes de que React vuelva a renderizar y deshabilite los botones.
+  const finalizacionEnCurso = useRef(false);
   // Quitar una línea es irreversible en el carrito: se confirma con el nombre real del producto.
   const [porQuitar, setPorQuitar] = useState<{
     linea: LineaCotizacion;
     proveedor: string;
   } | null>(null);
+
+  const { asociados: faltantesAsociados, cubiertos: faltantesCubiertos } =
+    faltantesDelCarrito(detalle);
+
+  const procesandoFinalizacion = enviandoFinalizacion || acciones.finalizando;
+
+  /** Abrir es siempre un intento nuevo: no arrastra el error del intento anterior. */
+  function abrirConfirmacion() {
+    setErrorFinalizacion(null);
+    setPorFinalizar(true);
+  }
+
+  function cerrarConfirmacion() {
+    if (procesandoFinalizacion) return;
+    setErrorFinalizacion(null);
+    setPorFinalizar(false);
+  }
+
+  /**
+   * Solo se llama desde el modal y una sola vez por clic. Un error recuperable deja el modal
+   * abierto con su mensaje para reintentar; un cambio de estado ya actualizó el carrito en el
+   * cotizador y no admite otro intento con los datos anteriores.
+   */
+  async function confirmarFinalizacion() {
+    if (finalizacionEnCurso.current || acciones.finalizando) return;
+    finalizacionEnCurso.current = true;
+    setEnviandoFinalizacion(true);
+    setErrorFinalizacion(null);
+    try {
+      const resultado = await acciones.onFinalizar();
+      if (resultado.estado === "error") {
+        setErrorFinalizacion(resultado.mensaje);
+        return;
+      }
+      setPorFinalizar(false);
+    } catch (error) {
+      // Una acción que falla sin veredicto no dio nada por guardado: se trata como recuperable.
+      setErrorFinalizacion(mensajeDeErrorCotizacion(error));
+    } finally {
+      finalizacionEnCurso.current = false;
+      setEnviandoFinalizacion(false);
+    }
+  }
 
   if (grupos.length === 0) {
     return (
@@ -182,11 +246,11 @@ export function SeccionCotizaciones({
         </div>
         <div className="flex flex-col items-start gap-1 sm:items-end">
           <button
-            onClick={acciones.onFinalizar}
-            disabled={acciones.finalizando || r.lineas === 0}
+            onClick={abrirConfirmacion}
+            disabled={procesandoFinalizacion || r.lineas === 0}
             className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
           >
-            {acciones.finalizando && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+            {procesandoFinalizacion && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
             Generar informe y finalizar
           </button>
           <p className="max-w-sm text-xs text-muted-foreground">
@@ -263,6 +327,97 @@ export function SeccionCotizaciones({
                 className="rounded-full bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground"
               >
                 Vaciar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {porFinalizar && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="finalizar-titulo"
+          aria-describedby="finalizar-resumen"
+          // Escape cierra el modal sin finalizar, salvo mientras la finalización está en curso.
+          onKeyDown={(evento) => {
+            if (evento.key === "Escape" && !procesandoFinalizacion) {
+              evento.stopPropagation();
+              cerrarConfirmacion();
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-soft">
+            <h3 id="finalizar-titulo" className="font-semibold">
+              ¿Finalizar esta cotización?
+            </h3>
+            <div id="finalizar-resumen" className="mt-3 rounded-xl bg-muted px-4 py-3 text-sm">
+              <dl className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    {r.lineas === 1 ? "Producto" : "Productos"}
+                  </dt>
+                  <dd className="font-semibold">{r.lineas}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    {r.proveedores === 1 ? "Proveedor" : "Proveedores"}
+                  </dt>
+                  <dd className="font-semibold">{r.proveedores}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Total</dt>
+                  <dd className="font-semibold text-brand-green">
+                    {r.total !== null
+                      ? formatearDinero({ amount: r.total.toFixed(2), currency: "CLP" })
+                      : "Pendiente"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Estás por generar el informe definitivo con los productos que tienes actualmente en el
+              carrito. ¿Quieres agregar más productos o generar el informe ahora?
+            </p>
+            {faltantesAsociados > 0 && (
+              <p className="mt-3 rounded-xl border border-brand-green/40 bg-brand-green/5 px-4 py-3 text-sm">
+                {faltantesAsociados === 1
+                  ? "Este carrito está asociado a 1 faltante de Telegram."
+                  : `Este carrito está asociado a ${faltantesAsociados} faltantes de Telegram.`}{" "}
+                {faltantesCubiertos.length > 0 ? (
+                  <>
+                    Al finalizar se liberarán los que queden completamente cubiertos:{" "}
+                    <span className="font-medium">{faltantesCubiertos.join(", ")}</span>.
+                  </>
+                ) : (
+                  "Al finalizar se liberarán los que queden completamente cubiertos; por ahora ninguno lo está."
+                )}
+              </p>
+            )}
+            {errorFinalizacion && (
+              <p
+                role="alert"
+                className="mt-3 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+              >
+                {errorFinalizacion}
+              </p>
+            )}
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                autoFocus
+                onClick={cerrarConfirmacion}
+                disabled={procesandoFinalizacion}
+                className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-60"
+              >
+                Seguir agregando
+              </button>
+              <button
+                onClick={() => void confirmarFinalizacion()}
+                disabled={procesandoFinalizacion}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
+              >
+                {procesandoFinalizacion && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+                Generar informe
               </button>
             </div>
           </div>

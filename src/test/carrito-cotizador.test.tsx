@@ -132,6 +132,55 @@ const detalleGuardado = {
   estimated_total: {},
 };
 
+const informeFinalizado = {
+  schema_version: 1,
+  quote_id: "q-1",
+  title: null,
+  number: 1,
+  label: "COT-000001",
+  finalized_at: "2026-11-11T12:00:00Z",
+  finalized_by: "u-1",
+  currency: "CLP",
+  suppliers: [
+    {
+      supplier_id: "s-1",
+      supplier_name: "Proveedor Uno",
+      line_count: 1,
+      subtotal: { amount: "5100.00", currency: "CLP" },
+    },
+  ],
+  items: [],
+  total: { amount: "5100.00", currency: "CLP" },
+  warnings: [],
+  release: { released: [], pending: [] },
+  note: null,
+};
+
+/** Respuesta real del backend al finalizar, tal como la consume el cotizador. */
+function responderFinalizacion() {
+  finalizarCotizacionMock.mockResolvedValue({
+    quote: {
+      quote_id: "q-1",
+      status: "closed",
+      version: 2,
+      report_number: 1,
+      report_label: "COT-000001",
+    },
+    report: informeFinalizado,
+    released: [],
+    pending: [],
+    deduplicated: false,
+  });
+  obtenerInformeMock.mockResolvedValue({
+    quote_id: "q-1",
+    report_number: 1,
+    report_label: "COT-000001",
+    finalized_at: "2026-11-11T12:00:00Z",
+    finalized_by: "u-1",
+    report: informeFinalizado,
+  });
+}
+
 async function renderizarCotizador() {
   const router = createRouter({
     routeTree,
@@ -329,54 +378,12 @@ describe("carrito persistente en el cotizador", () => {
     expect(crearCotizacionActivaMock).not.toHaveBeenCalled();
   });
 
-  it("finaliza con versión y clave, y redirige al informe recién generado", async () => {
-    const informe = {
-      schema_version: 1,
-      quote_id: "q-1",
-      title: null,
-      number: 1,
-      label: "COT-000001",
-      finalized_at: "2026-11-11T12:00:00Z",
-      finalized_by: "u-1",
-      currency: "CLP",
-      suppliers: [
-        {
-          supplier_id: "s-1",
-          supplier_name: "Proveedor Uno",
-          line_count: 1,
-          subtotal: { amount: "5100.00", currency: "CLP" },
-        },
-      ],
-      items: [],
-      total: { amount: "5100.00", currency: "CLP" },
-      warnings: [],
-      release: { released: [], pending: [] },
-      note: null,
-    };
-    finalizarCotizacionMock.mockResolvedValue({
-      quote: {
-        quote_id: "q-1",
-        status: "closed",
-        version: 2,
-        report_number: 1,
-        report_label: "COT-000001",
-      },
-      report: informe,
-      released: [],
-      pending: [],
-      deduplicated: false,
-    });
-    obtenerInformeMock.mockResolvedValue({
-      quote_id: "q-1",
-      report_number: 1,
-      report_label: "COT-000001",
-      finalized_at: "2026-11-11T12:00:00Z",
-      finalized_by: "u-1",
-      report: informe,
-    });
+  it("«Generar informe» finaliza y redirige al informe recién generado", async () => {
+    responderFinalizacion();
 
     const router = await renderizarCotizador();
     fireEvent.click(await screen.findByRole("button", { name: /Generar informe y finalizar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Generar informe" }));
 
     await waitFor(() =>
       expect(finalizarCotizacionMock).toHaveBeenCalledWith("q-1", {

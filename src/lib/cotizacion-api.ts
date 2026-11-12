@@ -455,6 +455,41 @@ export function carritosConLineas(detalle: DetalleCotizacion | null): CarritoCot
   return detalle.carts.filter((cart) => cart.lines.some((line) => line.status === "active"));
 }
 
+export interface FaltantesDelCarrito {
+  /** Faltantes de Telegram vinculados a las líneas activas del carrito. */
+  asociados: number;
+  /** Nombres de los que el servidor ya informa como completamente cubiertos. */
+  cubiertos: string[];
+}
+
+/**
+ * Faltantes de Telegram asociados a este carrito y cuántos quedan completamente cubiertos.
+ *
+ * Solo se leen las asignaciones de las líneas activas y la cobertura que ya calculó el servidor:
+ * el cliente anticipa lo que el backend informará al finalizar, no decide cobertura ni liberación.
+ */
+export function faltantesDelCarrito(detalle: DetalleCotizacion | null): FaltantesDelCarrito {
+  const ids = new Set<string>();
+  for (const linea of lineasActivas(detalle)) {
+    if (linea.demand_item_id) ids.add(linea.demand_item_id);
+    for (const asignacion of linea.demand_allocations ?? []) ids.add(asignacion.demand_item_id);
+  }
+  const cubiertos: string[] = [];
+  for (const fila of detalle?.coverage ?? []) {
+    const id = fila["demand_item_id"];
+    if (typeof id !== "string" || !ids.has(id)) continue;
+    // Solo lo que el backend marca con cantidad pendiente conocida y cero se liberará. Una
+    // cantidad pedida desconocida (`null`) no se considera cubierta: el backend no la libera.
+    const pendiente = fila["pending_quantity"];
+    const sinPendiente =
+      (typeof pendiente === "number" || typeof pendiente === "string") && Number(pendiente) === 0;
+    if (!sinPendiente) continue;
+    const nombre = fila["display_name"];
+    cubiertos.push(typeof nombre === "string" && nombre.trim() ? nombre : "Faltante sin nombre");
+  }
+  return { asociados: ids.size, cubiertos };
+}
+
 export interface TotalesCotizacion {
   /** Suma de subtotales conocidos. */
   confirmado: number;

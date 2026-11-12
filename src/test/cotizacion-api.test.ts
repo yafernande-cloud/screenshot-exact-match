@@ -20,6 +20,7 @@ import { ApiError } from "@/lib/api";
 import {
   agregarLinea,
   carritosConLineas,
+  faltantesDelCarrito,
   finalizarCotizacion,
   lineasActivas,
   listarCotizaciones,
@@ -392,6 +393,53 @@ describe("reglas de lectura del carrito", () => {
       subtotalDeCarrito(carrito({ lines: [linea(), linea({ line_id: "l-2", subtotal: null })] })),
     ).toBeNull();
     expect(subtotalDeCarrito(carrito({ lines: [] }))).toBeNull();
+  });
+
+  it("cuenta los faltantes asociados y solo anuncia liberables los ya cubiertos", () => {
+    const conFaltantes = detalle(
+      [
+        carrito({
+          lines: [
+            linea({
+              demand_item_id: "d-1",
+              demand_allocations: [
+                { demand_item_id: "d-1", quantity: "1" },
+                { demand_item_id: "d-3", quantity: "1" },
+                { demand_item_id: "d-4", quantity: "1" },
+              ],
+            }),
+          ],
+        }),
+      ],
+      {
+        coverage: [
+          // Cantidad pendiente 0 con objetivo conocido: el backend sí lo liberará al finalizar.
+          { demand_item_id: "d-1", display_name: "Losartán 50 mg", pending_quantity: "0" },
+          // Sigue pendiente de cotizar: se cuenta como asociado, pero no se anuncia.
+          { demand_item_id: "d-3", display_name: "Metformina 850 mg", pending_quantity: "2" },
+          // Objetivo desconocido: nunca se trata como cubierto.
+          {
+            demand_item_id: "d-4",
+            display_name: "Sin cantidad",
+            target_quantity: null,
+            pending_quantity: null,
+          },
+        ],
+      },
+    );
+
+    expect(faltantesDelCarrito(conFaltantes)).toEqual({
+      asociados: 3,
+      cubiertos: ["Losartán 50 mg"],
+    });
+    // Una cotización finalizada no es carrito activo: no anuncia nada.
+    const finalizada = detalle([carrito()], {
+      status: "closed",
+      finalized_at: "2026-11-11T14:38:00Z",
+      coverage: [{ demand_item_id: "d-1", pending_quantity: "0" }],
+    });
+    expect(faltantesDelCarrito(finalizada)).toEqual({ asociados: 0, cubiertos: [] });
+    expect(faltantesDelCarrito(null)).toEqual({ asociados: 0, cubiertos: [] });
   });
 
   it("cotiza la cantidad definida del faltante o 1 por defecto, sin inventar unidades", () => {

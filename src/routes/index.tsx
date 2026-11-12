@@ -93,7 +93,11 @@ import {
 import { TarjetaAhumada } from "@/components/TarjetaAhumada";
 import { TarjetaCruzVerde } from "@/components/TarjetaCruzVerde";
 import { TarjetaSalcobrand } from "@/components/TarjetaSalcobrand";
-import { SeccionCotizaciones, type AccionesCotizacion } from "@/components/MiCotizacion";
+import {
+  SeccionCotizaciones,
+  type AccionesCotizacion,
+  type ResultadoFinalizar,
+} from "@/components/MiCotizacion";
 import { InformeCotizacion } from "@/components/InformeCotizacion";
 import {
   buscarProveedorEnVivo,
@@ -663,8 +667,12 @@ function Index() {
     }
   };
 
-  const finalizarCotizacionActual = async () => {
-    if (!detalle || finalizando) return;
+  const finalizarCotizacionActual = async (): Promise<ResultadoFinalizar> => {
+    if (!detalle) return { estado: "estado_cambiado" };
+    if (finalizando) {
+      // Una finalización ya está en vuelo: no se dispara una segunda solicitud.
+      return { estado: "error", mensaje: "La finalización ya está en curso." };
+    }
     const clave = claveFinalizacion.current ?? nuevaClaveIdempotencia();
     claveFinalizacion.current = clave;
     setFinalizando(true);
@@ -694,16 +702,26 @@ function Index() {
         to: "/historial",
         search: { informe: resultado.quote.quote_id },
       });
+      return { estado: "finalizada" };
     } catch (error) {
       if (yaFinalizada(error)) {
         claveFinalizacion.current = null;
         toast("La cotización ya tiene su informe guardado.");
         await cargarCotizacion(true);
-      } else {
-        // Un fallo de red conserva la clave: el reintento no genera un segundo informe.
-        if (!resultadoDesconocido(error)) claveFinalizacion.current = null;
-        toast(mensajeDeErrorCotizacion(error));
+        return { estado: "estado_cambiado" };
       }
+      if (cotizacionCerrada(error) || esConflictoDeVersion(error)) {
+        // Se cerró o cambió en otra pestaña: el carrito se relee y no se reintenta con datos
+        // viejos, porque esa finalización ya no corresponde a lo que hay en el servidor.
+        claveFinalizacion.current = null;
+        toast("La cotización cambió de estado. Actualizamos el carrito con lo más reciente.");
+        await cargarCotizacion(true);
+        return { estado: "estado_cambiado" };
+      }
+      // Un fallo de red conserva la clave: el reintento no genera un segundo informe.
+      if (!resultadoDesconocido(error)) claveFinalizacion.current = null;
+      // El error se muestra dentro del modal, que queda abierto para reintentar.
+      return { estado: "error", mensaje: mensajeDeErrorCotizacion(error) };
     } finally {
       setFinalizando(false);
     }
@@ -1041,7 +1059,7 @@ function Index() {
     onCantidad: (linea, cantidad) => void cambiarCantidadEnCotizacion(linea, cantidad),
     onQuitar: (linea) => void quitarDeCotizacion(linea),
     onVaciar: (carrito) => void vaciarCarrito(carrito),
-    onFinalizar: () => void finalizarCotizacionActual(),
+    onFinalizar: finalizarCotizacionActual,
     ocupadas: lineasOcupadas,
     finalizando,
   };
