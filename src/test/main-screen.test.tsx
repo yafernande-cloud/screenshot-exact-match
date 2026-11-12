@@ -17,6 +17,24 @@ const listarFaltantesMock = vi.hoisted(() => vi.fn());
 const cargarFotografiaMock = vi.hoisted(() => vi.fn());
 const crearUrlMock = vi.hoisted(() => vi.fn(() => "blob:foto"));
 const revocarUrlMock = vi.hoisted(() => vi.fn());
+// El carrito activo se recupera del servidor al montar; aquí se decide qué responde.
+const ultimaCotizacionMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/cotizacion-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/cotizacion-api")>();
+  return {
+    ...actual,
+    ultimaCotizacionEnPreparacion: ultimaCotizacionMock,
+    obtenerCotizacion: vi.fn(),
+    crearCotizacion: vi.fn(),
+    agregarLinea: vi.fn(),
+    cambiarCantidadLinea: vi.fn(),
+    quitarLinea: vi.fn(),
+    finalizarCotizacion: vi.fn(),
+    listarCotizaciones: vi.fn(),
+    obtenerInforme: vi.fn(),
+  };
+});
 
 vi.mock("@/lib/faltantes-api", () => ({
   listarFaltantes: listarFaltantesMock,
@@ -104,6 +122,8 @@ describe("pantalla principal con sesión autorizada", () => {
   beforeEach(() => {
     listarFaltantesMock.mockReset();
     listarFaltantesMock.mockResolvedValue([]);
+    ultimaCotizacionMock.mockReset();
+    ultimaCotizacionMock.mockResolvedValue(null);
     cargarFotografiaMock.mockReset();
     cargarFotografiaMock.mockResolvedValue(new Blob([new Uint8Array([1])], { type: "image/jpeg" }));
     crearUrlMock.mockClear();
@@ -127,7 +147,12 @@ describe("pantalla principal con sesión autorizada", () => {
 
     expect(await screen.findByRole("heading", { name: "Buscar producto" })).toBeInTheDocument();
     expect(document.querySelector('[data-sidebar="sidebar"]')).not.toBeNull();
-    expect(screen.getByRole("link", { name: /Mis cotizaciones/i })).toBeInTheDocument();
+    // El carrito activo vive en «Cotizador»; «Mis cotizaciones» ya no es una pantalla aparte.
+    expect(screen.queryByRole("link", { name: /Mis cotizaciones/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /^Cotizador$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Historial de cotizaciones/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Proveedores$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Configuración de Telegram/i })).toBeInTheDocument();
     expect(consoleOutput(errorSpy)).not.toContain(SIDEBAR_ERROR);
   });
 

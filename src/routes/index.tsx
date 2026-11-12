@@ -18,15 +18,26 @@ import { OfertasPorProveedor } from "@/components/OfertasPorProveedor";
 import { EnsenarALaIa } from "@/components/EnsenarALaIa";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
-  buscarOferta,
-  cambiarCantidad,
-  evaluarLinea,
-  mover,
-  quitar,
-  totalCarrito,
-  vaciar,
-  type Linea,
-} from "@/lib/cotizacion";
+  agregarLinea,
+  cambiarCantidadLinea,
+  carritosConLineas,
+  crearCotizacion,
+  finalizarCotizacion,
+  lineasActivas,
+  mensajeDeErrorCotizacion,
+  nuevaClaveIdempotencia,
+  obtenerCotizacion,
+  quitarLinea,
+  resultadoDesconocido,
+  totalesDeCotizacion,
+  ultimaCotizacionEnPreparacion,
+  unidadVinculable,
+  yaFinalizada,
+  type DetalleCotizacion,
+  type InformeCotizacion as Informe,
+  type LineaCotizacion,
+  type OfertaParaCotizar,
+} from "@/lib/cotizacion-api";
 import {
   aplicarCambioCantidad,
   consultaDeBusqueda,
@@ -78,12 +89,15 @@ import {
 import { TarjetaAhumada } from "@/components/TarjetaAhumada";
 import { TarjetaCruzVerde } from "@/components/TarjetaCruzVerde";
 import { TarjetaSalcobrand } from "@/components/TarjetaSalcobrand";
-import { SeccionCotizaciones, type CotizacionAcciones } from "@/components/MiCotizacion";
+import { SeccionCotizaciones, type AccionesCotizacion } from "@/components/MiCotizacion";
+import { InformeCotizacion } from "@/components/InformeCotizacion";
 import {
   buscarProveedorEnVivo,
   descubrirProveedoresEnVivo,
   mensajeDeErrorProveedor,
   type EstadoFuenteEnVivo,
+  type FuenteEnVivo,
+  type ItemEnVivo,
 } from "@/lib/proveedores-en-vivo";
 import {
   buscarPreciosDeListas,
@@ -93,6 +107,7 @@ import {
   type GrupoPreciosLista,
 } from "@/lib/ofertas-listas";
 import { reemplazarOfertasDeArticulo } from "@/lib/ofertas-preferencias";
+import type { OfertaImportada } from "@/lib/proveedores-api";
 import { MenuPrincipal } from "@/components/MenuPrincipal";
 import {
   AlertDialog,
@@ -138,7 +153,6 @@ const fechaDeReporte = (iso: string | null) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "fecha no informada" : d.toLocaleDateString("es-CL");
 };
-const CLAVE_CARRITO = "carrito-demo";
 const INTERVALO_FALTANTES_MS = 10_000;
 
 /** Una oferta siempre va acompañada del artículo al que pertenece; nunca se mezclan artículos. */
@@ -203,8 +217,20 @@ function Index() {
   const [faltanteBuscado, setFaltanteBuscado] = useState<{ id: string; nombre: string } | null>(
     null,
   );
-  const [lineas, setLineas] = useState<Linea[]>([]);
-  const [cargado, setCargado] = useState(false);
+  // Carrito persistente: la única fuente es el backend. `detalle` es la cotización en borrador
+  // más reciente y se recupera al recargar o al volver a iniciar sesión.
+  const [detalle, setDetalle] = useState<DetalleCotizacion | null>(null);
+  const [estadoCotizacion, setEstadoCotizacion] = useState<"cargando" | "listo" | "error">(
+    "cargando",
+  );
+  const [errorCotizacion, setErrorCotizacion] = useState<string | null>(null);
+  const [lineasOcupadas, setLineasOcupadas] = useState<Set<string>>(new Set());
+  const [agregando, setAgregando] = useState<string | null>(null);
+  const [finalizando, setFinalizando] = useState(false);
+  const [informe, setInforme] = useState<Informe | null>(null);
+  // Clave de idempotencia del cierre: se conserva mientras el resultado es desconocido.
+  const claveFinalizacion = useRef<string | null>(null);
+  const cotizacionEnVuelo = useRef(false);
 
   // Cada búsqueda lleva un número: una respuesta vieja nunca pisa a la nueva.
   const busquedaSeq = useRef(0);
@@ -307,18 +333,242 @@ function Index() {
     }
   };
 
-  useEffect(() => {
+  const cargarCotizacion = useCallback(async (silencioso: boolean) => {
+    if (cotizacionEnVuelo.current) return;
+    cotizacionEnVuelo.current = true;
+    if (!silencioso) setEstadoCotizacion("cargando");
     try {
-      const guardado = sessionStorage.getItem(CLAVE_CARRITO);
-      if (guardado) setLineas(JSON.parse(guardado));
-    } catch {
-      /* datos de demo: si falla, el carrito parte vacío */
+      const ultima = await ultimaCotizacionEnPreparacion();
+      setDetalle(ultima ? await obtenerCotizacion(ultima.quote_id) : null);
+      setEstadoCotizacion("listo");
+      setErrorCotizacion(null);
+    } catch (error) {
+      setErrorCotizacion(mensajeDeErrorCotizacion(error));
+      // Un fallo de actualización no borra lo que ya se está mostrando.
+      setEstadoCotizacion((previo) => (previo === "listo" ? "listo" : "error"));
+    } finally {
+      cotizacionEnVuelo.current = false;
     }
-    setCargado(true);
   }, []);
+
   useEffect(() => {
-    if (cargado) sessionStorage.setItem(CLAVE_CARRITO, JSON.stringify(lineas));
-  }, [lineas, cargado]);
+    void cargarCotizacion(false);
+  }, [cargarCotizacion]);
+
+  /** El borrador se crea recién al agregar la primera oferta; antes no existe. */
+  const asegurarCotizacion = async (): Promise<DetalleCotizacion> => {
+    if (detalle) return detalle;
+    const creada = await crearCotizacion();
+    setDetalle(creada);
+    return creada;
+  };
+
+  const refrescarDetalle = async (quoteId: string) => {
+    setDetalle(await obtenerCotizacion(quoteId));
+    setEstadoCotizacion("listo");
+    setErrorCotizacion(null);
+  };
+
+  const marcarLineaOcupada = (lineId: string, activo: boolean) => {
+    setLineasOcupadas((previas) => {
+      const siguiente = new Set(previas);
+      if (activo) siguiente.add(lineId);
+      else siguiente.delete(lineId);
+      return siguiente;
+    });
+  };
+
+  /** Faltante desde el que se inició la búsqueda: solo se vincula si la unidad coincide. */
+  const faltanteParaVincular = faltanteBuscado
+    ? (faltantes.find((f) => f.id === faltanteBuscado.id) ?? null)
+    : null;
+
+  const altaEnCotizacion = async (clave: string, alta: Parameters<typeof agregarLinea>[1]) => {
+    if (agregando === clave) return;
+    setAgregando(clave);
+    try {
+      const cotizacion = await asegurarCotizacion();
+      const resultado = await agregarLinea(cotizacion.quote_id, alta);
+      await refrescarDetalle(cotizacion.quote_id);
+      toast(
+        resultado.deduplicated
+          ? "Esa oferta ya estaba en tu cotización."
+          : "Producto agregado a la cotización.",
+      );
+    } catch (error) {
+      toast(mensajeDeErrorCotizacion(error));
+    } finally {
+      setAgregando(null);
+    }
+  };
+
+  const agregarDesdeOfertaViva = async (item: ItemEnVivo) => {
+    // El contenedor entrega el ítem tal como salió de la fuente: se busca su origen por identidad.
+    let fuente: FuenteEnVivo | null = null;
+    for (const estado of estadosVivo) {
+      const resultado = estado.resultado;
+      if (!resultado) continue;
+      if (item.tipo === "oferta" && resultado.offers.includes(item.oferta)) {
+        fuente = estado.fuente;
+        break;
+      }
+      if (item.tipo === "publicado" && resultado.published.includes(item.producto)) {
+        fuente = estado.fuente;
+        break;
+      }
+    }
+    if (!fuente?.supplierId) {
+      toast("Esta fuente no tiene un proveedor configurado para cotizar.");
+      return;
+    }
+    if (item.tipo === "publicado") {
+      toast("Este producto no tiene un precio vigente; no se puede cotizar.");
+      return;
+    }
+    const { oferta } = item;
+    const unidad = oferta.sale_unit;
+    if (!unidad) {
+      toast("La unidad de venta del proveedor no está confirmada.");
+      return;
+    }
+    const vinculable = unidadVinculable(faltanteParaVincular, unidad);
+    const ofertaParaCotizar: OfertaParaCotizar = {
+      source_id: fuente.sourceId,
+      external_id: oferta.external_id,
+      name: oferta.name,
+      supplier_id: fuente.supplierId,
+      laboratory: oferta.laboratory,
+      presentation: oferta.presentation,
+      price: { amount: oferta.price.amount, currency: oferta.price.currency },
+      price_basis: oferta.price_basis,
+      sale_unit: unidad,
+      stock_status: oferta.stock_status,
+      stock_quantity: oferta.stock_quantity,
+      stock_unit: oferta.stock_unit,
+      ean: oferta.ean,
+      product_url: oferta.product_url,
+      image_url: oferta.image_url,
+    };
+    await altaEnCotizacion(`viva:${fuente.sourceId}:${oferta.external_id}`, {
+      supplierId: fuente.supplierId,
+      offer: ofertaParaCotizar,
+      quantity: "1",
+      unit: unidad,
+      ...(vinculable && faltanteParaVincular ? { demandItemId: faltanteParaVincular.id } : {}),
+    });
+  };
+
+  const agregarDesdeLista = async (oferta: OfertaImportada, proveedorId: string) => {
+    const vinculable = unidadVinculable(faltanteParaVincular, oferta.sale_unit);
+    await altaEnCotizacion(`lista:${oferta.source_id}:${oferta.external_id}`, {
+      supplierId: proveedorId,
+      offerSnapshotId: oferta.offer_id,
+      quantity: "1",
+      unit: oferta.sale_unit,
+      ...(vinculable && faltanteParaVincular ? { demandItemId: faltanteParaVincular.id } : {}),
+    });
+  };
+
+  const agregarDesdeCatalogo = async (oferta: Offer, cantidad: number) => {
+    const unidad = oferta.sale_unit.code;
+    const vinculable = unidadVinculable(faltanteParaVincular, unidad);
+    await altaEnCotizacion(`catalogo:${oferta.offer_id}`, {
+      supplierId: oferta.supplier.supplier_id,
+      offerSnapshotId: oferta.offer_id,
+      quantity: String(Math.max(1, cantidad)),
+      unit: unidad,
+      ...(vinculable && faltanteParaVincular ? { demandItemId: faltanteParaVincular.id } : {}),
+    });
+  };
+
+  const cambiarCantidadEnCotizacion = async (linea: LineaCotizacion, cantidad: number) => {
+    if (!detalle || cantidad < 1) return;
+    if (Number(linea.quantity.value) === cantidad) return;
+    marcarLineaOcupada(linea.line_id, true);
+    try {
+      await cambiarCantidadLinea(detalle.quote_id, linea.line_id, {
+        quantity: String(cantidad),
+        unit: linea.quantity.unit,
+        version: linea.version,
+      });
+      await refrescarDetalle(detalle.quote_id);
+    } catch (error) {
+      toast(mensajeDeErrorCotizacion(error));
+      await cargarCotizacion(true);
+    } finally {
+      marcarLineaOcupada(linea.line_id, false);
+    }
+  };
+
+  const quitarDeCotizacion = async (linea: LineaCotizacion) => {
+    if (!detalle) return;
+    marcarLineaOcupada(linea.line_id, true);
+    try {
+      await quitarLinea(detalle.quote_id, linea.line_id);
+      await refrescarDetalle(detalle.quote_id);
+      toast("Producto quitado de la cotización. Los faltantes no se liberan hasta finalizar.");
+    } catch (error) {
+      toast(mensajeDeErrorCotizacion(error));
+      await cargarCotizacion(true);
+    } finally {
+      marcarLineaOcupada(linea.line_id, false);
+    }
+  };
+
+  const vaciarCarrito = async (carrito: { supplier_id: string }) => {
+    if (!detalle) return;
+    const propias = lineasActivas(detalle).filter(
+      (linea) => linea.supplier_id === carrito.supplier_id,
+    );
+    try {
+      for (const linea of propias) {
+        await quitarLinea(detalle.quote_id, linea.line_id);
+      }
+      await refrescarDetalle(detalle.quote_id);
+      toast("Carrito vaciado. Los demás proveedores no cambian.");
+    } catch (error) {
+      toast(mensajeDeErrorCotizacion(error));
+      await cargarCotizacion(true);
+    }
+  };
+
+  const finalizarCotizacionActual = async () => {
+    if (!detalle || finalizando) return;
+    const clave = claveFinalizacion.current ?? nuevaClaveIdempotencia();
+    claveFinalizacion.current = clave;
+    setFinalizando(true);
+    try {
+      const resultado = await finalizarCotizacion(detalle.quote_id, {
+        version: detalle.version,
+        clave,
+      });
+      claveFinalizacion.current = null;
+      setInforme(resultado.report);
+      setDetalle(null);
+      setEstadoCotizacion("listo");
+      toast(`Informe ${resultado.report.label} generado y guardado.`);
+      if (resultado.pending.length > 0) {
+        toast(
+          `${resultado.pending.length} ${
+            resultado.pending.length === 1 ? "faltante sigue" : "faltantes siguen"
+          } pendiente${resultado.pending.length === 1 ? "" : "s"} de cobertura.`,
+        );
+      }
+      void cargarCotizacion(true);
+    } catch (error) {
+      if (yaFinalizada(error)) {
+        claveFinalizacion.current = null;
+        toast("La cotización ya tiene su informe guardado.");
+        await cargarCotizacion(true);
+      } else {
+        // Un fallo de red conserva la clave: el reintento no genera un segundo informe.
+        if (!resultadoDesconocido(error)) claveFinalizacion.current = null;
+        toast(mensajeDeErrorCotizacion(error));
+      }
+    } finally {
+      setFinalizando(false);
+    }
+  };
 
   // E15 corre en paralelo con la búsqueda de proveedores: si una cadena falla, las demás siguen.
   // Cada cadena usa su propia solicitud E15 para que un fallo o una demora de Salcobrand no
@@ -646,15 +896,13 @@ function Index() {
     ]);
   };
 
-  const acciones: CotizacionAcciones = {
-    lineas,
-    onCantidad: (id, prov, c) => setLineas((ls) => cambiarCantidad(ls, id, prov, c)),
-    onQuitar: (id, prov) => setLineas((ls) => quitar(ls, id, prov)),
-    onVaciar: (prov) => setLineas((ls) => vaciar(ls, prov)),
-    onMover: (id, desde, hacia) => {
-      setLineas((ls) => mover(ls, id, desde, hacia));
-      toast(`Producto movido a ${hacia}`);
-    },
+  const accionesCotizacion: AccionesCotizacion = {
+    onCantidad: (linea, cantidad) => void cambiarCantidadEnCotizacion(linea, cantidad),
+    onQuitar: (linea) => void quitarDeCotizacion(linea),
+    onVaciar: (carrito) => void vaciarCarrito(carrito),
+    onFinalizar: () => void finalizarCotizacionActual(),
+    ocupadas: lineasOcupadas,
+    finalizando,
   };
 
   const buscando = estadoBusqueda === "buscando";
@@ -887,6 +1135,9 @@ function Index() {
             paginasRestantes={paginasRestantesListas}
             hayFuentesLista={hayFuentesLista}
             onActualizar={actualizarTrasEnsenar}
+            onAgregarViva={(item) => void agregarDesdeOfertaViva(item)}
+            onAgregarLista={(oferta, proveedorId) => void agregarDesdeLista(oferta, proveedorId)}
+            agregando={agregando}
           />
 
           {estadoOfertas === "listo" &&
@@ -921,6 +1172,8 @@ function Index() {
                     oferta={oferta}
                     articulo={articulo}
                     onActualizar={actualizarOfertasDeArticulo}
+                    onAgregar={(oferta, cantidad) => void agregarDesdeCatalogo(oferta, cantidad)}
+                    agregando={agregando === `catalogo:${oferta.offer_id}`}
                   />
                 ))}
               </div>
@@ -929,8 +1182,31 @@ function Index() {
         </section>
 
         {/* 5. Carrito: siempre al final */}
-        <Carrito acciones={acciones} />
+        <Carrito
+          detalle={detalle}
+          estado={estadoCotizacion}
+          error={errorCotizacion}
+          acciones={accionesCotizacion}
+          onReintentar={() => void cargarCotizacion(false)}
+        />
       </main>
+
+      <Dialog
+        open={informe !== null}
+        onOpenChange={(abierto) => {
+          if (!abierto) setInforme(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Informe de cotización</DialogTitle>
+            <DialogDescription>
+              Copia guardada al finalizar: no cambia aunque los proveedores actualicen sus precios.
+            </DialogDescription>
+          </DialogHeader>
+          {informe && <InformeCotizacion informe={informe} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1239,116 +1515,67 @@ function VisorFotografia({
   );
 }
 
-function Carrito({ acciones }: { acciones: CotizacionAcciones }) {
-  const { lineas, onQuitar } = acciones;
-  const [revisar, setRevisar] = useState(false);
-  const t = totalCarrito(lineas);
+function Carrito({
+  detalle,
+  estado,
+  error,
+  acciones,
+  onReintentar,
+}: {
+  detalle: DetalleCotizacion | null;
+  estado: "cargando" | "listo" | "error";
+  error: string | null;
+  acciones: AccionesCotizacion;
+  onReintentar: () => void;
+}) {
+  const activas = lineasActivas(detalle);
+  const proveedores = carritosConLineas(detalle).length;
+  const cargando = estado === "cargando" && detalle === null;
 
   return (
-    <>
-      <section className="rounded-3xl border bg-card p-6">
-        <div className="mb-1 flex flex-wrap items-center gap-2">
-          <ShoppingCart className="h-5 w-5 text-brand-green" />
-          <h2 className="text-lg font-semibold">Carrito</h2>
-          {lineas.length > 0 && (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {lineas.length} {lineas.length === 1 ? "producto" : "productos"}
-            </span>
-          )}
-        </div>
-        <p className="mb-4 text-sm text-muted-foreground">
-          Agregar al carrito no confirma una compra ni cierra los faltantes reportados.
-        </p>
-
-        {lineas.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-            <ShoppingCart className="h-8 w-8" />
-            Tu carrito está vacío
-          </div>
-        ) : (
-          <>
-            <div className="hidden grid-cols-[2fr_1.5fr_0.7fr_1fr_1fr_auto] gap-3 border-b px-3 pb-2 text-xs text-muted-foreground md:grid">
-              <span>Producto</span>
-              <span>Proveedor</span>
-              <span>Cantidad</span>
-              <span>Precio unitario</span>
-              <span>Subtotal</span>
-              <span className="w-8" />
-            </div>
-            <ul className="divide-y">
-              {lineas.map((l) => {
-                const r = buscarOferta(l.productoId, l.proveedor);
-                if (!r) return null;
-                const e = evaluarLinea(l);
-                return (
-                  <li
-                    key={`${l.productoId}:${l.proveedor}`}
-                    className="grid grid-cols-2 items-center gap-x-3 gap-y-1 px-3 py-3 text-sm md:grid-cols-[2fr_1.5fr_0.7fr_1fr_1fr_auto]"
-                  >
-                    <span className="col-span-2 font-medium md:col-span-1">
-                      {r.producto.nombre}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {l.proveedor} <span className="text-xs">(demo)</span>
-                    </span>
-                    <span>
-                      <span className="text-xs text-muted-foreground md:hidden">Cantidad: </span>
-                      {l.cantidad} u.
-                    </span>
-                    <span>
-                      <span className="text-xs text-muted-foreground md:hidden">Precio: </span>
-                      {r.oferta.precioUnitario !== null
-                        ? clp(r.oferta.precioUnitario)
-                        : "Sin precio"}
-                    </span>
-                    <span>
-                      {e.ok ? (
-                        <span className="font-medium">{clp(e.subtotal)}</span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Pendiente: {e.texto}</span>
-                      )}
-                    </span>
-                    <button
-                      aria-label={`Quitar ${r.producto.nombre} de ${l.proveedor}`}
-                      onClick={() => onQuitar(l.productoId, l.proveedor)}
-                      className="col-start-2 justify-self-end rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive md:col-start-auto"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted px-4 py-3 text-sm">
-              <div>
-                <span className="font-semibold">
-                  Total: <span className="text-brand-green">{clp(t.total)}</span>
-                </span>
-                {t.pendientes > 0 && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    ({t.pendientes}{" "}
-                    {t.pendientes === 1
-                      ? "línea pendiente no incluida"
-                      : "líneas pendientes no incluidas"}
-                    )
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => setRevisar(!revisar)}
-                className="inline-flex items-center gap-1 rounded-full border bg-card px-3 py-1.5 text-xs font-medium hover:bg-background"
-              >
-                Revisar cotización por proveedor{" "}
-                <ChevronDown
-                  className={`h-3 w-3 transition-transform ${revisar ? "rotate-180" : ""}`}
-                />
-              </button>
-            </div>
-          </>
+    <section className="rounded-3xl border bg-card p-6">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <ShoppingCart className="h-5 w-5 text-brand-green" />
+        <h2 className="text-lg font-semibold">Carrito</h2>
+        {activas.length > 0 && (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {activas.length} {activas.length === 1 ? "producto" : "productos"} · {proveedores}{" "}
+            {proveedores === 1 ? "proveedor" : "proveedores"}
+          </span>
         )}
-      </section>
-      {revisar && lineas.length > 0 && <SeccionCotizaciones {...acciones} />}
-    </>
+      </div>
+      <p className="mb-4 text-sm text-muted-foreground">
+        La cotización se guarda en el servidor y se recupera al recargar. Cada oferta conserva el
+        precio con que la elegiste. Agregar o quitar productos no libera faltantes: eso ocurre solo
+        al finalizar el informe, y finalizar no registra una compra.
+      </p>
+
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0" aria-hidden /> {error}
+          <button
+            onClick={onReintentar}
+            className="ml-auto rounded-full border border-destructive/40 px-3 py-1 text-xs font-medium hover:bg-background"
+          >
+            Reintentar
+          </button>
+        </p>
+      )}
+
+      {cargando ? (
+        <p
+          role="status"
+          className="flex items-center justify-center gap-2 rounded-2xl border border-dashed p-10 text-sm text-muted-foreground"
+        >
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Cargando tu cotización…
+        </p>
+      ) : (
+        <SeccionCotizaciones detalle={detalle} acciones={acciones} />
+      )}
+    </section>
   );
 }
 
@@ -1358,10 +1585,14 @@ function ProveedorFicha({
   oferta,
   articulo,
   onActualizar,
+  onAgregar,
+  agregando,
 }: {
   oferta: Offer;
   articulo: Article;
   onActualizar: (articuloId: string) => void | Promise<void>;
+  onAgregar: (oferta: Offer, cantidad: number) => void;
+  agregando?: boolean;
 }) {
   const [cantidad, setCantidad] = useState(1);
   const [verFaltantes, setVerFaltantes] = useState(false);
@@ -1494,15 +1725,20 @@ function ProveedorFicha({
             />
             <button
               type="button"
-              disabled
-              title="Disponible próximamente"
-              className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground opacity-50"
+              disabled={agregando}
+              onClick={() => onAgregar(oferta, cantidad)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
             >
-              <ShoppingCart className="h-3.5 w-3.5" /> Agregar a cotización
+              {agregando ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <ShoppingCart className="h-3.5 w-3.5" />
+              )}{" "}
+              Agregar a cotización
             </button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Agregar a cotización estará disponible próximamente.
+            El precio se guarda como lo publicó el proveedor en este momento.
           </p>
         </div>
       </div>

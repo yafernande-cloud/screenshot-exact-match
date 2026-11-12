@@ -161,7 +161,7 @@ describe("«Enseñar a la IA» en precios de lista importados", () => {
     expect(hijos[0]).toHaveTextContent("$12.990");
     expect(hijos[1]).toHaveTextContent("Agregar a cotización");
     expect(hijos[2]).toHaveTextContent(
-      "Se incorporará a la cotización cuando el carrito esté conectado.",
+      "Se agrega con el precio de esta lista; no se vuelve a consultar al proveedor.",
     );
     expect(hijos[3]).toHaveTextContent("Enseñar a la IA");
     // Los datos del producto no forman parte de la columna de acciones.

@@ -16,6 +16,7 @@ import { BloqueFuente } from "@/components/OfertasProveedorEnVivo";
 import { TarjetaPrecioLista } from "@/components/PreciosListasCargadas";
 import type { GrupoPreciosLista } from "@/lib/ofertas-listas";
 import type { EstadoFuenteEnVivo, ItemEnVivo } from "@/lib/proveedores-en-vivo";
+import type { OfertaImportada } from "@/lib/proveedores-api";
 
 interface ProveedorConOfertas {
   clave: string;
@@ -67,7 +68,9 @@ export function OfertasPorProveedor({
   paginasRestantes,
   hayFuentesLista,
   onActualizar,
-  onAgregar,
+  onAgregarViva,
+  onAgregarLista,
+  agregando = null,
 }: {
   estados: EstadoFuenteEnVivo[];
   grupos: GrupoPreciosLista[];
@@ -80,7 +83,12 @@ export function OfertasPorProveedor({
   paginasRestantes: boolean;
   hayFuentesLista: boolean;
   onActualizar?: ((articuloId: string) => void | Promise<void>) | undefined;
-  onAgregar?: ((item: ItemEnVivo) => void) | undefined;
+  /** Oferta en vivo elegida por la persona; la IA solo ordena, nunca selecciona. */
+  onAgregarViva?: ((item: ItemEnVivo) => void) | undefined;
+  /** Precio de una lista cargada: ya tiene su observación inmutable en el servidor. */
+  onAgregarLista?: ((oferta: OfertaImportada, proveedorId: string) => void) | undefined;
+  /** Clave de la oferta en curso de alta: deshabilita solo ese botón. */
+  agregando?: string | null;
 }) {
   const proveedores = agruparPorProveedor(estados, grupos);
   const sinNada =
@@ -160,7 +168,7 @@ export function OfertasPorProveedor({
                   key={estado.fuente.sourceId}
                   estado={estado}
                   consulta={consulta}
-                  onAgregar={onAgregar}
+                  onAgregar={onAgregarViva}
                   onPreferenciaAplicada={onActualizar}
                   titulo={estado.fuente.sourceName}
                 />
@@ -174,7 +182,8 @@ export function OfertasPorProveedor({
                 <FileSpreadsheet className="h-4 w-4 text-brand-blue" aria-hidden />
                 <p className="text-sm font-medium">Precios de listas cargadas</p>
                 <span className="text-xs text-muted-foreground">
-                  {proveedor.grupo.sourceNames.join(" · ")} · última importación, no consulta en vivo
+                  {proveedor.grupo.sourceNames.join(" · ")} · última importación, no consulta en
+                  vivo
                 </span>
               </div>
               {proveedor.grupo.ofertas.map((oferta) => (
@@ -184,6 +193,12 @@ export function OfertasPorProveedor({
                   proveedor={proveedor.nombre}
                   proveedorId={proveedor.grupo?.supplierId ?? ""}
                   onActualizar={onActualizar}
+                  onAgregar={
+                    onAgregarLista
+                      ? () => onAgregarLista(oferta, proveedor.grupo?.supplierId ?? "")
+                      : undefined
+                  }
+                  agregando={agregando === `lista:${oferta.source_id}:${oferta.external_id}`}
                 />
               ))}
             </div>

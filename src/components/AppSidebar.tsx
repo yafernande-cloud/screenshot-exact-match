@@ -1,14 +1,18 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Calculator, ShoppingCart, History, Truck, Send } from "lucide-react";
+import { Calculator, History, Truck, Send } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from "@/components/ui/sidebar";
 
-/** Opciones del menú lateral. Para sumar una opción futura basta con agregarla aquí. */
+/**
+ * Opciones del menú lateral. Para sumar una opción futura basta con agregarla aquí.
+ *
+ * El carrito activo vive dentro de «Cotizador»; no tiene una pantalla aparte. «Mis cotizaciones»
+ * (demo) se retiró para no duplicar el carrito ni el historial.
+ */
 export const opcionesMenu = [
   { to: "/", label: "Cotizador", icon: Calculator },
-  { to: "/mis-cotizaciones", label: "Mis cotizaciones", icon: ShoppingCart },
   { to: "/historial", label: "Historial de cotizaciones", icon: History },
   { to: "/proveedores", label: "Proveedores", icon: Truck },
   { to: "/telegram", label: "Configuración de Telegram", icon: Send },

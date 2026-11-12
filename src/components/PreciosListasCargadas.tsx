@@ -3,11 +3,11 @@
  *
  * Es una sección separada de «Proveedores en vivo»: estos precios no se consultaron al proveedor
  * ahora, son la última observación guardada de su archivo. Una oferta `needs_review` se muestra con
- * su advertencia y nunca como verificada. No se agrega al carrito local: la cotización conserva sus
- * validaciones actuales.
+ * su advertencia y nunca como verificada. Al agregarla a la cotización se conserva el precio de la
+ * lista (su observación inmutable en el servidor), no una consulta nueva al proveedor.
  */
 
-import { AlertCircle, FileSpreadsheet, ShoppingCart } from "lucide-react";
+import { AlertCircle, FileSpreadsheet, Loader2, ShoppingCart } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { EnsenarALaIa } from "@/components/EnsenarALaIa";
@@ -96,11 +96,16 @@ export function TarjetaPrecioLista({
   proveedor,
   proveedorId,
   onActualizar,
+  onAgregar,
+  agregando = false,
 }: {
   oferta: OfertaImportada;
   proveedor: string;
   proveedorId: string;
   onActualizar?: ((articuloId: string) => void | Promise<void>) | undefined;
+  /** Alta en la cotización persistente de esta oferta publicada. */
+  onAgregar?: (() => void) | undefined;
+  agregando?: boolean;
 }) {
   const pendiente = oferta.review_status === "needs_review";
   return (
@@ -137,14 +142,19 @@ export function TarjetaPrecioLista({
           </div>
           <button
             type="button"
-            disabled
-            title="Disponible próximamente"
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground opacity-50"
+            disabled={agregando}
+            onClick={onAgregar}
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
           >
-            <ShoppingCart className="h-3.5 w-3.5" /> Agregar a cotización
+            {agregando ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <ShoppingCart className="h-3.5 w-3.5" />
+            )}{" "}
+            Agregar a cotización
           </button>
           <p className="max-w-xs text-xs text-muted-foreground">
-            Se incorporará a la cotización cuando el carrito esté conectado.
+            Se agrega con el precio de esta lista; no se vuelve a consultar al proveedor.
           </p>
           <EnsenarALaIa
             articuloId={oferta.trade_item_id}

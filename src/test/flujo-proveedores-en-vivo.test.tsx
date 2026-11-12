@@ -443,11 +443,12 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     expect(tarjetasProveedor).toHaveLength(2);
     expect(screen.queryByText("Pregalex 75 mg")).toBeNull();
     expect(screen.queryByRole("heading", { name: /Resultados relacionados/ })).toBeNull();
-    expect(
-      screen
-        .getAllByRole("button", { name: /Agregar a cotización/ })
-        .every((boton) => (boton as HTMLButtonElement).disabled),
-    ).toBe(true);
+    // La conexión ya está hecha, pero solo se agrega lo que el backend declara elegible: estas
+    // ofertas no tienen unidad de venta ni base de precio confirmadas.
+    for (const tarjeta of tarjetasProveedor) {
+      expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
+    }
+    expect(screen.getAllByText("No disponible para agregar a la cotización.")).toHaveLength(2);
   });
 
   it("el fallo de un proveedor no altera catálogo ni cadenas", async () => {
@@ -515,12 +516,13 @@ describe("precios de listas cargadas en la búsqueda", () => {
     // El catálogo no tiene ofertas verificadas para el artículo, pero el precio importado existe:
     // no se informa una búsqueda sin ofertas.
     expect(screen.queryByText(/No encontramos ofertas de proveedores/)).toBeNull();
-    // Un precio importado todavía no entra al carrito.
+    // El precio importado se agrega con su observación ya publicada (no se recotiza en vivo).
+    const tarjetaLista = screen.getByRole("article", {
+      name: "Precio de lista de Distribuidora Andes: Paracetamol 500 mg comprimidos",
+    });
     expect(
-      screen
-        .getAllByRole("button", { name: /Agregar a cotización/ })
-        .every((boton) => (boton as HTMLButtonElement).disabled),
-    ).toBe(true);
+      within(tarjetaLista).getByRole("button", { name: /Agregar a cotización/ }),
+    ).toBeEnabled();
     expect(obtenerBusquedaMock).not.toHaveBeenCalled();
   });
 
