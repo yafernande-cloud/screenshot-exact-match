@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as MisCotizacionesRouteImport } from './routes/mis-cotizaciones'
 import { Route as ProveedoresRouteImport } from './routes/proveedores'
 import { Route as TelegramRouteImport } from './routes/telegram'
+import { Route as UsuariosRouteImport } from './routes/usuarios'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const TelegramRoute = TelegramRouteImport.update({
   path: '/telegram',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsuariosRoute = UsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/mis-cotizaciones': typeof MisCotizacionesRoute
   '/proveedores': typeof ProveedoresRoute
   '/telegram': typeof TelegramRoute
+  '/usuarios': typeof UsuariosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/mis-cotizaciones': typeof MisCotizacionesRoute
   '/proveedores': typeof ProveedoresRoute
   '/telegram': typeof TelegramRoute
+  '/usuarios': typeof UsuariosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/mis-cotizaciones': typeof MisCotizacionesRoute
   '/proveedores': typeof ProveedoresRoute
   '/telegram': typeof TelegramRoute
+  '/usuarios': typeof UsuariosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/mis-cotizaciones'
     | '/proveedores'
     | '/telegram'
+    | '/usuarios'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/mis-cotizaciones'
     | '/proveedores'
     | '/telegram'
+    | '/usuarios'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/mis-cotizaciones'
     | '/proveedores'
     | '/telegram'
+    | '/usuarios'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   MisCotizacionesRoute: typeof MisCotizacionesRoute
   ProveedoresRoute: typeof ProveedoresRoute
   TelegramRoute: typeof TelegramRoute
+  UsuariosRoute: typeof UsuariosRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TelegramRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/usuarios': {
+      id: '/usuarios'
+      path: '/usuarios'
+      fullPath: '/usuarios'
+      preLoaderRoute: typeof UsuariosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   MisCotizacionesRoute: MisCotizacionesRoute,
   ProveedoresRoute: ProveedoresRoute,
   TelegramRoute: TelegramRoute,
+  UsuariosRoute: UsuariosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

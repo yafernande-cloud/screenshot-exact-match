@@ -24,6 +24,8 @@ export function MenuPrincipal() {
   const { profile, signOut } = useSession();
   const nombre = profile?.display_name ?? "Personal";
   const cargos = (profile?.roles ?? []).map((r) => roleLabel[r] ?? r).join(" · ");
+  // La campanita solo tiene sentido para quien puede administrar accesos; el backend lo valida.
+  const esAdmin = (profile?.roles ?? []).includes("admin");
 
   return (
     <header className="mx-auto flex w-full max-w-[1760px] items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6 sm:py-4 lg:w-[90%] lg:px-0">
@@ -71,7 +73,7 @@ export function MenuPrincipal() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <CampanitaSolicitudes />
+        {esAdmin && <CampanitaSolicitudes />}
       </div>
     </header>
   );

@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Calculator, History, Truck, Send } from "lucide-react";
+import { Calculator, History, Truck, Send, Users } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem, useSidebar,
@@ -16,6 +16,7 @@ export const opcionesMenu = [
   { to: "/historial", label: "Historial de cotizaciones", icon: History },
   { to: "/proveedores", label: "Proveedores", icon: Truck },
   { to: "/telegram", label: "Configuración de Telegram", icon: Send },
+  { to: "/usuarios", label: "Gestión de usuarios", icon: Users },
 ] as const;
 
 export function AppSidebar() {
