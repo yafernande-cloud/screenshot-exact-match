@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 import { OfertasPorProveedor } from "@/components/OfertasPorProveedor";
-import type { GrupoPreciosLista } from "@/lib/ofertas-listas";
+import type { FuenteDeLista, GrupoPreciosLista } from "@/lib/ofertas-listas";
 import type { OfertaImportada } from "@/lib/proveedores-api";
-import type {
-  EstadoFuenteEnVivo,
-  OfertaEnVivo,
-  ResultadoEnVivo,
-} from "@/lib/proveedores-en-vivo";
+import type { EstadoFuenteEnVivo, OfertaEnVivo, ResultadoEnVivo } from "@/lib/proveedores-en-vivo";
 
 /**
  * Presentación por proveedor (A6, fase 4). Estas pruebas no ordenan nada: comprueban que cada
@@ -124,22 +120,29 @@ function grupo(over: Partial<GrupoPreciosLista> = {}): GrupoPreciosLista {
 function renderizar({
   estados = [],
   grupos = [],
+  fuentesListas = [],
+  cargandoListas = false,
+  erroresListas = [],
 }: {
   estados?: EstadoFuenteEnVivo[];
   grupos?: GrupoPreciosLista[];
+  fuentesListas?: FuenteDeLista[];
+  cargandoListas?: boolean;
+  erroresListas?: string[];
 }) {
   return render(
     <OfertasPorProveedor
       estados={estados}
       grupos={grupos}
+      fuentesListas={fuentesListas}
       consulta="Predual"
       descubriendo={false}
       error={null}
-      cargandoListas={false}
-      erroresListas={[]}
+      cargandoListas={cargandoListas}
+      erroresListas={erroresListas}
       desactualizadas={0}
       paginasRestantes={false}
-      hayFuentesLista={grupos.length > 0}
+      hayFuentesLista={fuentesListas.length > 0 || grupos.length > 0}
     />,
   );
 }
@@ -171,8 +174,9 @@ describe("ofertas organizadas por proveedor", () => {
     expect(farmaloop).toHaveTextContent("Lista cargada");
     expect(farmaloop).toHaveTextContent("Precios de listas cargadas");
     // La promo de la API y el precio de la lista de ese proveedor conviven en secciones distintas.
-    expect(screen.getByRole("article", { name: "Oferta de Farmaloop: Predual 30 mg comprimidos" }))
-      .toBeInTheDocument();
+    expect(
+      screen.getByRole("article", { name: "Oferta de Farmaloop: Predual 30 mg comprimidos" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("article", {
         name: "Precio de lista de Farmaloop: Paracetamol 500 mg comprimidos",
@@ -183,7 +187,9 @@ describe("ofertas organizadas por proveedor", () => {
   it("cada proveedor tiene su propia sección, en orden alfabético y sin duplicados", () => {
     renderizar({
       estados: [estado()],
-      grupos: [grupo({ supplierId: "sup-otro", supplierName: "Pacífico", sourceNames: ["Pacífico"] })],
+      grupos: [
+        grupo({ supplierId: "sup-otro", supplierName: "Pacífico", sourceNames: ["Pacífico"] }),
+      ],
     });
 
     const nombres = regionesProveedor().map((region) => region.getAttribute("aria-label"));
@@ -211,5 +217,150 @@ describe("ofertas organizadas por proveedor", () => {
         name: "Precio de lista de Distribuidora Andes: Paracetamol 500 mg comprimidos",
       }),
     ).toHaveLength(1);
+  });
+
+  it("un proveedor con lista habilitada conserva su sección aunque no tenga precios", () => {
+    renderizar({
+      estados: [estado()],
+      fuentesListas: [
+        {
+          supplierId: "sup-andes",
+          supplierName: "Distribuidora Andes",
+          sourceIds: ["src-andes"],
+          sourceNames: ["Distribuidora Andes"],
+        },
+      ],
+    });
+
+    // Una lista sin coincidencias no es una fuente inexistente: sus dos proveedores siguen ahí.
+    const regiones = regionesProveedor();
+    expect(regiones.map((region) => region.getAttribute("aria-label"))).toEqual([
+      "Ofertas de Distribuidora Andes",
+      "Ofertas de Farmaloop",
+    ]);
+    const andes = regiones[0]!;
+    expect(andes).toHaveTextContent("Sin resultados para esta búsqueda.");
+    // Sin resultados no se rotula como «En vivo» ni «Lista cargada»: no hay nada que rotular.
+    expect(andes).not.toHaveTextContent("En vivo");
+    expect(andes).not.toHaveTextContent("Lista cargada");
+    expect(within(andes).queryAllByRole("article")).toHaveLength(0);
+  });
+
+  it("mientras se buscan precios de las listas lo dice sin adelantar un resultado vacío", () => {
+    renderizar({
+      fuentesListas: [
+        {
+          supplierId: "sup-andes",
+          supplierName: "Distribuidora Andes",
+          sourceIds: ["src-andes"],
+          sourceNames: ["Distribuidora Andes"],
+        },
+      ],
+      cargandoListas: true,
+    });
+
+    const andes = regionesProveedor()[0]!;
+    expect(andes).toHaveTextContent("Buscando precios en las listas cargadas…");
+    expect(andes).not.toHaveTextContent("Sin resultados para esta búsqueda.");
+  });
+
+  it("un fallo al consultar la lista no se presenta como «sin resultados»", () => {
+    renderizar({
+      fuentesListas: [
+        {
+          supplierId: "sup-andes",
+          supplierName: "Distribuidora Andes",
+          sourceIds: ["src-andes"],
+          sourceNames: ["Distribuidora Andes"],
+        },
+      ],
+      erroresListas: ["No pudimos cargar los precios de las listas cargadas."],
+    });
+
+    const andes = regionesProveedor()[0]!;
+    expect(andes).toHaveTextContent("No se pudo consultar al proveedor.");
+    expect(andes).not.toHaveTextContent("Sin resultados para esta búsqueda.");
+  });
+
+  it("el fallo de una lista no se atribuye al proveedor que sí respondió", () => {
+    renderizar({
+      fuentesListas: [
+        {
+          supplierId: "sup-andes",
+          supplierName: "Distribuidora Andes",
+          sourceIds: ["src-andes"],
+          sourceNames: ["Distribuidora Andes"],
+        },
+        {
+          supplierId: "sup-pacifico",
+          supplierName: "Pacífico",
+          sourceIds: ["src-pacifico"],
+          sourceNames: ["Pacífico"],
+        },
+      ],
+      erroresListas: ["No pudimos cargar los precios de la lista de Pacífico."],
+    });
+
+    const [andes, pacifico] = regionesProveedor();
+    expect(andes).toHaveTextContent("Sin resultados para esta búsqueda.");
+    expect(andes).not.toHaveTextContent("No se pudo consultar al proveedor.");
+    expect(pacifico).toHaveTextContent("No se pudo consultar al proveedor.");
+    expect(pacifico).not.toHaveTextContent("Sin resultados para esta búsqueda.");
+  });
+
+  it("una fuente sin conexión se informa como «No disponible», no como vacía ni con error", () => {
+    renderizar({
+      estados: [
+        {
+          fuente: {
+            sourceId: "src-farmaloop",
+            sourceName: "Farmaloop API",
+            supplierId: "sup-farmaloop",
+            supplierName: "Farmaloop",
+            state: "not_configured",
+            reason: "profile_missing",
+            consultable: false,
+            lastSuccessAt: null,
+            error: null,
+          },
+          cargando: false,
+          resultado: null,
+          error: null,
+        },
+      ],
+    });
+
+    const farmaloop = regionesProveedor()[0]!;
+    expect(farmaloop).toHaveTextContent("No disponible");
+    expect(farmaloop).not.toHaveTextContent("Sin resultados para esta búsqueda.");
+    expect(within(farmaloop).queryByRole("alert")).toBeNull();
+  });
+
+  it("un error de consulta en vivo se informa como tal sin inventar ofertas", () => {
+    renderizar({
+      estados: [
+        {
+          fuente: {
+            sourceId: "src-farmaloop",
+            sourceName: "Farmaloop API",
+            supplierId: "sup-farmaloop",
+            supplierName: "Farmaloop",
+            state: "connected",
+            reason: null,
+            consultable: true,
+            lastSuccessAt: null,
+            error: null,
+          },
+          cargando: false,
+          resultado: null,
+          error: "Demasiadas búsquedas en vivo. Espera un minuto antes de reintentar.",
+        },
+      ],
+    });
+
+    const farmaloop = regionesProveedor()[0]!;
+    expect(farmaloop).toHaveTextContent("No se pudo consultar al proveedor.");
+    expect(farmaloop).not.toHaveTextContent("Sin resultados para esta búsqueda.");
+    expect(within(farmaloop).queryAllByRole("article")).toHaveLength(0);
   });
 });

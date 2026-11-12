@@ -338,9 +338,7 @@ describe("proveedores en vivo en la pantalla principal", () => {
       }),
     ]);
 
-    expect(
-      screen.getByText("No encontramos productos que coincidan con tu búsqueda."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Sin resultados para esta búsqueda.")).toBeInTheDocument();
     expect(screen.queryByRole("article")).toBeNull();
   });
 
@@ -358,7 +356,7 @@ describe("proveedores en vivo en la pantalla principal", () => {
 
     expect(screen.getByText("Sin conexión")).toBeInTheDocument();
     expect(screen.getByText(/Falta configurar la conexión/)).toBeInTheDocument();
-    expect(screen.queryByText(/No encontramos productos/)).toBeNull();
+    expect(screen.queryByText(/Sin resultados para esta búsqueda/)).toBeNull();
   });
 
   it("un error de una fuente no oculta el resultado de otra", () => {
@@ -391,9 +389,7 @@ describe("proveedores en vivo en la pantalla principal", () => {
   it("una fuente conectada sin resultados lo dice con un mensaje simple", () => {
     renderizar([estado({ resultado: resultado({ offers: [], outcome: "no_matches" }) })]);
 
-    expect(
-      screen.getByText("No encontramos productos que coincidan con tu búsqueda."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Sin resultados para esta búsqueda.")).toBeInTheDocument();
   });
 
   it("muestra las advertencias funcionales y oculta el detalle técnico de descartes", () => {

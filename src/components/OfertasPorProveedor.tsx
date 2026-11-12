@@ -14,7 +14,7 @@ import { AlertCircle, FileSpreadsheet, Loader2, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { BloqueFuente } from "@/components/OfertasProveedorEnVivo";
 import { TarjetaPrecioLista } from "@/components/PreciosListasCargadas";
-import type { GrupoPreciosLista } from "@/lib/ofertas-listas";
+import type { FuenteDeLista, GrupoPreciosLista } from "@/lib/ofertas-listas";
 import type { EstadoFuenteEnVivo, ItemEnVivo } from "@/lib/proveedores-en-vivo";
 import type { OfertaImportada } from "@/lib/proveedores-api";
 
@@ -28,6 +28,7 @@ interface ProveedorConOfertas {
 function agruparPorProveedor(
   estados: EstadoFuenteEnVivo[],
   grupos: GrupoPreciosLista[],
+  fuentesListas: FuenteDeLista[],
 ): ProveedorConOfertas[] {
   const porClave = new Map<string, ProveedorConOfertas>();
   for (const estado of estados) {
@@ -50,6 +51,18 @@ function agruparPorProveedor(
     if (actual) actual.grupo = grupo;
     else porClave.set(clave, { clave, nombre: grupo.supplierName, estados: [], grupo });
   }
+  // Todo proveedor con una fuente habilitada conserva su contenedor, aunque esta búsqueda no le
+  // devuelva precios: una lista sin coincidencias no es una fuente inexistente.
+  for (const fuente of fuentesListas) {
+    const clave = `supplier:${fuente.supplierId}`;
+    if (!porClave.has(clave))
+      porClave.set(clave, {
+        clave,
+        nombre: fuente.supplierName,
+        estados: [],
+        grupo: null,
+      });
+  }
   // Orden alfabético determinista del nombre visible; no depende de la IA ni del orden de precios.
   return [...porClave.values()].sort(
     (a, b) => a.nombre.localeCompare(b.nombre, "es") || a.clave.localeCompare(b.clave),
@@ -59,6 +72,7 @@ function agruparPorProveedor(
 export function OfertasPorProveedor({
   estados,
   grupos,
+  fuentesListas = [],
   consulta,
   descubriendo,
   error,
@@ -74,6 +88,8 @@ export function OfertasPorProveedor({
 }: {
   estados: EstadoFuenteEnVivo[];
   grupos: GrupoPreciosLista[];
+  /** Proveedores con fuente de lista habilitada: su contenedor se muestra aunque no coincida. */
+  fuentesListas?: FuenteDeLista[];
   consulta: string | null;
   descubriendo: boolean;
   error: string | null;
@@ -90,7 +106,7 @@ export function OfertasPorProveedor({
   /** Clave de la oferta en curso de alta: deshabilita solo ese botón. */
   agregando?: string | null;
 }) {
-  const proveedores = agruparPorProveedor(estados, grupos);
+  const proveedores = agruparPorProveedor(estados, grupos, fuentesListas);
   const sinNada =
     !descubriendo &&
     !error &&
@@ -100,7 +116,20 @@ export function OfertasPorProveedor({
   if (sinNada) return null;
 
   const listasVacias =
-    Boolean(consulta) && !cargandoListas && hayFuentesLista && grupos.length === 0;
+    Boolean(consulta) &&
+    !cargandoListas &&
+    hayFuentesLista &&
+    grupos.length === 0 &&
+    proveedores.length === 0;
+
+  // El error de una lista llega con el nombre de su proveedor: se atribuye solo a ese. Un mensaje
+  // que no nombra a ninguno es un fallo general de la consulta y afecta a todas las listas.
+  const nombres = proveedores.map((proveedor) => proveedor.nombre);
+  const errorGeneralDeListas = erroresListas.some(
+    (mensaje) => !nombres.some((nombre) => mensaje.includes(nombre)),
+  );
+  const listaConError = (nombre: string): boolean =>
+    errorGeneralDeListas || erroresListas.some((mensaje) => mensaje.includes(nombre));
 
   return (
     <section className="mt-4 space-y-4" data-testid="ofertas-por-proveedor">
@@ -157,6 +186,16 @@ export function OfertasPorProveedor({
             {proveedor.estados.length > 0 && <Badge variant="outline">En vivo</Badge>}
             {proveedor.grupo && <Badge variant="outline">Lista cargada</Badge>}
           </div>
+
+          {proveedor.estados.length === 0 && !proveedor.grupo && (
+            <p className="rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+              {cargandoListas
+                ? "Buscando precios en las listas cargadas…"
+                : listaConError(proveedor.nombre)
+                  ? "No se pudo consultar al proveedor."
+                  : "Sin resultados para esta búsqueda."}
+            </p>
+          )}
 
           {proveedor.estados.length > 0 && (
             <div className="space-y-3">

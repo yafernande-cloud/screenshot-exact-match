@@ -134,6 +134,15 @@ export function BloqueFuente({
   const advertencias = resultado ? advertenciasVisibles(resultado.warnings) : [];
   // Solo lo que confirma la consulta; los relacionados se conservan en la respuesta del backend.
   const directas = resultado ? agruparResultados(resultado).directas : [];
+  // Cuatro estados distintos, sin confundir una respuesta vacía con un fallo:
+  // sin conexión (no se intentó), error de consulta (se intentó y falló) y sin coincidencias
+  // (el proveedor respondió, pero no tiene nada para esta búsqueda).
+  const sinConexion = !fuente.consultable || estadoConexion === "not_configured";
+  const errorConsulta =
+    Boolean(error) ||
+    Boolean(fuente.error) ||
+    estadoConexion === "error" ||
+    estadoConexion === "requires_intervention";
 
   return (
     <div className="rounded-2xl border p-4" data-source-id={fuente.sourceId}>
@@ -151,16 +160,26 @@ export function BloqueFuente({
 
       {cargando && <Cargando>Consultando a {fuente.supplierName}…</Cargando>}
 
-      {!cargando && error && <Aviso>{error}</Aviso>}
-      {!cargando && !error && fuente.error && <Aviso>{fuente.error}</Aviso>}
+      {!cargando && errorConsulta && (
+        <Aviso>
+          No se pudo consultar al proveedor.{" "}
+          {error ?? fuente.error ?? mensajeMotivo(motivo, estadoConexion)}
+        </Aviso>
+      )}
 
-      {!cargando && !error && !fuente.error && !resultado && (
+      {!cargando && !errorConsulta && sinConexion && (
         <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
-          {mensajeMotivo(motivo, estadoConexion)}
+          No disponible · {mensajeMotivo(motivo, estadoConexion)}
         </p>
       )}
 
-      {!cargando && !error && resultado && (
+      {!cargando && !errorConsulta && !sinConexion && !resultado && (
+        <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+          Sin resultados para esta búsqueda.
+        </p>
+      )}
+
+      {!cargando && !errorConsulta && !sinConexion && resultado && (
         <>
           {advertencias.length > 0 && (
             <p
@@ -171,18 +190,9 @@ export function BloqueFuente({
             </p>
           )}
 
-          {estadoConexion === "not_configured" && (
+          {directas.length === 0 && (
             <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
-              {mensajeMotivo(motivo, estadoConexion)}
-            </p>
-          )}
-          {(estadoConexion === "error" || estadoConexion === "requires_intervention") && (
-            <Aviso>{mensajeMotivo(motivo, estadoConexion)}</Aviso>
-          )}
-
-          {estadoConexion === "connected" && directas.length === 0 && (
-            <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
-              No encontramos productos que coincidan con tu búsqueda.
+              Sin resultados para esta búsqueda.
             </p>
           )}
 

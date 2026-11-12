@@ -207,6 +207,9 @@ function Index() {
   const [desactualizadasListas, setDesactualizadasListas] = useState(0);
   const [paginasRestantesListas, setPaginasRestantesListas] = useState(false);
   const [hayFuentesLista, setHayFuentesLista] = useState(false);
+  // Proveedores con fuente de lista habilitada: su contenedor sigue visible aunque la búsqueda no
+  // les encuentre precios (no se confunde una lista sin coincidencias con un proveedor inexistente).
+  const [fuentesListas, setFuentesListas] = useState<FuenteDeLista[]>([]);
   // Bandeja real: el backend es la única fuente; nunca se vuelve a los datos de demostración.
   const [faltantes, setFaltantes] = useState<Faltante[]>([]);
   const [estadoFaltantes, setEstadoFaltantes] = useState<"cargando" | "listo" | "error">(
@@ -673,6 +676,7 @@ function Index() {
       const fuentes: FuenteDeLista[] = await descubrirFuentesDeLista();
       if (seq !== busquedaSeq.current) return;
       fuentesListasRef.current = fuentes;
+      setFuentesListas(fuentes);
       setHayFuentesLista(fuentes.length > 0);
       if (fuentes.length === 0) {
         setEstadoListas("listo");
@@ -730,6 +734,7 @@ function Index() {
     setDesactualizadasListas(0);
     setPaginasRestantesListas(false);
     fuentesListasRef.current = [];
+    setFuentesListas([]);
 
     if (t.length < 3) {
       const corto = t !== "";
@@ -1126,6 +1131,7 @@ function Index() {
           <OfertasPorProveedor
             estados={estadosVivo}
             grupos={gruposListas}
+            fuentesListas={fuentesListas}
             consulta={consulta || null}
             descubriendo={descubriendoVivo}
             error={errorVivo}
