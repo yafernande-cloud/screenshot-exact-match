@@ -534,14 +534,14 @@ beforeEach(() => {
   obtenerCotizacionMock.mockResolvedValue(DETALLE_VACIO);
   agregarLineaMock.mockResolvedValue({ deduplicated: false, warnings: [] });
   fijarCantidadMock.mockReset();
-  fijarCantidadMock.mockImplementation(async (f: Faltante, cantidad: number) => ({
+  fijarCantidadMock.mockImplementation(async (f: Faltante, cantidad: number, unidad: string) => ({
     replayed: false,
     previous_quantity: null,
     previous_unit: null,
     item: {
       ...f,
       target_quantity: String(cantidad),
-      quantity_unit: "unit",
+      quantity_unit: unidad,
       quantity_status: "defined",
       needs_quantity: false,
       version: f.version + 1,
@@ -810,6 +810,37 @@ const OFERTA_MEFENAMICO = {
   ean: null,
 };
 
+/** Caso real: Migranol con 30 cajas reportadas y sin cantidad objetivo todavía. */
+const FALTANTE_MIGRANOL: Faltante = {
+  ...FALTANTE,
+  id: "f-migranol",
+  display_name: "Migranol",
+  ingredient: "migranol",
+  search_query: "Migranol",
+  search_query_full: "Migranol",
+  declared_quantity: "30",
+  declared_unit: "box",
+  requested_quantity: "30",
+  requested_unit: "box",
+  requested_quantity_origin: "explicit",
+  target_quantity: null,
+  quantity_unit: null,
+  quantity_status: "unknown",
+  needs_quantity: true,
+};
+
+/** «Migranol x 10 Comprimidos Recubiertos»: SKU 90019, $2.700, sin unidad de venta. */
+const OFERTA_MIGRANOL = {
+  ...OFERTA_SALONPAS,
+  external_id: "90019",
+  name: "Migranol x 10 Comprimidos Recubiertos",
+  price: { amount: "2700", currency: "CLP" },
+  sale_unit: null,
+  stock_status: "in_stock" as const,
+  stock_quantity: "24",
+  ean: null,
+};
+
 describe("cantidad reportada sin unidad al asociar una oferta", () => {
   it("fija la cantidad escrita por la auxiliar (10) con la unidad genérica, no 1", async () => {
     listarFaltantesMock.mockResolvedValue([FALTANTE_SIN_UNIDAD]);
@@ -970,6 +1001,95 @@ describe("cantidad reportada sin unidad al asociar una oferta", () => {
     expect(agregarLineaMock).not.toHaveBeenCalled();
     expect(fijarCantidadMock).not.toHaveBeenCalled();
     expect(limpiarCantidadMock).not.toHaveBeenCalled();
+    expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeEnabled();
+  });
+});
+
+describe("faltante con cantidad reportada en cajas (Migranol)", () => {
+  it("confirma la caja y usa las 30 cajas reportadas, no 1 y no la unidad genérica", async () => {
+    listarFaltantesMock.mockResolvedValue([FALTANTE_MIGRANOL]);
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_MIGRANOL] }));
+
+    await renderizarPantalla();
+    // La pantalla muestra la cantidad escrita por la auxiliar como valor inicial: todavía no es
+    // un objetivo de compra, pero sí declara la unidad comercial (cajas).
+    expect(
+      await screen.findByText(/Solicitado: 30 cajas · A cotizar: 30 \(inicial\)/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Buscar Migranol en proveedores" }));
+    const tarjeta = await screen.findByRole("article", {
+      name: /Migranol x 10 Comprimidos Recubiertos/,
+    });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    // La oferta de FarmaLoop no informa unidad de venta: se pide confirmarla antes de validar la
+    // equivalencia con el faltante.
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/no informa en qué unidad se vende/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Caja"));
+    fireEvent.click(screen.getByRole("button", { name: "Agregar y asociar" }));
+
+    // La cantidad reportada (30) se fija con la unidad confirmada; el «x 10» es el contenido de
+    // la caja y no se convierte en 10 ni en 300.
+    await waitFor(() =>
+      expect(fijarCantidadMock).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "f-migranol" }),
+        30,
+        "box",
+      ),
+    );
+    await waitFor(() =>
+      expect(agregarLineaMock).toHaveBeenCalledWith("q-viva", {
+        supplierId: "sup-farmaloop",
+        offer: expect.objectContaining({ external_id: "90019", sale_unit: null }),
+        offerName: "Migranol x 10 Comprimidos Recubiertos",
+        quantity: "30",
+        unit: null,
+        demandItemId: "f-migranol",
+        confirmedSaleUnit: "box",
+      }),
+    );
+    // La cobertura la calcula el backend con la cantidad asignada a la línea: 30 cajas.
+    expect(agregarLineaMock.mock.calls[0]?.[1]).toMatchObject({
+      quantity: "30",
+      demandItemId: "f-migranol",
+    });
+  });
+
+  it("una unidad incompatible se explica en el diálogo y no asocia ni modifica el faltante", async () => {
+    listarFaltantesMock.mockResolvedValue([FALTANTE_MIGRANOL]);
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_MIGRANOL] }));
+
+    await renderizarPantalla();
+    fireEvent.click(await screen.findByRole("button", { name: "Buscar Migranol en proveedores" }));
+    const tarjeta = await screen.findByRole("article", {
+      name: /Migranol x 10 Comprimidos Recubiertos/,
+    });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    fireEvent.click(await screen.findByLabelText("Envase o paquete"));
+
+    // El diálogo explica por qué no se puede y no deja confirmar sin inventar la equivalencia.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "El faltante se mide en cajas y confirmaste envases: no se puede asociar sin inventar una equivalencia.",
+    );
+    expect(screen.getByRole("button", { name: "Agregar y asociar" })).toBeDisabled();
+    expect(fijarCantidadMock).not.toHaveBeenCalled();
+    expect(agregarLineaMock).not.toHaveBeenCalled();
+
+    // Cancelar conserva el faltante tal como estaba y deja la oferta disponible para reintentar.
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    expect(fijarCantidadMock).not.toHaveBeenCalled();
+    expect(limpiarCantidadMock).not.toHaveBeenCalled();
+    expect(agregarLineaMock).not.toHaveBeenCalled();
+    // El carrito tampoco se toca: no se pide ni se reutiliza una cotización.
+    expect(crearCotizacionActivaMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/Solicitado: 30 cajas · A cotizar: 30 \(inicial\)/),
+    ).toBeInTheDocument();
     expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeEnabled();
   });
 });

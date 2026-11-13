@@ -547,20 +547,24 @@ function Index() {
         // La oferta no declara unidad (FarmaLoop) y el faltante se mide en caja, envase o
         // botella: sin una confirmación humana no se asocia. La unidad confirmada se envía al
         // backend, que comprueba la compatibilidad y deja la decisión en la auditoría.
-        const unidadFaltante = faltanteParaVincular.quantity_unit;
-        if (
-          alta.unit === null &&
-          faltanteParaVincular.target_quantity !== null &&
-          unidadFaltante !== null &&
-          unidadFaltante !== "unit"
-        ) {
+        //
+        // Rige tanto si la cantidad ya es objetivo como si solo está reportada («30 cajas» →
+        // «30 (inicial)»): en ese segundo caso no hay `target_quantity`, pero la unidad
+        // comercial sí está declarada. La confirmación va antes de validar la equivalencia; si
+        // se validara antes, una oferta sin unidad nunca llegaría al diálogo y solo quedaría el
+        // aviso de incompatibilidad.
+        const unidadFaltante = unidadDeAjuste(faltanteParaVincular);
+        if (alta.unit === null && unidadFaltante !== null && unidadFaltante !== "unit") {
           unidadConfirmada = await pedirUnidadComercial(
             alta.offerName ?? alta.offer?.name ?? "esta oferta",
             unidadFaltante,
           );
           if (unidadConfirmada === null) return false;
         }
-        const preparada = await prepararCantidadParaAsociar(faltanteParaVincular, alta.unit);
+        const preparada = await prepararCantidadParaAsociar(
+          faltanteParaVincular,
+          unidadConfirmada ?? alta.unit,
+        );
         if (!preparada) return false;
         fijada = preparada.fijada;
         altaFinal = {
