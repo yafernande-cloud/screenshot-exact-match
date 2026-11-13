@@ -359,7 +359,7 @@ describe("ofertas organizadas por proveedor", () => {
     });
 
     const farmaloop = regionesProveedor()[0]!;
-    expect(farmaloop).toHaveTextContent("No se pudo consultar al proveedor.");
+    expect(farmaloop).toHaveTextContent("No pudimos consultar a Farmaloop.");
     expect(farmaloop).not.toHaveTextContent("Sin resultados para esta búsqueda.");
     expect(within(farmaloop).queryAllByRole("article")).toHaveLength(0);
   });

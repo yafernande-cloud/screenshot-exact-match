@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { FichaOfertaEnVivo } from "@/components/FichaOfertaEnVivo";
@@ -106,13 +106,18 @@ function estado(over: Partial<EstadoFuenteEnVivo> = {}): EstadoFuenteEnVivo {
   };
 }
 
-function renderizar(estados: EstadoFuenteEnVivo[], consulta: string | null = "Predual") {
+function renderizar(
+  estados: EstadoFuenteEnVivo[],
+  consulta: string | null = "Predual",
+  onReintentar?: (fuente: EstadoFuenteEnVivo["fuente"]) => void,
+) {
   return render(
     <OfertasProveedorEnVivo
       estados={estados}
       consulta={consulta}
       descubriendo={false}
       error={null}
+      onReintentar={onReintentar}
     />,
   );
 }
@@ -412,6 +417,73 @@ describe("proveedores en vivo en la pantalla principal", () => {
     renderizar([estado({ resultado: resultado({ offers: [], outcome: "no_matches" }) })]);
 
     expect(screen.getByText("Sin resultados para esta búsqueda.")).toBeInTheDocument();
+  });
+
+  it("muestra las ofertas válidas aunque la estructura pida revisión", () => {
+    renderizar([
+      estado({
+        resultado: resultado({
+          state: "requires_intervention",
+          reason: "schema_changed",
+          outcome: "matches",
+          warnings: [
+            "La estructura de la respuesta cambió; revisa el mapeo antes de confiar en estos datos.",
+          ],
+          offers: [oferta({ stock_status: "in_stock" })],
+        }),
+      }),
+    ]);
+
+    // La oferta conserva su precio y su stock reales; el aviso no la oculta.
+    expect(
+      screen.getByRole("article", { name: "Oferta de Farmaloop: Predual 30 mg comprimidos" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("$12.990")).toBeInTheDocument();
+    expect(screen.getByText("Con stock")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Se muestran las ofertas y publicaciones que sí validaron/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No pudimos consultar/)).toBeNull();
+    expect(screen.queryByText("Sin resultados para esta búsqueda.")).toBeNull();
+  });
+
+  it("una respuesta ilegible se avisa con un texto breve y permite reintentar", () => {
+    const reintentar = vi.fn();
+    renderizar(
+      [
+        estado({
+          resultado: resultado({
+            state: "requires_intervention",
+            reason: "field_mapping_failed",
+            outcome: null,
+            offers: [],
+            published: [],
+          }),
+        }),
+      ],
+      "Predual",
+      reintentar,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("No pudimos consultar a Farmaloop.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "No pudimos leer los productos de la respuesta.",
+    );
+    // Un fallo de lectura no se disfraza de «sin resultados».
+    expect(screen.queryByText("Sin resultados para esta búsqueda.")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(reintentar).toHaveBeenCalledTimes(1);
+    expect(reintentar.mock.calls[0]?.[0]).toMatchObject({ sourceId: "src-1" });
+  });
+
+  it("un fallo de red o del proveedor se puede reintentar sin volver a buscar todo", () => {
+    const reintentar = vi.fn();
+    renderizar([estado({ error: "El proveedor no respondió a tiempo." })], "Predual", reintentar);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("No pudimos consultar a Farmaloop.");
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(reintentar).toHaveBeenCalledTimes(1);
   });
 
   it("muestra las advertencias funcionales y oculta el detalle técnico de descartes", () => {

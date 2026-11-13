@@ -91,6 +91,7 @@ export function OfertasPorProveedor({
   onActualizar,
   onAgregarViva,
   onAgregarLista,
+  onReintentarViva,
   agregando = null,
 }: {
   estados: EstadoFuenteEnVivo[];
@@ -112,6 +113,8 @@ export function OfertasPorProveedor({
   onAgregarViva?: ((item: ItemEnVivo) => ResultadoDeAlta) | undefined;
   /** Precio de una lista cargada: ya tiene su observación inmutable en el servidor. */
   onAgregarLista?: ((oferta: OfertaImportada, proveedorId: string) => ResultadoDeAlta) | undefined;
+  /** Repite la consulta en una fuente en vivo cuyo intento falló. */
+  onReintentarViva?: ((fuente: EstadoFuenteEnVivo["fuente"]) => void) | undefined;
   /** Clave de la oferta en curso de alta: deshabilita solo ese botón. */
   agregando?: string | null;
 }) {
@@ -214,6 +217,9 @@ export function OfertasPorProveedor({
                   consulta={consulta}
                   onAgregar={onAgregarViva}
                   onPreferenciaAplicada={onActualizar}
+                  onReintentar={
+                    onReintentarViva ? () => onReintentarViva(estado.fuente) : undefined
+                  }
                   titulo={estado.fuente.sourceName}
                 />
               ))}

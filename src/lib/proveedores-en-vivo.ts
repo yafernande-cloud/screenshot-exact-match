@@ -176,6 +176,10 @@ const MENSAJES_MOTIVO: Record<string, string> = {
   rate_limited: "El proveedor limitó la cantidad de consultas.",
   credentials_rejected: "El proveedor rechazó las credenciales; requiere revisión.",
   schema_changed: "La estructura de datos del proveedor cambió; requiere revisión.",
+  field_mapping_failed: "No pudimos leer los productos de la respuesta.",
+  invalid_response: "La respuesta del proveedor no tiene el formato esperado.",
+  request_rejected: "El proveedor rechazó la consulta.",
+  response_too_large: "La respuesta del proveedor es demasiado grande para procesarla.",
 };
 
 /** Mensaje para la persona a partir del motivo cerrado del backend. */

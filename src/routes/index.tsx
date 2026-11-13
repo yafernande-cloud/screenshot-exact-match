@@ -895,6 +895,44 @@ function Index() {
     }
   };
 
+  // Reintento manual de una sola fuente: repite la consulta vigente sin tocar a las demás y sin
+  // depender del respaldo corto, que ya vive en el backend. La tarjeta muestra el resultado o el
+  // error de este intento.
+  const reintentarFuenteEnVivo = async (fuente: FuenteEnVivo) => {
+    const texto = consulta.trim();
+    if (!texto) return;
+    setEstadosVivo((previos) =>
+      previos.map((estado) =>
+        estado.fuente.sourceId === fuente.sourceId
+          ? { ...estado, cargando: true, error: null }
+          : estado,
+      ),
+    );
+    try {
+      const resultado = await buscarProveedorEnVivo(fuente.sourceId, texto);
+      setEstadosVivo((previos) =>
+        previos.map((estado) =>
+          estado.fuente.sourceId === fuente.sourceId
+            ? { ...estado, resultado, error: null, cargando: false }
+            : estado,
+        ),
+      );
+    } catch (error) {
+      setEstadosVivo((previos) =>
+        previos.map((estado) =>
+          estado.fuente.sourceId === fuente.sourceId
+            ? {
+                ...estado,
+                resultado: null,
+                error: mensajeDeErrorProveedor(error),
+                cargando: false,
+              }
+            : estado,
+        ),
+      );
+    }
+  };
+
   const ejecutarPreciosDeListas = async (seq: number, data: SearchResponse) => {
     setEstadoListas("cargando");
     setGruposListas([]);
@@ -1405,6 +1443,7 @@ function Index() {
             onActualizar={actualizarTrasEnsenar}
             onAgregarViva={(item) => agregarDesdeOfertaViva(item)}
             onAgregarLista={(oferta, proveedorId) => agregarDesdeLista(oferta, proveedorId)}
+            onReintentarViva={(fuente) => void reintentarFuenteEnVivo(fuente)}
             agregando={agregando}
           />
 

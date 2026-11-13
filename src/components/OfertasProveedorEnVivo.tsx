@@ -119,12 +119,15 @@ export function BloqueFuente({
   consulta,
   onAgregar,
   onPreferenciaAplicada,
+  onReintentar,
   titulo,
 }: {
   estado: EstadoFuenteEnVivo;
   consulta: string | null;
   onAgregar?: ((item: ItemEnVivo) => ResultadoDeAlta) | undefined;
   onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
+  /** Vuelve a consultar esta fuente con la misma búsqueda. */
+  onReintentar?: (() => void) | undefined;
   /** Dentro de una sección de proveedor se muestra el nombre de la fuente, no el del proveedor. */
   titulo?: string | undefined;
 }) {
@@ -137,15 +140,18 @@ export function BloqueFuente({
   const directas = agrupados.directas;
   const relacionadas = agrupados.relacionadas;
   const consultaAmpliada = resultado?.relaxed_query ?? null;
-  // Cuatro estados distintos, sin confundir una respuesta vacía con un fallo:
-  // sin conexión (no se intentó), error de consulta (se intentó y falló) y sin coincidencias
-  // (el proveedor respondió, pero no tiene nada para esta búsqueda).
+  const hayResultados = directas.length > 0 || relacionadas.length > 0;
+  // Cuatro estados distintos, sin confundir una respuesta vacía o ilegible con un fallo:
+  // sin conexión (no se intentó), consulta fallida (se intentó y no se pudo leer) y sin
+  // coincidencias (el proveedor respondió bien y no tiene nada para esta búsqueda).
   const sinConexion = !fuente.consultable || estadoConexion === "not_configured";
-  const errorConsulta =
-    Boolean(error) ||
-    Boolean(fuente.error) ||
-    estadoConexion === "error" ||
-    estadoConexion === "requires_intervention";
+  const falloConsulta = Boolean(error) || Boolean(fuente.error) || estadoConexion === "error";
+  // Una revisión pendiente sin ofertas legibles (estructura cambiada o mapeo ilegible) no es
+  // «sin resultados»: se avisa y se permite reintentar. Con ofertas que sí validaron, se muestran
+  // igual y la revisión queda como advertencia, nunca como bloqueo de la consulta en vivo.
+  const revisionSinDatos =
+    !hayResultados && !falloConsulta && estadoConexion === "requires_intervention";
+  const errorConsulta = falloConsulta || revisionSinDatos;
 
   return (
     <div className="rounded-2xl border p-4" data-source-id={fuente.sourceId}>
@@ -165,8 +171,17 @@ export function BloqueFuente({
 
       {!cargando && errorConsulta && (
         <Aviso>
-          No se pudo consultar al proveedor.{" "}
+          No pudimos consultar a {fuente.supplierName}.{" "}
           {error ?? fuente.error ?? mensajeMotivo(motivo, estadoConexion)}
+          {onReintentar && fuente.consultable && (
+            <button
+              type="button"
+              onClick={onReintentar}
+              className="ml-2 shrink-0 font-medium underline underline-offset-2"
+            >
+              Reintentar
+            </button>
+          )}
         </Aviso>
       )}
 
@@ -184,6 +199,16 @@ export function BloqueFuente({
 
       {!cargando && !errorConsulta && !sinConexion && resultado && (
         <>
+          {estadoConexion === "requires_intervention" && hayResultados && (
+            <p
+              role="status"
+              className="mt-2 rounded-2xl border bg-muted px-4 py-3 text-sm text-muted-foreground"
+            >
+              Se muestran las ofertas y publicaciones que sí validaron; la conexión queda en
+              revisión.
+            </p>
+          )}
+
           {advertencias.length > 0 && (
             <p
               role="status"
@@ -200,7 +225,7 @@ export function BloqueFuente({
             </p>
           )}
 
-          {directas.length === 0 && relacionadas.length === 0 && (
+          {!hayResultados && estadoConexion === "connected" && (
             <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
               Sin resultados para esta búsqueda.
             </p>
@@ -249,6 +274,7 @@ export function OfertasProveedorEnVivo({
   error,
   onAgregar,
   onPreferenciaAplicada,
+  onReintentar,
 }: {
   estados: EstadoFuenteEnVivo[];
   consulta: string | null;
@@ -260,6 +286,8 @@ export function OfertasProveedorEnVivo({
    */
   onAgregar?: ((item: ItemEnVivo) => ResultadoDeAlta) | undefined;
   onPreferenciaAplicada?: ((articuloId: string) => void | Promise<void>) | undefined;
+  /** Repite la consulta en una fuente cuyo intento falló. */
+  onReintentar?: ((fuente: EstadoFuenteEnVivo["fuente"]) => void) | undefined;
 }) {
   if (!descubriendo && !error && estados.length === 0) return null;
 
@@ -283,6 +311,7 @@ export function OfertasProveedorEnVivo({
           consulta={consulta}
           onAgregar={onAgregar}
           onPreferenciaAplicada={onPreferenciaAplicada}
+          onReintentar={onReintentar ? () => onReintentar(estado.fuente) : undefined}
         />
       ))}
     </div>
