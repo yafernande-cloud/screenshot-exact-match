@@ -5,6 +5,7 @@ import { solicitudesDemo } from "@/data/demo";
 import {
   aplicarCambioCantidad,
   cantidadDeReferencia,
+  cantidadReportadaExplicita,
   consultaDeBusqueda,
   consultaCompletaDeBusqueda,
   etiquetaEstadoFaltante,
@@ -98,6 +99,41 @@ describe("bandeja real de faltantes", () => {
     const f = faltante({ target_quantity: "5", quantity_unit: "unit" });
     expect(siguienteCantidad(f, 1)).toBe(6);
     expect(siguienteCantidad(f, -10)).toBe(1);
+  });
+
+  it("usa la cantidad escrita por la auxiliar aunque no declare unidad", () => {
+    const f = faltante({
+      requested_quantity: "10",
+      requested_unit: null,
+      declared_quantity: "10",
+      declared_unit: null,
+    });
+    expect(cantidadReportadaExplicita(f)).toBe(10); // valor inicial de «A cotizar»
+    expect(unidadDeAjuste(f)).toBe("unit"); // genérica: no supone caja ni comprimido
+    expect(siguienteCantidad(f, 1)).toBe(11); // + desde 10, no desde 1
+    expect(siguienteCantidad(f, -1)).toBe(9);
+  });
+
+  it("la unidad genérica de D-147 no es una cantidad reportada por la auxiliar", () => {
+    const f = faltante({
+      requested_quantity: "1",
+      requested_unit: "unit",
+      declared_quantity: "1",
+      declared_unit: "unit",
+      requested_quantity_origin: "default",
+    });
+    expect(cantidadReportadaExplicita(f)).toBeNull();
+  });
+
+  it("sin cantidad informada no se inventa un valor inicial ni una unidad", () => {
+    const f = faltante({
+      requested_quantity: null,
+      requested_unit: null,
+      declared_quantity: null,
+      declared_unit: null,
+    });
+    expect(cantidadReportadaExplicita(f)).toBeNull();
+    expect(unidadDeAjuste(f)).toBeNull(); // nada que ajustar todavía
   });
 
   it("solo ajusta con una unidad que el backend acepta, sin inventarla", () => {

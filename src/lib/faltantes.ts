@@ -103,15 +103,52 @@ export function esUnidadCantidad(valor: string | null | undefined): valor is Uni
 
 /**
  * Unidad con la que se puede fijar la cantidad objetivo: la actual, o la solicitada si aún no
- * hay cantidad objetivo. Nunca se inventa una unidad.
+ * hay cantidad objetivo. Nunca se inventa una unidad comercial.
+ *
+ * Cuando nadie declaró ninguna unidad («10 acidos mefenamicos») y el reporte sí tiene una
+ * cantidad, se usa la unidad genérica `unit`, la misma de D-147: cuenta piezas y no supone cajas
+ * ni comprimidos. Una unidad presente pero desconocida sigue dando `null`: no se adivina.
  */
 export function unidadDeAjuste(
-  faltante: Pick<Faltante, "quantity_unit" | "requested_unit" | "declared_unit">,
+  faltante: Pick<
+    Faltante,
+    | "quantity_unit"
+    | "requested_unit"
+    | "declared_unit"
+    | "target_quantity"
+    | "requested_quantity"
+    | "declared_quantity"
+  >,
 ): UnidadCantidad | null {
-  for (const unidad of [faltante.quantity_unit, faltante.requested_unit, faltante.declared_unit]) {
+  const unidades = [faltante.quantity_unit, faltante.requested_unit, faltante.declared_unit];
+  for (const unidad of unidades) {
     if (esUnidadCantidad(unidad)) return unidad;
   }
-  return null;
+  const sinUnidad = unidades.every((unidad) => !unidad?.trim());
+  const cantidad =
+    numero(faltante.target_quantity) ??
+    numero(faltante.requested_quantity) ??
+    numero(faltante.declared_quantity);
+  return sinUnidad && cantidad !== null ? "unit" : null;
+}
+
+/**
+ * Cantidad que la auxiliar escribió explícitamente y que todavía no es objetivo de compra.
+ *
+ * Es el valor inicial visible de «A cotizar» (p. ej. «10 (inicial)»). La unidad predeterminada
+ * de D-147 no cuenta: esa ya se distingue con «1 por defecto». `null` cuando no hay una cantidad
+ * entera positiva informada por una persona.
+ */
+export function cantidadReportadaExplicita(
+  faltante: Pick<
+    Faltante,
+    "requested_quantity_origin" | "requested_quantity" | "declared_quantity"
+  >,
+): number | null {
+  if (faltante.requested_quantity_origin !== "explicit") return null;
+  const valor = numero(faltante.requested_quantity) ?? numero(faltante.declared_quantity);
+  if (valor === null || valor <= 0 || !Number.isInteger(valor)) return null;
+  return valor;
 }
 
 /**
@@ -123,7 +160,15 @@ export function unidadDeAjuste(
  * equivalencia comercial que nadie declaró.
  */
 export function unidadParaAsociar(
-  faltante: Pick<Faltante, "quantity_unit" | "requested_unit" | "declared_unit">,
+  faltante: Pick<
+    Faltante,
+    | "quantity_unit"
+    | "requested_unit"
+    | "declared_unit"
+    | "target_quantity"
+    | "requested_quantity"
+    | "declared_quantity"
+  >,
   unidadOferta: string | null,
 ): UnidadCantidad | null {
   const declarada = unidadDeAjuste(faltante);

@@ -27,6 +27,8 @@ const buscarEnVivoMock = vi.hoisted(() => vi.fn());
 const listarFaltantesMock = vi.hoisted(() => vi.fn());
 const listarFuentesMock = vi.hoisted(() => vi.fn());
 const listarOfertasMock = vi.hoisted(() => vi.fn());
+const fijarCantidadMock = vi.hoisted(() => vi.fn());
+const limpiarCantidadMock = vi.hoisted(() => vi.fn());
 const guardarObservacionMock = vi.hoisted(() => vi.fn());
 const interpretarObservacionMock = vi.hoisted(() => vi.fn());
 
@@ -65,7 +67,8 @@ vi.mock("@/lib/observaciones-api", async (importOriginal) => ({
 vi.mock("@/lib/faltantes-api", () => ({
   listarFaltantes: listarFaltantesMock,
   cargarFotografia: vi.fn(),
-  fijarCantidad: vi.fn(),
+  fijarCantidad: fijarCantidadMock,
+  limpiarCantidad: limpiarCantidadMock,
   cancelarFaltante: vi.fn(),
   esConflictoDeVersion: () => false,
   mensajeDeErrorFaltantes: () => "No pudimos cargar los faltantes.",
@@ -473,6 +476,29 @@ beforeEach(() => {
   crearCotizacionActivaMock.mockResolvedValue(DETALLE_VACIO);
   obtenerCotizacionMock.mockResolvedValue(DETALLE_VACIO);
   agregarLineaMock.mockResolvedValue({ deduplicated: false, warnings: [] });
+  fijarCantidadMock.mockReset();
+  fijarCantidadMock.mockImplementation(async (f: Faltante, cantidad: number) => ({
+    replayed: false,
+    previous_quantity: null,
+    previous_unit: null,
+    item: {
+      ...f,
+      target_quantity: String(cantidad),
+      quantity_unit: "unit",
+      quantity_status: "defined",
+      needs_quantity: false,
+      version: f.version + 1,
+    },
+    event: {},
+  }));
+  limpiarCantidadMock.mockReset();
+  limpiarCantidadMock.mockImplementation(async (f: Faltante) => ({
+    replayed: false,
+    previous_quantity: "10",
+    previous_unit: "unit",
+    item: { ...f, target_quantity: null, quantity_unit: null, needs_quantity: true },
+    event: {},
+  }));
 });
 
 describe("búsqueda de Predual con proveedores en vivo", () => {
@@ -696,6 +722,157 @@ const OFERTA_SALONPAS = {
   cart_eligible: true,
   cart_blockers: [],
 };
+
+/** Caso real: «10 acidos mefenamicos» — cantidad escrita, sin unidad comercial. */
+const FALTANTE_SIN_UNIDAD: Faltante = {
+  ...FALTANTE,
+  id: "f-mef",
+  display_name: "Acidos mefenamicos",
+  ingredient: "acidos mefenamicos",
+  search_query: "Acidos mefenamicos",
+  search_query_full: "Acidos mefenamicos",
+  declared_quantity: "10",
+  declared_unit: null,
+  requested_quantity: "10",
+  requested_unit: null,
+  target_quantity: null,
+  quantity_unit: null,
+  quantity_status: "unknown",
+  needs_quantity: true,
+};
+
+const OFERTA_MEFENAMICO = {
+  ...OFERTA_SALONPAS,
+  external_id: "FL-1010",
+  name: "Acidos mefenamicos 500 mg",
+  price: { amount: "4990", currency: "CLP" },
+  sale_unit: null,
+  stock_quantity: null,
+  ean: null,
+};
+
+describe("cantidad reportada sin unidad al asociar una oferta", () => {
+  it("fija la cantidad escrita por la auxiliar (10) con la unidad genérica, no 1", async () => {
+    listarFaltantesMock.mockResolvedValue([FALTANTE_SIN_UNIDAD]);
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_MEFENAMICO] }));
+
+    await renderizarPantalla();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Buscar Acidos mefenamicos en proveedores",
+      }),
+    );
+    const tarjeta = await screen.findByRole("article", {
+      name: /Acidos mefenamicos 500 mg/,
+    });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    // El SET auditado lleva la cantidad reportada y la unidad genérica: nada de cajas supuestas.
+    await waitFor(() =>
+      expect(fijarCantidadMock).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "f-mef" }),
+        10,
+        "unit",
+      ),
+    );
+    await waitFor(() =>
+      expect(agregarLineaMock).toHaveBeenCalledWith("q-viva", {
+        supplierId: "sup-farmaloop",
+        offer: expect.objectContaining({ external_id: "FL-1010", sale_unit: null }),
+        quantity: "10",
+        unit: null,
+        demandItemId: "f-mef",
+      }),
+    );
+    expect(limpiarCantidadMock).not.toHaveBeenCalled();
+  });
+
+  it("sin cantidad reportada mantiene el 1 por defecto (D-147)", async () => {
+    listarFaltantesMock.mockResolvedValue([
+      {
+        ...FALTANTE_SIN_UNIDAD,
+        declared_quantity: null,
+        requested_quantity: null,
+        requested_quantity_origin: null,
+      },
+    ]);
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_MEFENAMICO] }));
+
+    await renderizarPantalla();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Buscar Acidos mefenamicos en proveedores",
+      }),
+    );
+    const tarjeta = await screen.findByRole("article", {
+      name: /Acidos mefenamicos 500 mg/,
+    });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    await waitFor(() =>
+      expect(fijarCantidadMock).toHaveBeenCalledWith(expect.anything(), 1, "unit"),
+    );
+    await waitFor(() =>
+      expect(agregarLineaMock).toHaveBeenCalledWith(
+        "q-viva",
+        expect.objectContaining({ quantity: "1" }),
+      ),
+    );
+  });
+
+  it("si el alta falla, la cantidad fijada se revierte con CLEAR", async () => {
+    listarFaltantesMock.mockResolvedValue([FALTANTE_SIN_UNIDAD]);
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_MEFENAMICO] }));
+    agregarLineaMock.mockRejectedValueOnce(new Error("sin conexión"));
+
+    await renderizarPantalla();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Buscar Acidos mefenamicos en proveedores",
+      }),
+    );
+    const tarjeta = await screen.findByRole("article", {
+      name: /Acidos mefenamicos 500 mg/,
+    });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    await waitFor(() => expect(fijarCantidadMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(limpiarCantidadMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("nunca reescribe una cantidad a cotizar ya definida por la administradora", async () => {
+    listarFaltantesMock.mockResolvedValue([
+      {
+        ...FALTANTE_SIN_UNIDAD,
+        target_quantity: "5",
+        quantity_unit: "box",
+        quantity_status: "defined",
+        needs_quantity: false,
+      },
+    ]);
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_MEFENAMICO] }));
+
+    await renderizarPantalla();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Buscar Acidos mefenamicos en proveedores",
+      }),
+    );
+    const tarjeta = await screen.findByRole("article", {
+      name: /Acidos mefenamicos 500 mg/,
+    });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    await waitFor(() =>
+      expect(agregarLineaMock).toHaveBeenCalledWith(
+        "q-viva",
+        expect.objectContaining({ quantity: "5" }),
+      ),
+    );
+    expect(fijarCantidadMock).not.toHaveBeenCalled();
+    expect(limpiarCantidadMock).not.toHaveBeenCalled();
+  });
+});
 
 describe("oferta viva sin unidad de venta ni base del precio", () => {
   it("la agrega con unidad nula, sin inventar caja ni base", async () => {

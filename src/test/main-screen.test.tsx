@@ -87,6 +87,25 @@ const reporteReal: Faltante = {
   last_raw_text: null,
 };
 
+/** Caso real: la auxiliar escribió «10 acidos mefenamicos» (cantidad sin unidad comercial). */
+const reporteSinUnidad: Faltante = {
+  ...reporteReal,
+  id: "f-mef",
+  display_name: "Acidos mefenamicos",
+  ingredient: "acidos mefenamicos",
+  observation_count: 1,
+  declared_quantity: "10",
+  declared_unit: null,
+  requested_quantity: "10",
+  requested_unit: null,
+  requested_quantity_origin: "explicit",
+  target_quantity: null,
+  quantity_unit: null,
+  quantity_status: "unknown",
+  needs_quantity: true,
+  last_raw_text: "10 acidos mefenamicos",
+};
+
 /** Nombres largos y fotografía: lo que entrega el backend desde el contrato nuevo. */
 const reporteConFoto: Faltante = {
   ...reporteReal,
@@ -169,6 +188,48 @@ describe("pantalla principal con sesión autorizada", () => {
     // La sucursal sigue llegando del backend, pero no se muestra en la tarjeta.
     expect(screen.queryByText(/Parque Lantaño/)).toBeNull();
     expect(screen.queryByText(/Juanito Pérez|María González|Pedro Soto/)).toBeNull();
+  });
+
+  it("muestra la cantidad escrita por la auxiliar como valor inicial de lo que se va a cotizar", async () => {
+    listarFaltantesMock.mockResolvedValue([reporteSinUnidad]);
+
+    await renderizarPantalla();
+
+    expect(await screen.findByText("Acidos mefenamicos")).toBeInTheDocument();
+    expect(screen.getByText(/Solicitado: 10 · A cotizar: 10 \(inicial\)/)).toBeInTheDocument();
+    // El selector arranca en 10, no en 1: el «+» suma sobre lo reportado (11).
+    expect(screen.getByText("10 (inicial)")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Aumentar cantidad de Acidos mefenamicos/ }),
+    ).toBeEnabled();
+  });
+
+  it("no pisa una cantidad a cotizar ya definida y deja sin definir el reporte sin cantidad", async () => {
+    const conObjetivo: Faltante = {
+      ...reporteSinUnidad,
+      id: "f-mef-2",
+      target_quantity: "5",
+      quantity_unit: "box",
+      quantity_status: "defined",
+      needs_quantity: false,
+    };
+    const porDefecto: Faltante = {
+      ...reporteReal,
+      id: "f-3",
+      display_name: "Ibuprofeno 400 mg",
+      declared_quantity: "1",
+      declared_unit: "unit",
+      requested_quantity: "1",
+      requested_unit: "unit",
+      requested_quantity_origin: "default",
+    };
+    listarFaltantesMock.mockResolvedValue([conObjetivo, porDefecto]);
+
+    await renderizarPantalla();
+
+    expect(await screen.findByText(/A cotizar: 5 cajas/)).toBeInTheDocument();
+    expect(screen.queryByText(/10 \(inicial\)/)).toBeNull();
+    expect(screen.getByText(/A cotizar: sin definir/)).toBeInTheDocument();
   });
 
   it("muestra nombres largos en dos niveles y una fotografía solo cuando existe", async () => {

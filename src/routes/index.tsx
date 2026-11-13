@@ -42,6 +42,7 @@ import {
 } from "@/lib/cotizacion-api";
 import {
   aplicarCambioCantidad,
+  cantidadReportadaExplicita,
   consultaCompletaDeBusqueda,
   consultaDeBusqueda,
   etiquetaEstadoFaltante,
@@ -435,9 +436,10 @@ function Index() {
   const faltantesVisibles = visiblesEnBandeja(faltantes);
 
   /**
-   * Asegura la cantidad a cotizar antes de asociar: respeta la definida o fija 1 con el comando
-   * SET auditado (D-147). Devuelve la cantidad y, si el SET se ejecutó ahora, la fila actualizada
-   * para poder revertirlo si el alta no se confirma.
+   * Asegura la cantidad a cotizar antes de asociar: respeta la definida o fija la cantidad
+   * escrita por la auxiliar con el comando SET auditado; si no hay ninguna, fija 1 (D-147).
+   * Devuelve la cantidad y, si el SET se ejecutó ahora, la fila actualizada para poder
+   * revertirlo si el alta no se confirma.
    */
   const prepararCantidadParaAsociar = async (
     faltante: Faltante,
@@ -454,13 +456,21 @@ function Index() {
       );
       return null;
     }
+    // Lo que la auxiliar escribió («10 acidos mefenamicos») es el valor inicial de la compra:
+    // se fija tal cual, sin suponer unidad y sin reemplazar un objetivo ya definido.
+    const reportada = cantidadReportadaExplicita(faltante);
+    const cantidad = reportada ?? 1;
     try {
-      const resultado = await fijarCantidad(faltante, 1, unidad);
+      const resultado = await fijarCantidad(faltante, cantidad, unidad);
       setFaltantes((previos) =>
         previos.map((f) => (f.id === faltante.id ? aplicarCambioCantidad(f, resultado.item) : f)),
       );
-      toast("A cotizar: 1 (por defecto). Queda registrado en el historial del reporte.");
-      return { cantidad: "1", fijada: resultado.item };
+      toast(
+        reportada === null
+          ? "A cotizar: 1 (por defecto). Queda registrado en el historial del reporte."
+          : `A cotizar: ${reportada} (según lo reportado). Queda registrado en el historial del reporte.`,
+      );
+      return { cantidad: String(cantidad), fijada: resultado.item };
     } catch (error) {
       if (esConflictoDeVersion(error)) {
         toast("La lista cambió mientras asociabas. Actualizamos los datos.");
@@ -486,7 +496,7 @@ function Index() {
       toast("La cantidad por cotizar volvió a quedar sin definir.");
     } catch {
       await cargarFaltantes(true, true);
-      toast("La cantidad por cotizar quedó fijada en 1; puedes ajustarla o reintentar el alta.");
+      toast("La cantidad por cotizar quedó fijada; puedes ajustarla o reintentar el alta.");
     }
   };
 
@@ -1450,6 +1460,10 @@ function FilaFaltante({
     faltante.requested_unit ?? faltante.declared_unit,
   );
   const objetivo = describirCantidad(faltante.target_quantity, faltante.quantity_unit);
+  // Cantidad escrita por la auxiliar que todavía no se fijó como objetivo: es el valor inicial
+  // visible («10 (inicial)») y la base de +. Nunca pisa un objetivo ya definido.
+  const inicial = objetivo === null ? cantidadReportadaExplicita(faltante) : null;
+  const inicialTexto = inicial === null ? null : `${inicial} (inicial)`;
   const puedeAjustar = unidadDeAjuste(faltante) !== null;
   const porDefecto = faltante.requested_quantity_origin === "default";
 
@@ -1481,7 +1495,8 @@ function FilaFaltante({
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Solicitado: {solicitado ?? "sin cantidad informada"}
-            {porDefecto ? " (1 por defecto)" : ""} · A cotizar: {objetivo ?? "sin definir"}
+            {porDefecto ? " (1 por defecto)" : ""} · A cotizar:{" "}
+            {objetivo ?? inicialTexto ?? "sin definir"}
           </p>
         </div>
         {faltante.photo_url && (
@@ -1507,7 +1522,7 @@ function FilaFaltante({
             {ocupado ? (
               <Loader2 className="mx-auto h-4 w-4 animate-spin" aria-label="Guardando" />
             ) : (
-              (objetivo ?? "Sin definir")
+              (objetivo ?? inicialTexto ?? "Sin definir")
             )}
           </span>
           <button
