@@ -11,9 +11,9 @@ import type {
 } from "@/lib/proveedores-en-vivo";
 
 /**
- * Pruebas de presentación: solo se muestran las coincidencias directas, cada tarjeta enseña los
- * datos esenciales y el carrito sigue dependiendo de `cart_eligible`. Los fixtures reproducen la
- * forma del contrato; no son datos de demostración de la aplicación.
+ * Pruebas de presentación: las coincidencias directas y los resultados relacionados se muestran
+ * por separado, cada tarjeta enseña los datos esenciales y el carrito sigue dependiendo de
+ * `cart_eligible`. Los fixtures reproducen la forma del contrato; no son datos de demostración.
  */
 function oferta(over: Partial<OfertaEnVivo> = {}): OfertaEnVivo {
   return {
@@ -118,7 +118,7 @@ function renderizar(estados: EstadoFuenteEnVivo[], consulta: string | null = "Pr
 }
 
 describe("proveedores en vivo en la pantalla principal", () => {
-  it("muestra solo las coincidencias directas y omite los resultados relacionados", () => {
+  it("separa las coincidencias directas de los resultados relacionados", () => {
     renderizar([
       estado({
         resultado: resultado({
@@ -140,11 +140,10 @@ describe("proveedores en vivo en la pantalla principal", () => {
       }),
     ]);
 
-    expect(screen.getAllByRole("article")).toHaveLength(2);
-    expect(screen.queryByText("Pregalex 75 mg")).toBeNull();
-    expect(screen.queryByText(/Resultados relacionados/)).toBeNull();
-    expect(screen.queryByText(/Coincidencias directas/)).toBeNull();
-    expect(screen.queryByText(/El nombre publicado no confirma la consulta/)).toBeNull();
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.getByText("Pregalex 75 mg")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Resultados relacionados" })).toBeInTheDocument();
+    expect(screen.getByText(/su nombre no confirma toda la búsqueda/)).toBeInTheDocument();
   });
 
   it("muestra los datos esenciales de la oferta sin explicaciones técnicas", () => {
@@ -340,7 +339,7 @@ describe("proveedores en vivo en la pantalla principal", () => {
     ).toBeInTheDocument();
   });
 
-  it("cuando solo hay resultados relacionados informa que no hay coincidencias", () => {
+  it("cuando solo hay resultados relacionados los muestra aparte, no como coincidencias", () => {
     renderizar([
       estado({
         resultado: resultado({
@@ -356,8 +355,13 @@ describe("proveedores en vivo en la pantalla principal", () => {
       }),
     ]);
 
-    expect(screen.getByText("Sin resultados para esta búsqueda.")).toBeInTheDocument();
-    expect(screen.queryByRole("article")).toBeNull();
+    expect(screen.queryByText("Sin resultados para esta búsqueda.")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Resultados relacionados" })).toBeInTheDocument();
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    // Ninguno se presenta como la oferta buscada ni habilita el alta.
+    for (const boton of screen.getAllByRole("button", { name: /Agregar a cotización/ })) {
+      expect(boton).toBeDisabled();
+    }
   });
 
   it("una fuente sin conexión se informa como tal y nunca como «sin resultados»", () => {

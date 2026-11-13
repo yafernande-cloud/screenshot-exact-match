@@ -496,7 +496,7 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     expect(await screen.findByText("Predual Salcobrand")).toBeInTheDocument();
     expect(await screen.findByText("Predual Cruz Verde")).toBeInTheDocument();
 
-    // Proveedores: solo las dos coincidencias directas; el relacionado no se presenta.
+    // Proveedores: las dos coincidencias directas y el resultado relacionado, este último aparte.
     expect(
       screen.getByRole("article", { name: "Oferta de Farmaloop: Predual 30 mg comprimidos" }),
     ).toBeInTheDocument();
@@ -506,15 +506,17 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     const tarjetasProveedor = screen
       .getAllByRole("article")
       .filter((tarjeta) => (tarjeta.getAttribute("aria-label") ?? "").startsWith("Oferta de "));
-    expect(tarjetasProveedor).toHaveLength(2);
-    expect(screen.queryByText("Pregalex 75 mg")).toBeNull();
-    expect(screen.queryByRole("heading", { name: /Resultados relacionados/ })).toBeNull();
+    expect(tarjetasProveedor).toHaveLength(3);
+    expect(screen.getByRole("heading", { name: "Resultados relacionados" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("article", { name: "Oferta de Farmaloop: Pregalex 75 mg" }),
+    ).toBeInTheDocument();
     // La conexión ya está hecha, pero solo se agrega lo que el backend declara elegible: estas
     // ofertas no tienen unidad de venta ni base de precio confirmadas.
     for (const tarjeta of tarjetasProveedor) {
       expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
     }
-    expect(screen.getAllByText("No disponible para agregar a la cotización.")).toHaveLength(2);
+    expect(screen.getAllByText("No disponible para agregar a la cotización.")).toHaveLength(3);
   });
 
   it("el fallo de un proveedor no altera catálogo ni cadenas", async () => {
@@ -579,7 +581,7 @@ const FALTANTE_TRAMADOL: Faltante = {
 };
 
 describe("consulta completa desde un faltante, con respaldo corto", () => {
-  it("usa la consulta ampliada y prueba una sola vez la corta por fuente", async () => {
+  it("catálogo y cadenas usan el respaldo corto; el proveedor en vivo lo resuelve en el backend", async () => {
     listarFaltantesMock.mockResolvedValue([FALTANTE_TRAMADOL]);
     buscarCatalogoMock.mockImplementation(async (consulta: string) =>
       consulta === CONSULTA_LARGA ? CATALOGO_VACIO : CATALOGO,
@@ -616,16 +618,15 @@ describe("consulta completa desde un faltante, con respaldo corto", () => {
     const caja = screen.getByRole("textbox", { name: "Buscar producto" });
     await waitFor(() => expect(caja).toHaveValue(CONSULTA_LARGA));
 
-    // Cada fuente se consulta primero completa; solo al no encontrar nada prueba la corta.
-    await waitFor(() => expect(buscarEnVivoMock).toHaveBeenCalledTimes(2));
+    // Cada cadena se consulta primero completa; solo al no encontrar nada prueba la corta.
+    // El proveedor en vivo, en cambio, recibe una sola búsqueda: el respaldo con consulta
+    // reducida vive en el backend para que también cubra las búsquedas manuales.
+    await waitFor(() => expect(buscarEnVivoMock).toHaveBeenCalledTimes(1));
     expect(buscarCatalogoMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
     expect(buscarAhumadaMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
     expect(buscarSalcobrandMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
     expect(buscarCruzVerdeMock.mock.calls).toEqual([[CONSULTA_LARGA], ["Tramadol"]]);
-    expect(buscarEnVivoMock.mock.calls).toEqual([
-      ["src-farmaloop", CONSULTA_LARGA],
-      ["src-farmaloop", "Tramadol"],
-    ]);
+    expect(buscarEnVivoMock.mock.calls).toEqual([["src-farmaloop", CONSULTA_LARGA]]);
     // Los resultados del respaldo reemplazan a los vacíos: no se mezclan dos búsquedas.
     expect(await screen.findByText("Predual 30 mg")).toBeInTheDocument();
     expect(await screen.findByText("Predual Ahumada")).toBeInTheDocument();
@@ -690,7 +691,7 @@ const OFERTA_SALONPAS = {
   image_url: null,
   product_url: null,
   ean: null,
-  match_relation: "direct",
+  match_relation: "direct" as const,
   match_reasons: ["all_query_terms_in_name"],
   cart_eligible: true,
   cart_blockers: [],

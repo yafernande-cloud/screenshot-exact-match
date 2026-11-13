@@ -2,9 +2,9 @@
  * Bloque «Proveedores en vivo» de la pantalla principal.
  *
  * Cada fuente tiene su propio estado: una que no responde no oculta ni retrasa a las demás, y una
- * sin conexión configurada nunca se presenta como «sin resultados». Solo se muestran las
- * coincidencias directas que confirman la consulta; los resultados que el proveedor devuelve sin
- * confirmarla se conservan en la respuesta pero no se presentan como productos encontrados.
+ * sin conexión configurada nunca se presenta como «sin resultados». Las coincidencias directas se
+ * muestran como resultados; las que el proveedor devolvió sin confirmar toda la consulta se
+ * muestran aparte, etiquetadas y sin acción de carrito.
  */
 
 import type { ReactNode } from "react";
@@ -133,8 +133,10 @@ export function BloqueFuente({
   const motivo = resultado?.reason ?? fuente.reason;
   const ultimaConexion = fechaHora(fuente.lastSuccessAt);
   const advertencias = resultado ? advertenciasVisibles(resultado.warnings) : [];
-  // Solo lo que confirma la consulta; los relacionados se conservan en la respuesta del backend.
-  const directas = resultado ? agruparResultados(resultado).directas : [];
+  const agrupados = resultado ? agruparResultados(resultado) : { directas: [], relacionadas: [] };
+  const directas = agrupados.directas;
+  const relacionadas = agrupados.relacionadas;
+  const consultaAmpliada = resultado?.relaxed_query ?? null;
   // Cuatro estados distintos, sin confundir una respuesta vacía con un fallo:
   // sin conexión (no se intentó), error de consulta (se intentó y falló) y sin coincidencias
   // (el proveedor respondió, pero no tiene nada para esta búsqueda).
@@ -191,7 +193,14 @@ export function BloqueFuente({
             </p>
           )}
 
-          {directas.length === 0 && (
+          {consultaAmpliada && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Se amplió la búsqueda a «{consultaAmpliada}» para encontrar candidatos. Las
+              coincidencias se confirman con la búsqueda original.
+            </p>
+          )}
+
+          {directas.length === 0 && relacionadas.length === 0 && (
             <p className="mt-2 rounded-2xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
               Sin resultados para esta búsqueda.
             </p>
@@ -205,6 +214,26 @@ export function BloqueFuente({
               onAgregar={onAgregar}
               onPreferenciaAplicada={onPreferenciaAplicada}
             />
+          )}
+
+          {relacionadas.length > 0 && (
+            <div className="mt-5 space-y-3">
+              <div>
+                <h5 className="text-sm font-semibold">Resultados relacionados</h5>
+                <p className="text-xs text-muted-foreground">
+                  El proveedor los devolvió, pero su nombre no confirma toda la búsqueda. No se
+                  pueden agregar a la cotización.
+                </p>
+              </div>
+              {/* Sin `onAgregar`: un resultado relacionado nunca se presenta como la oferta
+                  buscada ni habilita el alta, aunque el backend ya lo bloquee. */}
+              <ListaResultados
+                items={relacionadas}
+                fuente={fuente}
+                consulta={consulta}
+                onPreferenciaAplicada={onPreferenciaAplicada}
+              />
+            </div>
           )}
         </>
       )}

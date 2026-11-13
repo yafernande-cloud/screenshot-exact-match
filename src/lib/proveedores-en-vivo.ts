@@ -114,6 +114,8 @@ export interface ResultadoEnVivo {
   source_id: string;
   source_name: string;
   query: string;
+  /** Consulta reducida con la que se recuperaron candidatos; `query` sigue siendo la original. */
+  relaxed_query?: string | null;
   state: EstadoConector;
   reason: string | null;
   outcome: "matches" | "no_matches" | null;

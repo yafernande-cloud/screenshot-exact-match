@@ -106,7 +106,6 @@ import {
   buscarProveedorEnVivo,
   descubrirProveedoresEnVivo,
   mensajeDeErrorProveedor,
-  proveedorSinResultados,
   type EstadoFuenteEnVivo,
   type FuenteEnVivo,
   type ItemEnVivo,
@@ -786,7 +785,7 @@ function Index() {
     }
   };
 
-  const ejecutarProveedoresEnVivo = async (texto: string, seq: number, respaldo?: string) => {
+  const ejecutarProveedoresEnVivo = async (texto: string, seq: number) => {
     setDescubriendoVivo(true);
     setEstadosVivo([]);
     setErrorVivo(null);
@@ -817,11 +816,9 @@ function Index() {
               );
             };
             try {
-              let resultado = await buscarProveedorEnVivo(fuente.sourceId, texto);
-              if (respaldo && proveedorSinResultados(resultado)) {
-                // Un único respaldo por fuente: la consulta corta del faltante.
-                resultado = await buscarProveedorEnVivo(fuente.sourceId, respaldo);
-              }
+              // El respaldo con una consulta reducida vive en el backend: así vale también para
+              // las búsquedas manuales y no se encadenan reintentos entre cliente y servidor.
+              const resultado = await buscarProveedorEnVivo(fuente.sourceId, texto);
               if (seq !== busquedaSeq.current) return;
               actualizar({ resultado, error: null });
             } catch (error) {
@@ -884,10 +881,10 @@ function Index() {
   /**
    * Ejecuta la búsqueda completa en catálogo, cadenas y proveedores en vivo.
    *
-   * `respaldo` es la consulta corta cuando la búsqueda nació de un faltante de Telegram. Cada
-   * fuente la prueba **una sola vez** si la consulta ampliada no encuentra coincidencias o es
-   * rechazada; los resultados se reemplazan, nunca se mezclan con los de la consulta ampliada.
-   * Una búsqueda manual no lleva respaldo y su comportamiento no cambia.
+   * `respaldo` es la consulta corta cuando la búsqueda nació de un faltante de Telegram. El
+   * catálogo y las cadenas la prueban **una sola vez** si la consulta ampliada no encuentra nada;
+   * los resultados se reemplazan, nunca se mezclan. Los proveedores en vivo resuelven su propio
+   * respaldo en el backend, que también cubre las búsquedas manuales.
    */
   const ejecutarBusqueda = async (texto: string, respaldo?: string) => {
     const t = texto.trim();
@@ -943,7 +940,7 @@ function Index() {
       void ejecutarAhumada(t, seq, corto);
       void ejecutarSalcobrand(t, seq, corto);
       void ejecutarCruzVerde(t, seq, corto);
-      void ejecutarProveedoresEnVivo(t, seq, corto);
+      void ejecutarProveedoresEnVivo(t, seq);
     };
     try {
       let data = await buscarCatalogo(t);
