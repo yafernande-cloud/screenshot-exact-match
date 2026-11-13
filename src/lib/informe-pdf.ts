@@ -261,7 +261,8 @@ function dibujarCabecera(doc: jsPDF, informe: InformeCotizacion, ancho: number):
   });
 
   // Cantidades por unidad comercial: se enumeran cuando hay más de una y nunca se suman entre sí.
-  const cantidades = describirCantidades(resumen);
+  // La unidad desconocida va entre paréntesis, igual que en «Ver vista», sin alterar el valor.
+  const cantidades = describirCantidades(resumen, "parentesis");
   if (cantidades) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);

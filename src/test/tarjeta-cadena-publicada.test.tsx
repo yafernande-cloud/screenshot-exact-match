@@ -50,11 +50,24 @@ describe("tarjeta de cadena publicada", () => {
 
     expect(screen.getByText("Coincidencia no confirmada")).toHaveAttribute(
       "title",
-      "Se publica para esta búsqueda, pero su nombre no contiene la consulta.",
+      "Se publica para esta búsqueda, pero su nombre no confirma la consulta.",
     );
     // El producto y su precio se conservan: solo se etiqueta la relación.
     expect(screen.getByText("Tapsin Plus 20 Comprimidos")).toBeInTheDocument();
     expect(screen.getByText("$1.309")).toBeInTheDocument();
+  });
+
+  it("rotula también la coincidencia parcial que no confirma la consulta entera", () => {
+    renderResultados([
+      resultado({
+        chain_item_id: "2",
+        published_name: "Ácido Hialurónico Loreal Revitalift 30 ml",
+        match: { level: "related", causes: ["partial_query_match"] },
+      }),
+    ]);
+
+    expect(screen.getByText("Coincidencia no confirmada")).toBeInTheDocument();
+    expect(screen.getByText("Ácido Hialurónico Loreal Revitalift 30 ml")).toBeInTheDocument();
   });
 
   it("no agrega el distintivo a una coincidencia directa ni a una relación sin causa declarada", () => {

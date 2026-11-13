@@ -30,7 +30,8 @@ function cantidadInforme(valor: string | null, unit: string | null): string {
 
 export function InformeCotizacion({ informe }: { informe: Informe }) {
   const resumen = resumenDeInforme(informe);
-  const cantidades = describirCantidades(resumen);
+  // El informe congelado declara la unidad desconocida entre paréntesis, sin tocar el valor.
+  const cantidades = describirCantidades(resumen, "parentesis");
   return (
     <article className="space-y-4" aria-label={`Orden de compra ${informe.label}`}>
       <header className="flex flex-wrap items-start justify-between gap-2 border-b pb-3">

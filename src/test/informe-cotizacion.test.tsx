@@ -61,6 +61,8 @@ describe("informe de cotización finalizado", () => {
       />,
     );
 
+    // La fila conserva el valor guardado y el resumen lo declara entre paréntesis.
     expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText(/producto distinto · 7 \(sin unidad informada\)/)).toBeInTheDocument();
   });
 });

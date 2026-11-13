@@ -143,16 +143,24 @@ function masReciente(a: OfertaImportada, b: OfertaImportada): boolean {
 /**
  * Vigencia presentada al usuario.
  *
- * Usa lo que evaluó el backend (`is_current`, `is_stale`, `fresh_until`). Un campo ausente no
- * invalida la oferta: solo declararla vencida si el backend lo dijo, o si `valid_from`/`valid_to`
- * la contradicen.
+ * Para una **lista manual importada**, la lista actual la define la última importación válida
+ * (D-151) y la vigencia la declaran sus ofertas (`is_current`, `valid_from`, `valid_to`). La
+ * antigüedad de la fuente (`is_stale`, `fresh_until`, 24 h) describe cuándo se observó el precio,
+ * no si la lista dejó de valer: un Excel cargado ayer sigue siendo la lista vigente hasta que se
+ * importe otro. Se ignora aquí para no contradecir a `/proveedores`, que cuenta esas mismas
+ * ofertas como vigentes.
+ *
+ * Para fuentes que no son listas manuales, la antigüedad sí excluye: es el criterio de una
+ * lectura en vivo.
  */
 export function precioVigente(oferta: OfertaImportada, ahora: Date = new Date()): boolean {
   if (oferta.is_current === false) return false;
-  if (oferta.is_stale === true) return false;
   if (oferta.valid_from && Date.parse(oferta.valid_from) > ahora.getTime()) return false;
   if (oferta.valid_to && Date.parse(oferta.valid_to) < ahora.getTime()) return false;
-  if (oferta.fresh_until && Date.parse(oferta.fresh_until) < ahora.getTime()) return false;
+  if (oferta.source_mode !== "manual_import") {
+    if (oferta.is_stale === true) return false;
+    if (oferta.fresh_until && Date.parse(oferta.fresh_until) < ahora.getTime()) return false;
+  }
   return true;
 }
 
@@ -171,8 +179,8 @@ export interface SeleccionOfertasLista {
  * Motivo por el que la oferta no se presenta como vigente, o `null` si sí lo está.
  *
  * Reparte exactamente el mismo criterio que `precioVigente` sin cambiarlo. Primero la vigencia
- * declarada por la oferta; si la oferta es vigente y aun así se excluye, el motivo es la
- * antigüedad de la observación.
+ * declarada por la oferta; `desactualizado` solo puede salir para fuentes que no son listas
+ * manuales, porque en una lista importada la antigüedad de la observación no la invalida (D-151).
  */
 export function motivoNoVigente(
   oferta: OfertaImportada,

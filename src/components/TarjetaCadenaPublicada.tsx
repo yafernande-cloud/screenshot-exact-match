@@ -126,9 +126,10 @@ function disponibilidad(hasStock: boolean | null | undefined): string {
 /**
  * Distintivo de relación con la consulta. Cruz Verde informa `query_relation` (`partial` es la
  * misma dosis con otra presentación y `alternative` es otra concentración). Ahumada declara
- * `match.level = "related"` con la causa `query_not_confirmed_by_name` cuando el nombre publicado
- * no confirma la búsqueda: se muestra aparte, nunca como coincidencia. Sin ese dato no se
- * muestra nada, así las tarjetas de las demás cadenas siguen igual.
+ * `match.level = "related"` cuando el nombre publicado no confirma la búsqueda entera: tanto si
+ * no comparte ningún término (`query_not_confirmed_by_name`) como si solo coincide en parte
+ * (`partial_query_match`). Ambas se rotulan «Coincidencia no confirmada»: se muestra aparte,
+ * nunca como coincidencia. Sin ese dato no se muestra nada, así las demás cadenas siguen igual.
  */
 function RelacionConsulta({ resultado }: { resultado: ChainResult }) {
   const relacion = resultado.match["query_relation"];
@@ -148,12 +149,15 @@ function RelacionConsulta({ resultado }: { resultado: ChainResult }) {
     );
   }
   const causas = Array.isArray(resultado.match["causes"]) ? resultado.match["causes"] : [];
-  if (resultado.match["level"] !== "related" || !causas.includes("query_not_confirmed_by_name")) {
+  // Ahumada nombra dos grados de no confirmación; otras causas (o su ausencia) no se rotulan.
+  const noConfirmada =
+    causas.includes("query_not_confirmed_by_name") || causas.includes("partial_query_match");
+  if (resultado.match["level"] !== "related" || !noConfirmada) {
     return null;
   }
   return (
     <span
-      title="Se publica para esta búsqueda, pero su nombre no contiene la consulta."
+      title="Se publica para esta búsqueda, pero su nombre no confirma la consulta."
       className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
     >
       Coincidencia no confirmada

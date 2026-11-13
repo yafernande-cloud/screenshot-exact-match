@@ -268,7 +268,7 @@ function Historial() {
                       </td>
                       <td className="py-3 pr-4">
                         {c.quantity_totals && c.quantity_totals.length > 0 ? (
-                          c.quantity_totals.map(describirTotalUnidad).join(" + ")
+                          c.quantity_totals.map((total) => describirTotalUnidad(total)).join(" + ")
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}

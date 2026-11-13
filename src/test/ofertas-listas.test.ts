@@ -265,7 +265,23 @@ describe("selección de ofertas importadas", () => {
     });
   });
 
-  it("no presenta como vigente una oferta vencida o desactualizada, pero la cuenta", () => {
+  it("mantiene vigente una oferta antigua de la lista actual", () => {
+    // La lista sigue siendo la última importación válida (D-151): la antigüedad de la observación
+    // no la invalida, igual que no la invalida para «Ofertas vigentes» en /proveedores.
+    const antigua = oferta({
+      is_stale: true,
+      fresh_until: "2026-11-01T00:00:00Z",
+      observed_at: "2026-11-01T09:00:00Z",
+    });
+
+    expect(precioVigente(antigua, AHORA)).toBe(true);
+    expect(motivoNoVigente(antigua, AHORA)).toBeNull();
+    const seleccion = seleccionarOfertasDeLista([antigua], new Set(["art-paracetamol"]), AHORA);
+    expect(seleccion.vigentes.map((o) => o.offer_id)).toEqual(["of-1"]);
+    expect(seleccion.motivos).toEqual({ fueraDeVigencia: 0, desactualizado: 0 });
+  });
+
+  it("no presenta como vigente una oferta cuya vigencia terminó, pero la cuenta", () => {
     const seleccion = seleccionarOfertasDeLista(
       [
         oferta(),
@@ -275,24 +291,23 @@ describe("selección de ofertas importadas", () => {
           valid_to: "2026-11-01T00:00:00Z",
         }),
         oferta({
-          offer_id: "of-stale",
-          source_id: "src-otra",
-          is_stale: true,
-          fresh_until: "2026-11-01T00:00:00Z",
+          offer_id: "of-baja",
+          external_id: "AND-101",
+          trade_item_id: "art-baja",
+          is_current: false,
         }),
       ],
-      new Set(["art-paracetamol", "art-vencido"]),
+      new Set(["art-paracetamol", "art-vencido", "art-baja"]),
       AHORA,
     );
 
     expect(seleccion.vigentes.map((o) => o.offer_id)).toEqual(["of-1"]);
     expect(seleccion.desactualizadas).toBe(2);
     expect(seleccion.claves.size).toBe(3);
-    // El total se reparte por motivo real, sin mezclar vigencia con antigüedad de la fuente.
-    expect(seleccion.motivos).toEqual({ fueraDeVigencia: 1, desactualizado: 1 });
+    expect(seleccion.motivos).toEqual({ fueraDeVigencia: 2, desactualizado: 0 });
   });
 
-  it("distingue una oferta fuera de vigencia de una lista desactualizada", () => {
+  it("declara la vigencia por sus fechas y reserva la antigüedad para fuentes en vivo", () => {
     expect(motivoNoVigente(oferta(), AHORA)).toBeNull();
     expect(motivoNoVigente(oferta({ is_current: false }), AHORA)).toBe("fuera_de_vigencia");
     expect(motivoNoVigente(oferta({ valid_to: "2026-11-01T00:00:00Z" }), AHORA)).toBe(
@@ -301,9 +316,8 @@ describe("selección de ofertas importadas", () => {
     expect(motivoNoVigente(oferta({ valid_from: "2026-12-01T00:00:00Z" }), AHORA)).toBe(
       "fuera_de_vigencia",
     );
-    // La oferta sigue vigente; lo que venció es la frescura de la observación.
-    expect(motivoNoVigente(oferta({ is_stale: true }), AHORA)).toBe("desactualizado");
-    expect(motivoNoVigente(oferta({ fresh_until: "2026-11-01T00:00:00Z" }), AHORA)).toBe(
+    // Una lectura en vivo sí puede quedar desactualizada por antigüedad.
+    expect(motivoNoVigente(oferta({ source_mode: "api", is_stale: true }), AHORA)).toBe(
       "desactualizado",
     );
   });

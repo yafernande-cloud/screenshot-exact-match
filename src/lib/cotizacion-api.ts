@@ -664,20 +664,36 @@ export function resumenDeInforme(informe: InformeCotizacion): ResumenCantidades 
   );
 }
 
+export type FormatoSinUnidad = "declarar" | "parentesis";
+
 /**
  * Un grupo de cantidad con su unidad. La unidad desconocida se declara como tal: no se presenta
  * como «unidades» ni se lleva a cajas.
+ *
+ * `parentesis` es solo para el informe congelado: «4 (sin unidad informada)» deja el valor
+ * guardado a la vista, sin confundirlo con una unidad comercial. El carrito conserva la forma
+ * larga por defecto.
  */
-export function describirTotalUnidad(total: TotalPorUnidad): string {
+export function describirTotalUnidad(
+  total: TotalPorUnidad,
+  formatoSinUnidad: FormatoSinUnidad = "declarar",
+): string {
   const cifra = formatearCantidad(total.quantity) ?? total.quantity;
   if (total.unit) return `${cifra} ${etiquetaUnidad(total.unit, total.quantity)}`;
-  return `${cifra} sin unidad informada`;
+  return formatoSinUnidad === "parentesis"
+    ? `${cifra} (sin unidad informada)`
+    : `${cifra} sin unidad informada`;
 }
 
 /** «5 cajas + 2 unidades», o `null` cuando ninguna línea tiene cantidad sumable. */
-export function describirCantidades(resumen: ResumenCantidades): string | null {
+export function describirCantidades(
+  resumen: ResumenCantidades,
+  formatoSinUnidad: FormatoSinUnidad = "declarar",
+): string | null {
   if (resumen.porUnidad.length === 0) return null;
-  return resumen.porUnidad.map(describirTotalUnidad).join(" + ");
+  return resumen.porUnidad
+    .map((total) => describirTotalUnidad(total, formatoSinUnidad))
+    .join(" + ");
 }
 
 /**

@@ -197,7 +197,9 @@ describe("PDF del informe de cotización", () => {
     expect(crudo).toContain("PRODUCTOS DISTINTOS");
     expect(crudo).toContain("REFERENCIAS");
     // La unidad nula no se suma con las cajas: cada grupo se anuncia por separado.
-    expect(crudo).toContain("Cantidades solicitadas: 4 cajas + 3 sin unidad informada");
+    // El flujo de contenido del PDF escapa los paréntesis con «\»; el documento los muestra
+    // como «(sin unidad informada)».
+    expect(crudo).toContain("Cantidades solicitadas: 4 cajas + 3 \\(sin unidad informada\\)");
   });
 
   it("un informe histórico sin cantidades informadas no muestra la línea de cantidades", () => {
