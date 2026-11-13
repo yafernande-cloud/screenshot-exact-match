@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { messageForPasswordError, oauthErrorFromLocation } from "@/lib/auth";
+import { EstadoSolicitudAccesoPanel } from "@/components/AuthGate";
+import { messageForPasswordError, oauthErrorFromLocation, pideSolicitudAcceso } from "@/lib/auth";
 import { useSession } from "@/lib/session";
 import { supabaseIsConfigured } from "@/lib/supabase";
+import { useSolicitudAcceso } from "@/lib/use-solicitud-acceso";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -99,6 +101,12 @@ function LoginPage() {
   const [manualError, setManualError] = useState<string | null>(null);
   const autoStarted = useRef(false);
   const configured = supabaseIsConfigured();
+
+  // El retorno de Google siempre aterriza en `/login`: aquí también se resuelve la solicitud de
+  // acceso, no solo en la pantalla bloqueada de las rutas protegidas. Una identidad nueva registra
+  // su solicitud una única vez; el hook consulta el estado antes de enviar nada.
+  const esperaAcceso = status === "not_provisioned" && pideSolicitudAcceso(error?.code);
+  const solicitud = useSolicitudAcceso(esperaAcceso);
 
   useEffect(() => {
     setOauthError(oauthErrorFromLocation(window.location.search, window.location.hash));
@@ -235,14 +243,23 @@ function LoginPage() {
               </Alert>
             )}
 
-            {notProvisioned && (
-              <Alert variant="destructive">
-                <AlertTitle>Acceso no habilitado</AlertTitle>
-                <AlertDescription>
-                  {error?.message ?? "Tu cuenta todavía no está habilitada en este cotizador."}
-                  <span className="mt-1 block">Si el problema persiste, contacta a YF.</span>
-                </AlertDescription>
-              </Alert>
+            {esperaAcceso ? (
+              <EstadoSolicitudAccesoPanel
+                estado={solicitud.estado}
+                onConsultar={() => void solicitud.consultar()}
+                onVolverASolicitar={() => void solicitud.volverASolicitar()}
+                onReintentarAcceso={() => void retry()}
+              />
+            ) : (
+              notProvisioned && (
+                <Alert variant="destructive">
+                  <AlertTitle>Acceso no habilitado</AlertTitle>
+                  <AlertDescription>
+                    {error?.message ?? "Tu cuenta todavía no está habilitada en este cotizador."}
+                    <span className="mt-1 block">Si el problema persiste, contacta a YF.</span>
+                  </AlertDescription>
+                </Alert>
+              )
             )}
 
             {backendError && (

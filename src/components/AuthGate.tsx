@@ -2,6 +2,7 @@ import { Loader2, Pill, ShieldAlert } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { pideSolicitudAcceso } from "@/lib/auth";
 import { useSession } from "@/lib/session";
 import { useSolicitudAcceso, type EstadoPantallaSolicitud } from "@/lib/use-solicitud-acceso";
 
@@ -162,11 +163,7 @@ export function AccessBlockedScreen() {
   const notProvisioned = status === "not_provisioned";
   // Sin autorización web (`WEB_ACCESS_REQUIRED`) o con ella vencida, la persona conserva su
   // identidad: la pantalla ofrece consultar el estado y volver a solicitar explícitamente.
-  const esperaAcceso =
-    notProvisioned &&
-    (error?.code === "USER_NOT_PROVISIONED" ||
-      error?.code === "WEB_ACCESS_REQUIRED" ||
-      error?.code === "WEB_ACCESS_EXPIRED");
+  const esperaAcceso = notProvisioned && pideSolicitudAcceso(error?.code);
   const sinAccesoWeb =
     error?.code === "WEB_ACCESS_REQUIRED" || error?.code === "WEB_ACCESS_EXPIRED";
   const solicitud = useSolicitudAcceso(esperaAcceso);

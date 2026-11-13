@@ -48,6 +48,22 @@ export function gateFor(status: AuthStatus, pathname: string): Gate {
 }
 
 /**
+ * Códigos con los que el backend distingue a una identidad válida que todavía no tiene
+ * autorización web vigente. Son los únicos que abren el flujo de solicitud: otros 403 (por
+ * ejemplo, correo sin verificar o una persona desactivada) no se pueden resolver solicitando.
+ */
+const CODIGOS_CON_SOLICITUD = new Set([
+  "USER_NOT_PROVISIONED",
+  "WEB_ACCESS_REQUIRED",
+  "WEB_ACCESS_EXPIRED",
+]);
+
+/** True cuando el rechazo del backend admite solicitar acceso desde la propia identidad. */
+export function pideSolicitudAcceso(code: string | null | undefined): boolean {
+  return typeof code === "string" && CODIGOS_CON_SOLICITUD.has(code);
+}
+
+/**
  * Forma mínima de un error de Supabase Auth. No se depende del tipo concreto del SDK para que
  * esta decisión siga siendo pura y comprobable sin red.
  */

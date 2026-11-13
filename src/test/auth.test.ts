@@ -11,6 +11,7 @@ import {
   messageForPasswordError,
   normalizePath,
   oauthErrorFromLocation,
+  pideSolicitudAcceso,
   type AuthStatus,
 } from "@/lib/auth";
 
@@ -60,6 +61,26 @@ describe("protección de rutas", () => {
     ["loading", "/login", "loading"],
   ])("estado %s en %s → %s", (status, path, expected) => {
     expect(gateFor(status, path)).toBe(expected);
+  });
+});
+
+describe("solicitud de acceso de una identidad sin autorización", () => {
+  it("solo abre el flujo con los códigos que una solicitud puede resolver", () => {
+    for (const code of ["USER_NOT_PROVISIONED", "WEB_ACCESS_REQUIRED", "WEB_ACCESS_EXPIRED"]) {
+      expect(pideSolicitudAcceso(code)).toBe(true);
+    }
+    for (const code of [
+      "EMAIL_NOT_VERIFIED",
+      "EMAIL_REQUIRED",
+      "UNAUTHENTICATED",
+      "USER_INACTIVE",
+      "UNEXPECTED",
+      "",
+      null,
+      undefined,
+    ]) {
+      expect(pideSolicitudAcceso(code)).toBe(false);
+    }
   });
 });
 
