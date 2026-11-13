@@ -347,6 +347,13 @@ export interface AltaDeLinea {
   quantity: string;
   /** `null` cuando la oferta no informa su unidad: la cantidad se cuenta en ofertas. */
   unit: string | null;
+  /**
+   * Unidad comercial que la administradora confirma cuando la oferta no la declara (FarmaLoop).
+   * El backend la valida y la audita; nunca reemplaza una unidad publicada por la fuente.
+   */
+  confirmedSaleUnit?: string;
+  /** Nombre visible de la oferta, solo para el diálogo de confirmación. */
+  offerName?: string;
   /** Faltante al que se asocia la selección, cuando la unidad coincide. */
   demandItemId?: string;
 }
@@ -358,6 +365,7 @@ export async function agregarLinea(quoteId: string, alta: AltaDeLinea): Promise<
     quantity: { value: string; unit: string | null };
     offer_snapshot_id?: string;
     offer?: OfertaParaCotizar;
+    confirmed_sale_unit?: string;
     demand_item_id?: string;
   } = {
     supplier_id: alta.supplierId,
@@ -365,6 +373,7 @@ export async function agregarLinea(quoteId: string, alta: AltaDeLinea): Promise<
   };
   if (alta.offerSnapshotId) body.offer_snapshot_id = alta.offerSnapshotId;
   if (alta.offer) body.offer = alta.offer;
+  if (alta.confirmedSaleUnit) body.confirmed_sale_unit = alta.confirmedSaleUnit;
   if (alta.demandItemId) body.demand_item_id = alta.demandItemId;
   return apiRequest<LineaAgregada>(
     `/api/v1/quotes/${quoteId}/lines`,

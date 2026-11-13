@@ -88,6 +88,63 @@ vi.mock("@/lib/cotizacion-api", async (importOriginal) => ({
   obtenerCotizacion: obtenerCotizacionMock,
 }));
 
+// Este archivo monta la pantalla completa del Cotizador varias veces seguidas. El diálogo modal de
+// Radix viaja por un portal y, bajo jsdom con React 19, deja el sistema de eventos recorriendo el
+// DOM hasta colgar la suite. Aquí se reemplaza solo el envoltorio visual por un diálogo plano que
+// respeta `open`; el diálogo real sigue cubierto en `confirmar-unidad-comercial.test.tsx`.
+vi.mock("@/components/ui/dialog", async () => {
+  const { createContext, useContext } = await import("react");
+  const Estado = createContext<{
+    abierto: boolean;
+    cambiar: ((abierto: boolean) => void) | undefined;
+  }>({ abierto: false, cambiar: undefined });
+
+  const Contenedor = ({ children, className }: { children?: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  );
+
+  return {
+    // El disparador se muestra siempre, como en Radix, y abre el diálogo al recibir el clic;
+    // solo el contenido depende de `open`.
+    Dialog: ({
+      open,
+      onOpenChange,
+      children,
+    }: {
+      open?: boolean;
+      onOpenChange?: (abierto: boolean) => void;
+      children?: ReactNode;
+    }) => (
+      <Estado.Provider value={{ abierto: Boolean(open), cambiar: onOpenChange }}>
+        {children}
+      </Estado.Provider>
+    ),
+    DialogContent: ({ children, className }: { children?: ReactNode; className?: string }) =>
+      useContext(Estado).abierto ? (
+        <div role="dialog" className={className}>
+          {children}
+        </div>
+      ) : null,
+    DialogHeader: Contenedor,
+    DialogFooter: Contenedor,
+    DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+    DialogDescription: ({ children, className }: { children?: ReactNode; className?: string }) => (
+      <p className={className}>{children}</p>
+    ),
+    DialogPortal: Contenedor,
+    DialogOverlay: () => null,
+    DialogTrigger: ({ children }: { children?: ReactNode }) => {
+      const { cambiar } = useContext(Estado);
+      return (
+        <div onClick={() => cambiar?.(true)} role="presentation">
+          {children}
+        </div>
+      );
+    },
+    DialogClose: Contenedor,
+  };
+});
+
 vi.mock("@/lib/session", () => ({
   SessionProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useSession: () => ({
@@ -779,6 +836,7 @@ describe("cantidad reportada sin unidad al asociar una oferta", () => {
       expect(agregarLineaMock).toHaveBeenCalledWith("q-viva", {
         supplierId: "sup-farmaloop",
         offer: expect.objectContaining({ external_id: "FL-1010", sale_unit: null }),
+        offerName: "Acidos mefenamicos 500 mg",
         quantity: "10",
         unit: null,
         demandItemId: "f-mef",
@@ -863,14 +921,54 @@ describe("cantidad reportada sin unidad al asociar una oferta", () => {
     });
     fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
 
+    // La oferta no declara unidad y el faltante se mide en cajas: se pide confirmarla antes de
+    // asociar. La cantidad definida (5) no se toca.
+    fireEvent.click(await screen.findByLabelText("Caja"));
+    fireEvent.click(screen.getByRole("button", { name: "Agregar y asociar" }));
+
     await waitFor(() =>
       expect(agregarLineaMock).toHaveBeenCalledWith(
         "q-viva",
-        expect.objectContaining({ quantity: "5" }),
+        expect.objectContaining({ quantity: "5", confirmedSaleUnit: "box" }),
       ),
     );
     expect(fijarCantidadMock).not.toHaveBeenCalled();
     expect(limpiarCantidadMock).not.toHaveBeenCalled();
+    // El diálogo termina de cerrarse dentro de la prueba: no queda un portal a medio retirar
+    // cuando el siguiente caso empieza.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("cancelar la confirmación no asocia la oferta ni toca la cantidad del faltante", async () => {
+    listarFaltantesMock.mockResolvedValue([
+      {
+        ...FALTANTE_SIN_UNIDAD,
+        target_quantity: "5",
+        quantity_unit: "box",
+        quantity_status: "defined",
+        needs_quantity: false,
+      },
+    ]);
+    buscarEnVivoMock.mockResolvedValue(resultado({ offers: [OFERTA_MEFENAMICO] }));
+
+    await renderizarPantalla();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Buscar Acidos mefenamicos en proveedores",
+      }),
+    );
+    const tarjeta = await screen.findByRole("article", {
+      name: /Acidos mefenamicos 500 mg/,
+    });
+    fireEvent.click(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    expect(agregarLineaMock).not.toHaveBeenCalled();
+    expect(fijarCantidadMock).not.toHaveBeenCalled();
+    expect(limpiarCantidadMock).not.toHaveBeenCalled();
+    expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeEnabled();
   });
 });
 
@@ -896,6 +994,7 @@ describe("oferta viva sin unidad de venta ni base del precio", () => {
         }),
         quantity: "1",
         unit: null,
+        offerName: "Salónpas 10 parches",
       }),
     );
   });

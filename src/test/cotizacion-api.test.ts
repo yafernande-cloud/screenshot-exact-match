@@ -251,6 +251,65 @@ describe("cliente de la cotización persistente", () => {
     });
   });
 
+  it("envía la unidad comercial confirmada sin tocar la oferta ni inventar la unidad", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ line: linea(), cart: {}, deduplicated: false, warnings: [] }, 201),
+    );
+    const oferta = {
+      source_id: "src-1",
+      external_id: "PREDUAL-10",
+      name: "Predual x 10 comprimidos",
+      supplier_id: "s-1",
+      laboratory: null,
+      presentation: null,
+      price: { amount: "4590", currency: "CLP" },
+      price_basis: null,
+      sale_unit: null,
+      stock_status: "in_stock" as const,
+      stock_quantity: null,
+      stock_unit: null,
+      ean: null,
+      product_url: null,
+      image_url: null,
+    };
+
+    await agregarLinea("q-1", {
+      supplierId: "s-1",
+      offer: oferta,
+      offerName: oferta.name,
+      quantity: "10",
+      unit: null,
+      demandItemId: "d-1",
+      confirmedSaleUnit: "box",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      supplier_id: "s-1",
+      quantity: { value: "10", unit: null },
+      offer: oferta,
+      demand_item_id: "d-1",
+      confirmed_sale_unit: "box",
+    });
+  });
+
+  it("no envía confirmación cuando la oferta ya declara su unidad", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ line: linea(), cart: {}, deduplicated: false, warnings: [] }, 201),
+    );
+
+    await agregarLinea("q-1", {
+      supplierId: "s-1",
+      offerSnapshotId: "o-1",
+      quantity: "3",
+      unit: "box",
+      demandItemId: "d-1",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty("confirmed_sale_unit");
+  });
+
   it("finaliza con la clave recibida y devuelve el informe congelado", async () => {
     const informe = {
       schema_version: 1,

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { OfertasPorProveedor } from "@/components/OfertasPorProveedor";
 import { EnsenarALaIa } from "@/components/EnsenarALaIa";
+import { ConfirmarUnidadComercialDialog } from "@/components/ConfirmarUnidadComercialDialog";
 import { clp, cadenasInfo, type CadenaId } from "@/data/demo";
 import {
   agregarLinea,
@@ -247,6 +248,14 @@ function Index() {
   const [lineasOcupadas, setLineasOcupadas] = useState<Set<string>>(new Set());
   const lineasOcupadasRef = useRef(new Set<string>());
   const [agregando, setAgregando] = useState<string | null>(null);
+  // Oferta sin unidad de venta (FarmaLoop) + faltante en caja/envase/botella: se pide a la
+  // administradora que confirme la unidad antes de asociar. La promesa conecta el botón con el
+  // diálogo sin inventar una equivalencia en el camino.
+  const [confirmacionUnidad, setConfirmacionUnidad] = useState<{
+    nombreOferta: string;
+    unidadFaltante: string;
+    resolver: (unidad: string | null) => void;
+  } | null>(null);
   const [finalizando, setFinalizando] = useState(false);
   const [informe, setInforme] = useState<Informe | null>(null);
   // Clave de idempotencia del cierre: se conserva mientras el resultado es desconocido.
@@ -441,6 +450,19 @@ function Index() {
    * Devuelve la cantidad y, si el SET se ejecutó ahora, la fila actualizada para poder
    * revertirlo si el alta no se confirma.
    */
+  /**
+   * Pide a la administradora la unidad comercial de una oferta que no la declara. Devuelve la
+   * unidad confirmada o `null` si cancela. No se elige un valor por defecto: la decisión es
+   * humana y el backend la valida y la audita.
+   */
+  const pedirUnidadComercial = (
+    nombreOferta: string,
+    unidadFaltante: string,
+  ): Promise<string | null> =>
+    new Promise((resolver) => {
+      setConfirmacionUnidad({ nombreOferta, unidadFaltante, resolver });
+    });
+
   const prepararCantidadParaAsociar = async (
     faltante: Faltante,
     unidadOferta: string | null,
@@ -515,9 +537,26 @@ function Index() {
     if (agregando === clave) return false;
     setAgregando(clave);
     let fijada: Faltante | null = null;
+    let unidadConfirmada: string | null = null;
     try {
       let altaFinal = alta;
       if (faltanteParaVincular) {
+        // La oferta no declara unidad (FarmaLoop) y el faltante se mide en caja, envase o
+        // botella: sin una confirmación humana no se asocia. La unidad confirmada se envía al
+        // backend, que comprueba la compatibilidad y deja la decisión en la auditoría.
+        const unidadFaltante = faltanteParaVincular.quantity_unit;
+        if (
+          alta.unit === null &&
+          faltanteParaVincular.target_quantity !== null &&
+          unidadFaltante !== null &&
+          unidadFaltante !== "unit"
+        ) {
+          unidadConfirmada = await pedirUnidadComercial(
+            alta.offerName ?? alta.offer?.name ?? "esta oferta",
+            unidadFaltante,
+          );
+          if (unidadConfirmada === null) return false;
+        }
         const preparada = await prepararCantidadParaAsociar(faltanteParaVincular, alta.unit);
         if (!preparada) return false;
         fijada = preparada.fijada;
@@ -525,6 +564,7 @@ function Index() {
           ...alta,
           quantity: preparada.cantidad,
           demandItemId: faltanteParaVincular.id,
+          ...(unidadConfirmada ? { confirmedSaleUnit: unidadConfirmada } : {}),
         };
       }
       const cotizacion = await asegurarCotizacion();
@@ -535,7 +575,12 @@ function Index() {
         resultado.deduplicated
           ? "Esa oferta ya estaba en tu cotización."
           : faltanteParaVincular
-            ? "Producto agregado y asociado al faltante."
+            ? unidadConfirmada
+              ? `Producto agregado y asociado al faltante (unidad confirmada: ${etiquetaUnidad(
+                  unidadConfirmada,
+                  "2",
+                )}).`
+              : "Producto agregado y asociado al faltante."
             : "Producto agregado a la cotización.",
       );
       return true;
@@ -598,6 +643,7 @@ function Index() {
     return altaEnCotizacion(`viva:${fuente.sourceId}:${oferta.external_id}`, {
       supplierId: fuente.supplierId,
       offer: ofertaParaCotizar,
+      offerName: oferta.name,
       quantity: cantidadParaCotizar(faltanteParaVincular),
       unit: unidad,
     });
@@ -610,16 +656,18 @@ function Index() {
     return altaEnCotizacion(`lista:${oferta.source_id}:${oferta.external_id}`, {
       supplierId: proveedorId,
       offerSnapshotId: oferta.offer_id,
+      ...(oferta.external_name ? { offerName: oferta.external_name } : {}),
       quantity: cantidadParaCotizar(faltanteParaVincular),
       unit: oferta.sale_unit,
     });
   };
 
-  const agregarDesdeCatalogo = async (oferta: Offer, cantidad: number) => {
+  const agregarDesdeCatalogo = async (oferta: Offer, cantidad: number, nombre: string) => {
     const unidad = oferta.sale_unit.code;
     await altaEnCotizacion(`catalogo:${oferta.offer_id}`, {
       supplierId: oferta.supplier.supplier_id,
       offerSnapshotId: oferta.offer_id,
+      offerName: nombre,
       quantity: String(Math.max(1, cantidad)),
       unit: unidad,
     });
@@ -1379,7 +1427,9 @@ function Index() {
                     oferta={oferta}
                     articulo={articulo}
                     onActualizar={actualizarOfertasDeArticulo}
-                    onAgregar={(oferta, cantidad) => void agregarDesdeCatalogo(oferta, cantidad)}
+                    onAgregar={(oferta, cantidad) =>
+                      void agregarDesdeCatalogo(oferta, cantidad, articulo.display_name)
+                    }
                     agregando={agregando === `catalogo:${oferta.offer_id}`}
                   />
                 ))}
@@ -1414,6 +1464,20 @@ function Index() {
           {informe && <InformeCotizacion informe={informe} />}
         </DialogContent>
       </Dialog>
+
+      <ConfirmarUnidadComercialDialog
+        abierto={confirmacionUnidad !== null}
+        nombreOferta={confirmacionUnidad?.nombreOferta ?? ""}
+        unidadFaltante={confirmacionUnidad?.unidadFaltante ?? "box"}
+        onCancelar={() => {
+          confirmacionUnidad?.resolver(null);
+          setConfirmacionUnidad(null);
+        }}
+        onConfirmar={(unidadComercial) => {
+          confirmacionUnidad?.resolver(unidadComercial);
+          setConfirmacionUnidad(null);
+        }}
+      />
     </div>
   );
 }
