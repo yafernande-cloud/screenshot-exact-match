@@ -8,7 +8,7 @@
 
 import { FileText } from "lucide-react";
 
-import { formatearDinero } from "@/lib/catalogo";
+import { describirCantidad, formatearDinero } from "@/lib/catalogo";
 import {
   describirCantidades,
   resumenDeInforme,
@@ -23,7 +23,10 @@ function fecha(iso: string | null): string {
     : valor.toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" });
 }
 
-const unidad = (valor: string | null) => valor ?? "sin unidad";
+/** Misma traducción que la tabla y el PDF: `box` → «cajas», con el valor guardado intacto. */
+function cantidadInforme(valor: string | null, unit: string | null): string {
+  return describirCantidad(valor, unit) ?? valor ?? "sin unidad";
+}
 
 export function InformeCotizacion({ informe }: { informe: Informe }) {
   const resumen = resumenDeInforme(informe);
@@ -78,7 +81,7 @@ export function InformeCotizacion({ informe }: { informe: Informe }) {
                 </td>
                 <td className="py-2 pr-3">{item.supplier_name ?? "Proveedor sin nombre"}</td>
                 <td className="py-2 pr-3">
-                  {item.quantity.value} {unidad(item.quantity.unit)}
+                  {cantidadInforme(item.quantity.value, item.quantity.unit)}
                 </td>
                 <td className="py-2 pr-3">{formatearDinero(item.unit_price) ?? "Sin precio"}</td>
                 <td className="py-2">
@@ -126,7 +129,7 @@ export function InformeCotizacion({ informe }: { informe: Informe }) {
               {" "}
               (
               {informe.release.released
-                .map((r) => `${r.quantity} ${unidad(r.quantity_unit)}`)
+                .map((r) => cantidadInforme(r.quantity, r.quantity_unit))
                 .join(", ")}
               )
             </>

@@ -9,13 +9,18 @@
  * Se reutilizan las tarjetas existentes; este componente solo compone la presentación.
  */
 
-import { AlertCircle, FileSpreadsheet, Loader2, Truck } from "lucide-react";
+import { AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 
 import type { ResultadoDeAlta } from "@/components/BotonAgregarACotizacion";
 import { Badge } from "@/components/ui/badge";
 import { BloqueFuente } from "@/components/OfertasProveedorEnVivo";
 import { TarjetaPrecioLista } from "@/components/PreciosListasCargadas";
-import type { FuenteDeLista, GrupoPreciosLista } from "@/lib/ofertas-listas";
+import {
+  describirNoVigentes,
+  type FuenteDeLista,
+  type GrupoPreciosLista,
+  type MotivosNoVigente,
+} from "@/lib/ofertas-listas";
 import type { EstadoFuenteEnVivo, ItemEnVivo } from "@/lib/proveedores-en-vivo";
 import type { OfertaImportada } from "@/lib/proveedores-api";
 
@@ -80,6 +85,7 @@ export function OfertasPorProveedor({
   cargandoListas,
   erroresListas,
   desactualizadas,
+  motivos,
   paginasRestantes,
   hayFuentesLista,
   onActualizar,
@@ -97,6 +103,8 @@ export function OfertasPorProveedor({
   cargandoListas: boolean;
   erroresListas: string[];
   desactualizadas: number;
+  /** El mismo total separado por motivo; cuando falta, se usa la frase anterior. */
+  motivos?: MotivosNoVigente | undefined;
   paginasRestantes: boolean;
   hayFuentesLista: boolean;
   onActualizar?: ((articuloId: string) => void | Promise<void>) | undefined;
@@ -134,11 +142,7 @@ export function OfertasPorProveedor({
 
   return (
     <section className="mt-4 space-y-4" data-testid="ofertas-por-proveedor">
-      <div className="flex flex-wrap items-center gap-2">
-        <Truck className="h-4 w-4 text-brand-green" aria-hidden />
-        <h3 className="text-sm font-semibold">Proveedores</h3>
-        {consulta && <span className="text-xs text-muted-foreground">· {consulta}</span>}
-      </div>
+      {/* El encabezado «Proveedores · consulta» lo pone la sección que contiene este bloque. */}
       <p className="text-xs text-muted-foreground">
         Cada proveedor reúne sus precios en vivo y los de su última lista cargada. El orden lo
         decide el servidor según lo que enseñaste; todas las ofertas siguen visibles.
@@ -264,10 +268,11 @@ export function OfertasPorProveedor({
 
       {desactualizadas > 0 && (
         <p className="text-xs text-muted-foreground">
-          {desactualizadas}{" "}
-          {desactualizadas === 1
-            ? "precio coincidente no se muestra porque está desactualizado o fuera de vigencia."
-            : "precios coincidentes no se muestran porque están desactualizados o fuera de vigencia."}
+          {motivos
+            ? describirNoVigentes(motivos)
+            : desactualizadas === 1
+              ? "1 precio coincidente no se muestra porque está desactualizado o fuera de vigencia."
+              : `${desactualizadas} precios coincidentes no se muestran porque están desactualizados o fuera de vigencia.`}
         </p>
       )}
 

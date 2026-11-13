@@ -124,24 +124,39 @@ function disponibilidad(hasStock: boolean | null | undefined): string {
 }
 
 /**
- * Distintivo de relación con la consulta. Solo Cruz Verde lo informa: «partial» es la misma
- * dosis con otra presentación y «alternative» es otra concentración. Sin ese dato no se muestra
- * nada, así las tarjetas de Ahumada y Salcobrand siguen igual.
+ * Distintivo de relación con la consulta. Cruz Verde informa `query_relation` (`partial` es la
+ * misma dosis con otra presentación y `alternative` es otra concentración). Ahumada declara
+ * `match.level = "related"` con la causa `query_not_confirmed_by_name` cuando el nombre publicado
+ * no confirma la búsqueda: se muestra aparte, nunca como coincidencia. Sin ese dato no se
+ * muestra nada, así las tarjetas de las demás cadenas siguen igual.
  */
 function RelacionConsulta({ resultado }: { resultado: ChainResult }) {
   const relacion = resultado.match["query_relation"];
-  if (relacion !== "partial" && relacion !== "alternative") return null;
-  const texto = relacion === "partial" ? "Otra presentación" : "Alternativa";
-  const detalle =
-    relacion === "partial"
-      ? "Coincide con el producto pedido, pero la presentación publicada es distinta."
-      : "La publicación declara otra concentración; se muestra como alternativa.";
+  if (relacion === "partial" || relacion === "alternative") {
+    const texto = relacion === "partial" ? "Otra presentación" : "Alternativa";
+    const detalle =
+      relacion === "partial"
+        ? "Coincide con el producto pedido, pero la presentación publicada es distinta."
+        : "La publicación declara otra concentración; se muestra como alternativa.";
+    return (
+      <span
+        title={detalle}
+        className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+      >
+        {texto}
+      </span>
+    );
+  }
+  const causas = Array.isArray(resultado.match["causes"]) ? resultado.match["causes"] : [];
+  if (resultado.match["level"] !== "related" || !causas.includes("query_not_confirmed_by_name")) {
+    return null;
+  }
   return (
     <span
-      title={detalle}
+      title="Se publica para esta búsqueda, pero su nombre no contiene la consulta."
       className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
     >
-      {texto}
+      Coincidencia no confirmada
     </span>
   );
 }

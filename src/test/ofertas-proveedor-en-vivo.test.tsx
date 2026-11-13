@@ -157,8 +157,9 @@ describe("proveedores en vivo en la pantalla principal", () => {
     expect(within(tarjeta).getByText("$12.990")).toBeInTheDocument();
     expect(within(tarjeta).getByText("Precio")).toBeInTheDocument();
     expect(within(tarjeta).getByText("Stock no informado")).toBeInTheDocument();
-    // Los datos internos no se escriben en la tarjeta.
-    expect(within(tarjeta).queryByText(/unidad de venta/i)).toBeNull();
+    // Del bloqueo solo se escribe el motivo breve; los valores internos no se muestran.
+    expect(within(tarjeta).getByText("Unidad de venta pendiente")).toBeInTheDocument();
+    expect(within(tarjeta).queryByText("box")).toBeNull();
     expect(within(tarjeta).queryByText(/base del precio/i)).toBeNull();
     expect(within(tarjeta).queryByText(/Presentación/)).toBeNull();
     expect(within(tarjeta).queryByText(/Farmaloop API/)).toBeNull();
@@ -171,9 +172,8 @@ describe("proveedores en vivo en la pantalla principal", () => {
       name: "Oferta de Farmaloop: Predual 30 mg comprimidos",
     });
     expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
-    expect(
-      within(tarjeta).getByText("No disponible para agregar a la cotización."),
-    ).toBeInTheDocument();
+    // La explicación viene del motivo del backend, en cuatro palabras.
+    expect(within(tarjeta).getByText("Unidad de venta pendiente")).toBeInTheDocument();
     expect(within(tarjeta).queryByText(/No se puede agregar/)).toBeNull();
   });
 

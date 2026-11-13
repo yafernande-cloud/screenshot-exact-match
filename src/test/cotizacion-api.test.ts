@@ -596,22 +596,39 @@ describe("resumen de referencias, productos y cantidades", () => {
     expect(describirCantidades(resumen)).toBe("2 cajas + 3 unidades");
   });
 
-  it("la unidad desconocida es su propio grupo y se declara como tal", () => {
+  it("la unidad desconocida es su propio grupo y se cuenta por línea, no por cantidad", () => {
     const conDesconocida = carrito({
       lines: [
         linea({ line_id: "l-1", trade_item_id: "t-1", quantity: { value: "3", unit: "box" } }),
-        linea({ line_id: "l-2", trade_item_id: "t-2", quantity: { value: "7", unit: null } }),
+        linea({ line_id: "l-2", trade_item_id: "t-2", quantity: { value: "2", unit: null } }),
+        linea({ line_id: "l-3", trade_item_id: "t-3", quantity: { value: "5", unit: null } }),
       ],
     });
 
     const resumen = resumenDeCarrito(conDesconocida);
 
+    // Dos líneas sin unidad son dos referencias, no siete unidades sumadas.
     expect(resumen.porUnidad).toEqual([
       { unit: "box", quantity: "3" },
-      { unit: null, quantity: "7" },
+      { unit: null, quantity: "2" },
     ]);
-    expect(describirCantidades(resumen)).toBe("3 cajas + 7 sin unidad informada");
+    expect(describirCantidades(resumen)).toBe("3 cajas + 2 sin unidad informada");
+    // El descriptor puro no cambia: sigue describiendo una cantidad ya calculada.
     expect(describirTotalUnidad({ unit: null, quantity: "7" })).toBe("7 sin unidad informada");
+  });
+
+  it("el informe guardado conserva las cantidades originales sin contar líneas", () => {
+    const informe = {
+      items: [
+        { trade_item_id: "t-1", supplier_id: "s-1", quantity: { value: "2", unit: null } },
+        { trade_item_id: "t-2", supplier_id: "s-1", quantity: { value: "5", unit: null } },
+      ],
+    } as unknown as InformeCotizacion;
+
+    const resumen = resumenDeInforme(informe);
+
+    // Una orden de compra congelada no se reinterpreta: su cantidad sigue siendo la guardada.
+    expect(resumen.porUnidad).toEqual([{ unit: null, quantity: "7" }]);
   });
 
   it("el mismo producto en dos proveedores son dos referencias, no dos productos distintos", () => {

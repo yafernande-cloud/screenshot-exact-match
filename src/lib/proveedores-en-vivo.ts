@@ -206,6 +206,29 @@ export function etiquetaBloqueador(bloqueador: string): string {
   return MENSAJES_BLOQUEADOR[bloqueador] ?? bloqueador;
 }
 
+/** Traducción corta de cada bloqueo del backend; como máximo cuatro palabras. */
+const MOTIVOS_BREVES: Record<string, string> = {
+  match_not_direct: "Coincidencia no confirmada",
+  not_available_for_sale: "No disponible para venta",
+  no_current_price: "Sin precio vigente",
+  sale_unit_unconfirmed: "Unidad de venta pendiente",
+  price_basis_unconfirmed: "Base del precio pendiente",
+};
+
+/**
+ * Motivo breve del primer bloqueo, para mostrarlo junto al botón.
+ *
+ * El motivo lo decide el backend en `cart_blockers`; aquí solo se traduce. Devuelve `null` cuando
+ * no hay un bloqueo conocido, y entonces la tarjeta usa su mensaje genérico.
+ */
+export function motivoBreveBloqueo(bloqueadores: readonly string[]): string | null {
+  for (const bloqueador of bloqueadores) {
+    const motivo = MOTIVOS_BREVES[bloqueador];
+    if (motivo) return motivo;
+  }
+  return null;
+}
+
 /** Mensaje de una solicitud fallida; el detalle técnico no se muestra. */
 export function mensajeDeErrorProveedor(error: unknown): string {
   if (error && typeof error === "object" && "status" in error) {

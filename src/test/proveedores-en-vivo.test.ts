@@ -10,6 +10,7 @@ import {
   etiquetaRelacion,
   mensajeDeErrorProveedor,
   mensajeMotivo,
+  motivoBreveBloqueo,
   proveedorSinResultados,
   type OfertaEnVivo,
   type ProductoPublicadoEnVivo,
@@ -359,6 +360,31 @@ describe("clasificación y bloqueos", () => {
     expect(etiquetaRelacion("direct")).toBe("Coincidencia directa");
     expect(etiquetaRelacion("related")).toBe("Relacionado");
     expect(etiquetaRelacion("unverified")).toBe("Sin verificar");
+  });
+
+  it("muestra el motivo real del bloqueo en cuatro palabras como máximo", () => {
+    expect(motivoBreveBloqueo(["match_not_direct"])).toBe("Coincidencia no confirmada");
+    expect(motivoBreveBloqueo(["not_available_for_sale"])).toBe("No disponible para venta");
+    expect(motivoBreveBloqueo(["no_current_price"])).toBe("Sin precio vigente");
+    expect(motivoBreveBloqueo(["sale_unit_unconfirmed"])).toBe("Unidad de venta pendiente");
+    expect(motivoBreveBloqueo(["price_basis_unconfirmed"])).toBe("Base del precio pendiente");
+    // Se usa el primero que el backend declara, en su orden de prioridad.
+    expect(motivoBreveBloqueo(["match_not_direct", "no_current_price"])).toBe(
+      "Coincidencia no confirmada",
+    );
+    // Un código desconocido no inventa texto ni rompe la tarjeta; un bloqueo vacío tampoco.
+    expect(motivoBreveBloqueo(["otro_motivo"])).toBeNull();
+    expect(motivoBreveBloqueo([])).toBeNull();
+
+    for (const bloqueador of [
+      "match_not_direct",
+      "not_available_for_sale",
+      "no_current_price",
+      "sale_unit_unconfirmed",
+      "price_basis_unconfirmed",
+    ]) {
+      expect(motivoBreveBloqueo([bloqueador])?.split(" ").length).toBeLessThanOrEqual(4);
+    }
   });
 
   it("traduce los motivos cerrados del conector", () => {

@@ -2,9 +2,9 @@
  * Tarjeta de una oferta obtenida en vivo de un proveedor.
  *
  * Muestra solo lo que la persona necesita para comparar: imagen, nombre, laboratorio y código,
- * precio vigente, disponibilidad y la acción de agregar. El resto de los datos comerciales
- * (unidad de venta, base del precio, motivos de bloqueo) se conserva en el contrato y se usa para
- * decidir si la acción está habilitada, pero no se escribe en la tarjeta.
+ * precio vigente, disponibilidad, la acción de agregar y, cuando está bloqueada, el motivo breve
+ * que informó el backend. El resto de los datos comerciales (unidad de venta, base del precio)
+ * solo decide la elegibilidad y no se escribe en la tarjeta.
  *
  * No se inventan stock, descuentos ni condiciones: un dato ausente se informa como tal.
  */
@@ -17,7 +17,11 @@ import {
 } from "@/components/BotonAgregarACotizacion";
 import { EnsenarALaIaEnVivo } from "@/components/EnsenarALaIaEnVivo";
 import { formatearDinero } from "@/lib/catalogo";
-import type { OfertaEnVivo } from "@/lib/proveedores-en-vivo";
+import {
+  etiquetaBloqueador,
+  motivoBreveBloqueo,
+  type OfertaEnVivo,
+} from "@/lib/proveedores-en-vivo";
 
 /** Disponibilidad con el mismo vocabulario en toda la pantalla. */
 function textoDisponibilidad(estado: OfertaEnVivo["stock_status"]): string {
@@ -68,6 +72,9 @@ export function FichaOfertaEnVivo({
   const imagen = urlPublicada(oferta.image_url);
   const laboratorio = oferta.laboratory?.trim() || "Laboratorio no informado";
   const puedeAgregar = oferta.cart_eligible && Boolean(onAgregar);
+  // El backend decide la elegibilidad y entrega los motivos; la tarjeta solo los traduce.
+  const motivoBloqueo = motivoBreveBloqueo(oferta.cart_blockers);
+  const detalleBloqueo = oferta.cart_blockers.map(etiquetaBloqueador).join("; ");
 
   return (
     <article
@@ -114,8 +121,11 @@ export function FichaOfertaEnVivo({
             onAgregar={onAgregar ? () => onAgregar(oferta) : undefined}
           />
           {!puedeAgregar && (
-            <p className="max-w-xs text-xs text-muted-foreground">
-              No disponible para agregar a la cotización.
+            <p
+              className="max-w-xs text-xs text-muted-foreground"
+              title={detalleBloqueo || undefined}
+            >
+              {motivoBloqueo ?? "No disponible para agregar a la cotización."}
             </p>
           )}
           {sourceId && (

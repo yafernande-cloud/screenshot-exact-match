@@ -599,7 +599,9 @@ describe("búsqueda de Predual con proveedores en vivo", () => {
     for (const tarjeta of tarjetasProveedor) {
       expect(within(tarjeta).getByRole("button", { name: /Agregar a cotización/ })).toBeDisabled();
     }
-    expect(screen.getAllByText("No disponible para agregar a la cotización.")).toHaveLength(3);
+    // El motivo visible sale de `cart_blockers`, no de una frase genérica.
+    expect(screen.getAllByText("Unidad de venta pendiente")).toHaveLength(2);
+    expect(screen.getByText("Coincidencia no confirmada")).toBeInTheDocument();
   });
 
   it("el fallo de un proveedor no altera catálogo ni cadenas", async () => {
@@ -1254,5 +1256,62 @@ describe("«Enseñar a la IA» desde una oferta del catálogo", () => {
     );
     await waitFor(() => expect(ordenVisible()).toEqual(["Proveedor Zeta", "Proveedor Catálogo"]));
     expect(obtenerArticuloMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("mensaje de «sin ofertas» y consulta vacía", () => {
+  it("no declara «sin ofertas» cuando hay ofertas en vivo visibles", async () => {
+    // El catálogo no trae ofertas verificadas y no hay listas cargadas: lo único visible son las
+    // ofertas en vivo de Farmaloop. Antes de la corrección se mostraba el mensaje vacío igual.
+    obtenerArticuloMock.mockResolvedValue({ ...DETALLE_CATALOGO, offers: [], offers_total: 0 });
+    listarFuentesMock.mockResolvedValue([]);
+
+    await renderizarPantalla();
+    await buscar("Predual");
+
+    expect(await screen.findByRole("region", { name: "Ofertas de Farmaloop" })).toBeInTheDocument();
+    expect(await screen.findByText("Predual 30 mg comprimidos")).toBeInTheDocument();
+    expect(screen.queryByText(/No encontramos ofertas de proveedores/)).toBeNull();
+  });
+
+  it("sí declara «sin ofertas» cuando no hay ninguna oferta que mostrar", async () => {
+    obtenerArticuloMock.mockResolvedValue({ ...DETALLE_CATALOGO, offers: [], offers_total: 0 });
+    buscarEnVivoMock.mockResolvedValue({ ...resultado(), offers: [], published: [] });
+
+    await renderizarPantalla();
+    await buscar("Predual");
+
+    expect(
+      await screen.findByText(/No encontramos ofertas de proveedores para «Predual»/),
+    ).toBeInTheDocument();
+  });
+
+  it("deshabilita «Buscar» con la consulta vacía o solo espacios y la búsqueda normal sigue funcionando", async () => {
+    await renderizarPantalla();
+
+    const texto = screen.getByRole("textbox", { name: "Buscar producto" });
+    const boton = screen.getByRole("button", { name: "Buscar" });
+    expect(boton).toBeDisabled();
+
+    fireEvent.change(texto, { target: { value: "   " } });
+    expect(boton).toBeDisabled();
+    // El formulario tampoco ejecuta la búsqueda por envío directo.
+    fireEvent.submit(texto.closest("form")!);
+    expect(buscarCatalogoMock).not.toHaveBeenCalled();
+
+    fireEvent.change(texto, { target: { value: "Predual" } });
+    expect(boton).toBeEnabled();
+    await buscar("Predual");
+    expect(buscarCatalogoMock).toHaveBeenCalledWith("Predual");
+    expect(await screen.findByText("Predual 30 mg")).toBeInTheDocument();
+  });
+
+  it("muestra un solo encabezado «Proveedores · consulta»", async () => {
+    await renderizarPantalla();
+    await buscar("Predual");
+    await screen.findByRole("region", { name: "Ofertas de Farmaloop" });
+
+    expect(screen.getAllByRole("heading", { name: "Proveedores" })).toHaveLength(1);
+    expect(screen.queryByText("Proveedores en vivo")).toBeNull();
   });
 });

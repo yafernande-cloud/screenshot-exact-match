@@ -49,6 +49,8 @@ export interface ResultadoPreciosListas {
   grupos: GrupoPreciosLista[];
   /** Ofertas que coinciden con la búsqueda pero no están vigentes o están desactualizadas. */
   desactualizadas: number;
+  /** El mismo total, separado por motivo real de exclusión. */
+  motivos: MotivosNoVigente;
   /** Una fuente no respondió: se informa sin ocultar a las demás. */
   errores: string[];
   /** El catálogo tenía más resultados de los que se revisaron. */
@@ -56,6 +58,20 @@ export interface ResultadoPreciosListas {
   /** Claves (artículo, fuente) con oferta importada, para suprimir la tarjeta duplicada de E3. */
   claves: Set<string>;
 }
+
+/**
+ * Motivos por los que una oferta coincidente no se presenta como precio vigente.
+ *
+ * Son dimensiones distintas y no se mezclan: la **vigencia** la declara la oferta (`valid_from`,
+ * `valid_to`, `is_current`); la **antigüedad de la fuente** es cuánto hace que se observó
+ * (`is_stale`, `fresh_until`). El estado de revisión no excluye la oferta de la lista.
+ */
+export interface MotivosNoVigente {
+  fueraDeVigencia: number;
+  desactualizado: number;
+}
+
+export const SIN_MOTIVOS: MotivosNoVigente = { fueraDeVigencia: 0, desactualizado: 0 };
 
 /**
  * Agrupa las fuentes `manual_import` por proveedor.
@@ -145,8 +161,50 @@ export interface SeleccionOfertasLista {
   vigentes: OfertaImportada[];
   /** Las que coinciden pero no están vigentes o están desactualizadas. */
   desactualizadas: number;
+  /** El mismo total, separado por motivo real de exclusión. */
+  motivos: MotivosNoVigente;
   /** Claves (artículo, fuente) de TODAS las ofertas importadas que coinciden, para E3. */
   claves: Set<string>;
+}
+
+/**
+ * Motivo por el que la oferta no se presenta como vigente, o `null` si sí lo está.
+ *
+ * Reparte exactamente el mismo criterio que `precioVigente` sin cambiarlo. Primero la vigencia
+ * declarada por la oferta; si la oferta es vigente y aun así se excluye, el motivo es la
+ * antigüedad de la observación.
+ */
+export function motivoNoVigente(
+  oferta: OfertaImportada,
+  ahora: Date = new Date(),
+): "fuera_de_vigencia" | "desactualizado" | null {
+  if (oferta.is_current === false) return "fuera_de_vigencia";
+  const desde = oferta.valid_from ? Date.parse(oferta.valid_from) : null;
+  if (desde !== null && !Number.isNaN(desde) && desde > ahora.getTime()) return "fuera_de_vigencia";
+  const hasta = oferta.valid_to ? Date.parse(oferta.valid_to) : null;
+  if (hasta !== null && !Number.isNaN(hasta) && hasta < ahora.getTime()) return "fuera_de_vigencia";
+  if (precioVigente(oferta, ahora)) return null;
+  return "desactualizado";
+}
+
+/** Frase que explica cuántas ofertas se omiten y por qué, sin mezclar los dos motivos. */
+export function describirNoVigentes(motivos: MotivosNoVigente): string | null {
+  const partes: string[] = [];
+  if (motivos.fueraDeVigencia > 0) {
+    partes.push(
+      motivos.fueraDeVigencia === 1
+        ? "1 precio coincidente no se muestra porque su vigencia terminó."
+        : `${motivos.fueraDeVigencia} precios coincidentes no se muestran porque su vigencia terminó.`,
+    );
+  }
+  if (motivos.desactualizado > 0) {
+    partes.push(
+      motivos.desactualizado === 1
+        ? "1 precio coincidente no se muestra porque la lista del proveedor está desactualizada."
+        : `${motivos.desactualizado} precios coincidentes no se muestran porque la lista del proveedor está desactualizada.`,
+    );
+  }
+  return partes.length > 0 ? partes.join(" ") : null;
 }
 
 /**
@@ -174,15 +232,22 @@ export function seleccionarOfertasDeLista(
   }
 
   const vigentes: OfertaImportada[] = [];
-  let desactualizadas = 0;
+  const motivos: MotivosNoVigente = { fueraDeVigencia: 0, desactualizado: 0 };
   for (const oferta of ultimas.values()) {
-    if (precioVigente(oferta, ahora)) vigentes.push(oferta);
-    else desactualizadas += 1;
+    const motivo = motivoNoVigente(oferta, ahora);
+    if (motivo === null) vigentes.push(oferta);
+    else if (motivo === "fuera_de_vigencia") motivos.fueraDeVigencia += 1;
+    else motivos.desactualizado += 1;
   }
   // El orden comercial lo decide el backend (`order_key`); nunca se reordena por nombre ni fuente.
   // `Array.prototype.sort` es estable: un empate conserva el orden de la respuesta.
   vigentes.sort((a, b) => compararClaveOrden(a.order_key, b.order_key));
-  return { vigentes, desactualizadas, claves };
+  return {
+    vigentes,
+    desactualizadas: motivos.fueraDeVigencia + motivos.desactualizado,
+    motivos,
+    claves,
+  };
 }
 
 /** Agrupa las ofertas por proveedor, conservando solo proveedores con precios para la consulta. */
@@ -233,6 +298,7 @@ export async function refrescarPreciosDeListas({
     return {
       grupos: [],
       desactualizadas: 0,
+      motivos: { ...SIN_MOTIVOS },
       errores,
       paginasRestantes: false,
       claves: new Set<string>(),
@@ -252,6 +318,7 @@ export async function refrescarPreciosDeListas({
   return {
     grupos: agruparPreciosPorProveedor(fuentes, seleccion.vigentes),
     desactualizadas: seleccion.desactualizadas,
+    motivos: seleccion.motivos,
     errores,
     paginasRestantes: false,
     claves: seleccion.claves,
@@ -267,7 +334,12 @@ export interface OpcionesBusquedaListas {
   maxPaginas?: number;
   ahora?: Date;
   /** Se invoca después de cada página: la sección se puede mostrar progresivamente. */
-  alAvanzar?: (grupos: GrupoPreciosLista[], desactualizadas: number, claves: Set<string>) => void;
+  alAvanzar?: (
+    grupos: GrupoPreciosLista[],
+    desactualizadas: number,
+    claves: Set<string>,
+    motivos: MotivosNoVigente,
+  ) => void;
 }
 
 /**
@@ -290,6 +362,7 @@ export async function buscarPreciosDeListas({
     return {
       grupos: [],
       desactualizadas: 0,
+      motivos: { ...SIN_MOTIVOS },
       errores,
       paginasRestantes: false,
       claves: new Set<string>(),
@@ -324,6 +397,7 @@ export async function buscarPreciosDeListas({
     agruparPreciosPorProveedor(fuentes, seleccion.vigentes),
     seleccion.desactualizadas,
     seleccion.claves,
+    seleccion.motivos,
   );
 
   let cursor = nextCursor;
@@ -337,6 +411,7 @@ export async function buscarPreciosDeListas({
         agruparPreciosPorProveedor(fuentes, seleccion.vigentes),
         seleccion.desactualizadas,
         seleccion.claves,
+        seleccion.motivos,
       );
       cursor = pagina.next_cursor;
       paginas += 1;
@@ -351,6 +426,7 @@ export async function buscarPreciosDeListas({
   return {
     grupos: agruparPreciosPorProveedor(fuentes, seleccion.vigentes),
     desactualizadas: seleccion.desactualizadas,
+    motivos: seleccion.motivos,
     errores,
     paginasRestantes: cursor !== null,
     claves: seleccion.claves,

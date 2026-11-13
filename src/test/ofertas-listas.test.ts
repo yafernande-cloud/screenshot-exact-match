@@ -7,7 +7,9 @@ import {
   buscarPreciosDeListas,
   claveOferta,
   descubrirFuentesDeLista,
+  describirNoVigentes,
   fuentesDeLista,
+  motivoNoVigente,
   precioVigente,
   refrescarPreciosDeListas,
   seleccionarOfertasDeLista,
@@ -286,6 +288,39 @@ describe("selección de ofertas importadas", () => {
     expect(seleccion.vigentes.map((o) => o.offer_id)).toEqual(["of-1"]);
     expect(seleccion.desactualizadas).toBe(2);
     expect(seleccion.claves.size).toBe(3);
+    // El total se reparte por motivo real, sin mezclar vigencia con antigüedad de la fuente.
+    expect(seleccion.motivos).toEqual({ fueraDeVigencia: 1, desactualizado: 1 });
+  });
+
+  it("distingue una oferta fuera de vigencia de una lista desactualizada", () => {
+    expect(motivoNoVigente(oferta(), AHORA)).toBeNull();
+    expect(motivoNoVigente(oferta({ is_current: false }), AHORA)).toBe("fuera_de_vigencia");
+    expect(motivoNoVigente(oferta({ valid_to: "2026-11-01T00:00:00Z" }), AHORA)).toBe(
+      "fuera_de_vigencia",
+    );
+    expect(motivoNoVigente(oferta({ valid_from: "2026-12-01T00:00:00Z" }), AHORA)).toBe(
+      "fuera_de_vigencia",
+    );
+    // La oferta sigue vigente; lo que venció es la frescura de la observación.
+    expect(motivoNoVigente(oferta({ is_stale: true }), AHORA)).toBe("desactualizado");
+    expect(motivoNoVigente(oferta({ fresh_until: "2026-11-01T00:00:00Z" }), AHORA)).toBe(
+      "desactualizado",
+    );
+  });
+
+  it("explica cada motivo por separado y calla cuando no hay ofertas omitidas", () => {
+    expect(describirNoVigentes({ fueraDeVigencia: 0, desactualizado: 0 })).toBeNull();
+    expect(describirNoVigentes({ fueraDeVigencia: 1, desactualizado: 0 })).toMatch(
+      /vigencia terminó/,
+    );
+    expect(describirNoVigentes({ fueraDeVigencia: 0, desactualizado: 2 })).toMatch(
+      /lista del proveedor está desactualizada/,
+    );
+    const ambas = describirNoVigentes({ fueraDeVigencia: 2, desactualizado: 1 });
+    expect(ambas).toMatch(/2 precios coincidentes no se muestran porque su vigencia terminó/);
+    expect(ambas).toMatch(
+      /1 precio coincidente no se muestra porque la lista del proveedor está desactualizada/,
+    );
   });
 
   it("declara vigente un campo que el backend no marcó como vencido", () => {

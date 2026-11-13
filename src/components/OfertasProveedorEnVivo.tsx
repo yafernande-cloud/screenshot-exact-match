@@ -221,16 +221,17 @@ export function BloqueFuente({
               <div>
                 <h5 className="text-sm font-semibold">Resultados relacionados</h5>
                 <p className="text-xs text-muted-foreground">
-                  El proveedor los devolvió, pero su nombre no confirma toda la búsqueda. No se
-                  pueden agregar a la cotización.
+                  El proveedor los devolvió, pero su nombre no confirma toda la búsqueda. Se
+                  muestran aparte de las coincidencias.
                 </p>
               </div>
-              {/* Sin `onAgregar`: un resultado relacionado nunca se presenta como la oferta
-                  buscada ni habilita el alta, aunque el backend ya lo bloquee. */}
+              {/* La acción se entrega también aquí: la elegibilidad la decide el backend con
+                  `cart_eligible` y cada tarjeta muestra el motivo cuando está bloqueada. */}
               <ListaResultados
                 items={relacionadas}
                 fuente={fuente}
                 consulta={consulta}
+                onAgregar={onAgregar}
                 onPreferenciaAplicada={onPreferenciaAplicada}
               />
             </div>

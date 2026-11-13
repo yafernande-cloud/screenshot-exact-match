@@ -589,9 +589,16 @@ function deMilesimas(valor: bigint): string {
 
 function sumarPorUnidad(
   lineas: ReadonlyArray<{ quantity: { value: string; unit: string | null } }>,
+  contarSinUnidadComoLineas = false,
 ): TotalPorUnidad[] {
   const totales = new Map<string | null, bigint>();
   for (const linea of lineas) {
+    // Sin unidad informada no hay una magnitud comparable: se cuenta la referencia (la línea),
+    // no la cantidad. Una línea con cantidad 2 es **una** referencia sin unidad.
+    if (contarSinUnidadComoLineas && linea.quantity.unit === null) {
+      totales.set(null, (totales.get(null) ?? 0n) + 1000n);
+      continue;
+    }
     const milesimas = aMilesimas(linea.quantity.value);
     if (milesimas === null) continue;
     const unidad = linea.quantity.unit;
@@ -613,8 +620,9 @@ function resumenDeLineas(
     supplier_id: string;
     quantity: { value: string; unit: string | null };
   }>,
+  contarSinUnidadComoLineas = false,
 ): ResumenCantidades {
-  const porUnidad = sumarPorUnidad(lineas);
+  const porUnidad = sumarPorUnidad(lineas, contarSinUnidadComoLineas);
   return {
     referencias: lineas.length,
     productosDistintos: new Set(lineas.map((linea) => linea.trade_item_id)).size,
@@ -627,17 +635,22 @@ function resumenDeLineas(
 /** Resumen del carrito entero (todas las líneas activas de una cotización editable). */
 export function resumenDeCotizacion(detalle: DetalleCotizacion | null): ResumenCantidades {
   if (!detalle || !carritoEditable(detalle)) return resumenDeLineas([]);
-  // Mismo filtro que el resumen del servidor: carritos y líneas activos.
+  // Mismo filtro que el resumen del servidor: carritos y líneas activos. Las líneas sin unidad
+  // informada se cuentan como referencias, no como cantidades.
   return resumenDeLineas(
     detalle.carts
       .filter((cart) => cart.status === "active")
       .flatMap((cart) => cart.lines.filter((line) => line.status === "active")),
+    true,
   );
 }
 
 /** Resumen de un carrito de proveedor. */
 export function resumenDeCarrito(carrito: CarritoCotizacion): ResumenCantidades {
-  return resumenDeLineas(carrito.lines.filter((linea) => linea.status === "active"));
+  return resumenDeLineas(
+    carrito.lines.filter((linea) => linea.status === "active"),
+    true,
+  );
 }
 
 /** Resumen de una orden de compra congelada, a partir de sus líneas guardadas. */

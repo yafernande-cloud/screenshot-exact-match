@@ -116,8 +116,10 @@ import {
   buscarPreciosDeListas,
   descubrirFuentesDeLista,
   refrescarPreciosDeListas,
+  SIN_MOTIVOS,
   type FuenteDeLista,
   type GrupoPreciosLista,
+  type MotivosNoVigente,
 } from "@/lib/ofertas-listas";
 import { reemplazarOfertasDeArticulo } from "@/lib/ofertas-preferencias";
 import type { OfertaImportada } from "@/lib/proveedores-api";
@@ -218,7 +220,8 @@ function Index() {
     "inicial",
   );
   const [erroresListas, setErroresListas] = useState<string[]>([]);
-  const [desactualizadasListas, setDesactualizadasListas] = useState(0);
+  // Ofertas coincidentes que no se muestran, separadas por vigencia y por antigüedad.
+  const [motivosNoVigentes, setMotivosNoVigentes] = useState<MotivosNoVigente>(SIN_MOTIVOS);
   const [paginasRestantesListas, setPaginasRestantesListas] = useState(false);
   const [hayFuentesLista, setHayFuentesLista] = useState(false);
   // Proveedores con fuente de lista habilitada: su contenedor sigue visible aunque la búsqueda no
@@ -897,7 +900,7 @@ function Index() {
     setGruposListas([]);
     setClavesListas(new Set());
     setErroresListas([]);
-    setDesactualizadasListas(0);
+    setMotivosNoVigentes(SIN_MOTIVOS);
     setPaginasRestantesListas(false);
     try {
       const fuentes: FuenteDeLista[] = await descubrirFuentesDeLista();
@@ -915,17 +918,17 @@ function Index() {
         resultadosIniciales: data.results,
         nextCursor: data.next_cursor,
         cargarPagina: (cursor, limit) => obtenerBusqueda(data.search_id, cursor, limit),
-        alAvanzar: (grupos, desactualizadas, claves) => {
+        alAvanzar: (grupos, _desactualizadas, claves, motivos) => {
           if (seq !== busquedaSeq.current) return;
           setGruposListas(grupos);
-          setDesactualizadasListas(desactualizadas);
+          setMotivosNoVigentes(motivos);
           setClavesListas(claves);
         },
       });
       if (seq !== busquedaSeq.current) return;
       setGruposListas(resultado.grupos);
       setClavesListas(resultado.claves);
-      setDesactualizadasListas(resultado.desactualizadas);
+      setMotivosNoVigentes(resultado.motivos);
       setErroresListas(resultado.errores);
       setPaginasRestantesListas(resultado.paginasRestantes);
       setEstadoListas("listo");
@@ -967,7 +970,7 @@ function Index() {
     setClavesListas(new Set());
     setEstadoListas("inicial");
     setErroresListas([]);
-    setDesactualizadasListas(0);
+    setMotivosNoVigentes(SIN_MOTIVOS);
     setPaginasRestantesListas(false);
     fuentesListasRef.current = [];
     setFuentesListas([]);
@@ -1130,7 +1133,7 @@ function Index() {
       const resultado = await refrescarPreciosDeListas({ fuentes, articleIds: articulos });
       setGruposListas(resultado.grupos);
       setClavesListas(resultado.claves);
-      setDesactualizadasListas(resultado.desactualizadas);
+      setMotivosNoVigentes(resultado.motivos);
       setErroresListas(resultado.errores);
     } catch {
       // El orden anterior se conserva: la preferencia ya quedó guardada.
@@ -1161,7 +1164,15 @@ function Index() {
     ({ oferta }) =>
       !clavesListas.has(`${oferta.article_id}::${oferta.provenance.source.source_id}`),
   );
-  const hayOfertas = ofertasCatalogo.length > 0 || gruposListas.length > 0;
+  // Una oferta en vivo visible impide declarar «sin ofertas»: la sección se está mostrando.
+  const ofertasVivas = estadosVivo.reduce(
+    (total, estado) =>
+      total + (estado.resultado?.offers.length ?? 0) + (estado.resultado?.published.length ?? 0),
+    0,
+  );
+  const hayOfertas = ofertasCatalogo.length > 0 || gruposListas.length > 0 || ofertasVivas > 0;
+  const desactualizadasListas =
+    motivosNoVigentes.fueraDeVigencia + motivosNoVigentes.desactualizado;
   const estadoAhumada = estadoFuenteAhumada(estadoCadenas, fuenteAhumada, errorCadenas);
   const estadoSalcobrand = estadoFuenteSalcobrand(
     estadoCadenasSalcobrand,
@@ -1188,6 +1199,7 @@ function Index() {
             className="relative w-full max-w-5xl"
             onSubmit={(e) => {
               e.preventDefault();
+              if (!q.trim()) return;
               // Búsqueda independiente: deja de asociar el alta a un faltante de Telegram. La
               // búsqueda que se inicia desde un faltante sí conserva el vínculo (ver `onBuscar`).
               setFaltanteBuscado(null);
@@ -1207,7 +1219,7 @@ function Index() {
               />
               <button
                 type="submit"
-                disabled={buscando}
+                disabled={buscando || q.trim() === ""}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-green px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-brand-green/90 disabled:opacity-60"
               >
                 {buscando ? (
@@ -1387,6 +1399,7 @@ function Index() {
             cargandoListas={estadoListas === "cargando"}
             erroresListas={erroresListas}
             desactualizadas={desactualizadasListas}
+            motivos={motivosNoVigentes}
             paginasRestantes={paginasRestantesListas}
             hayFuentesLista={hayFuentesLista}
             onActualizar={actualizarTrasEnsenar}
@@ -1398,6 +1411,7 @@ function Index() {
           {estadoOfertas === "listo" &&
             resultados.length > 0 &&
             !hayOfertas &&
+            !descubriendoVivo &&
             estadoListas !== "cargando" && (
               <p className="mt-3 rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
                 No encontramos ofertas de proveedores para «{consulta}».
